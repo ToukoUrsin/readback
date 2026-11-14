@@ -158,7 +158,7 @@ export function createStore(dir: string | null): Store {
     },
     stats() {
       // rows written before non-browser clients were marked: a go that named a client that is not a browser is not a person
-      const scripts = new Set(events.filter((e) => typeof e.agent === 'string' && e.agent && !e.agent.includes('Mozilla')).map((e) => e.rid));
+      const scripts = new Set(events.filter((e) => typeof e.agent === 'string' && e.agent && (!e.agent.includes('Mozilla') || e.agent.includes('rb-agent'))).map((e) => e.rid));
       const real = events.filter((e) => !e.test && !scripts.has(e.rid));
       const tours: Record<string, Counts> = {};
       for (const t of new Set(real.map((e) => e.tour))) tours[t] = count(real.filter((e) => e.tour === t));
