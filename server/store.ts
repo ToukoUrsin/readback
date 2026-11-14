@@ -6,7 +6,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeF
 import { resolve } from 'node:path';
 
 export interface ReadEvent {
-  type: 'start' | 'answer' | 'handin' | 'sign' | 'ask' | 'reset' | 'cold-shown' | 'cold' | 'stop' | 'failed' | 'unsign' | 'prep' | 'mark';
+  type: 'start' | 'answer' | 'handin' | 'sign' | 'ask' | 'reset' | 'cold-shown' | 'cold' | 'stop' | 'failed' | 'unsign' | 'prep' | 'mark' | 'rule';
   at: string;
   /** one reader's one go at a tour; a new one after "Start over" */
   rid: string;
@@ -38,6 +38,12 @@ export interface Counts {
   failed: number;
   /** signatures on reads that went faster than a person reads code closely */
   fastSignatures: number;
+  /** signatures by what they did to the commit (the read that approves only) */
+  approved: number;
+  sentBack: number;
+  notCounted: number;
+  /** hand-ins where the planted line was flagged but the note did not say what it does wrong */
+  noteFailed: number;
 }
 
 /** The cold test: a plain diff with one planted line, before any guided read and with nothing said about a bug. */
@@ -58,7 +64,10 @@ export interface ColdCounts {
 
 export interface Store {
   record(e: ReadEvent): void;
-  stats(): { at: string; first: string | null; all: Counts; tours: Record<string, Counts>; cold: ColdCounts; testReadersLeftOut: number };
+  /** every row, oldest first */
+  events(): ReadEvent[];
+  /** `all`, `tours`, `cold`: people. `agents`: our own agents, test browsers and scripts, counted the same way and kept apart */
+  stats(): { at: string; first: string | null; all: Counts; tours: Record<string, Counts>; cold: ColdCounts; agents: { all: Counts; cold: ColdCounts }; testReadersLeftOut: number };
   load<T>(name: string): T | null;
   /** written a moment later, once per burst */
   save(name: string, value: () => unknown): void;
@@ -71,10 +80,20 @@ const median = (xs: number[]) => {
   return s.length % 2 ? s[m]! : Math.round((s[m - 1]! + s[m]!) / 2);
 };
 
-function count(events: ReadEvent[]): Counts {
+/**
+ * Goes that are not a person's: our own test browsers, our agents' browsers (ours, or rb-agent in the client's name),
+ * clients that are not a browser, and goes marked as ours afterwards (a "mark" row; nothing is deleted).
+ */
+export function oursOf(events: ReadEvent[]): Set<string> {
+  const out = new Set<string>();
+  for (const e of events) if (e.test || e.ours === true || e.type === 'mark' || (typeof e.agent === 'string' && e.agent && (!e.agent.includes('Mozilla') || e.agent.includes('rb-agent')))) out.add(e.rid);
+  return out;
+}
+
+export function count(events: ReadEvent[]): Counts {
   const by = new Map<string, ReadEvent[]>();
   for (const e of events) by.set(e.rid, [...(by.get(e.rid) ?? []), e]);
-  const c: Counts = { started: 0, reads: 0, caughtFirstRead: 0, missedFirstRead: 0, caughtLater: 0, signed: 0, handIns: 0, medianSeconds: null, medianSecondsToSignature: null, medianWrongAnswers: null, failed: 0, fastSignatures: 0 };
+  const c: Counts = { started: 0, reads: 0, caughtFirstRead: 0, missedFirstRead: 0, caughtLater: 0, signed: 0, handIns: 0, medianSeconds: null, medianSecondsToSignature: null, medianWrongAnswers: null, failed: 0, fastSignatures: 0, approved: 0, sentBack: 0, notCounted: 0, noteFailed: 0 };
   const secs: number[] = [];
   const signSecs: number[] = [];
   const wrong: number[] = [];
@@ -84,6 +103,11 @@ function count(events: ReadEvent[]): Counts {
     if (es.some((e) => e.type === 'sign' && e.fast)) c.fastSignatures++;
     const hs = es.filter((e) => e.type === 'handin');
     c.handIns += hs.length;
+    c.noteFailed += hs.filter((h) => h.noteOk === false).length;
+    const out = es.find((e) => e.type === 'sign' && e.outcome)?.outcome;
+    if (out === 'approved') c.approved++;
+    else if (out === 'sent-back') c.sentBack++;
+    else if (out === 'not-counted') c.notCounted++;
     const first = hs[0];
     if (!first) continue;
     c.reads++;
@@ -106,7 +130,7 @@ function count(events: ReadEvent[]): Counts {
   return c;
 }
 
-function countCold(events: ReadEvent[]): ColdCounts {
+export function countCold(events: ReadEvent[]): ColdCounts {
   const by = new Map<string, ReadEvent[]>();
   for (const e of events) by.set(e.rid, [...(by.get(e.rid) ?? []), e]);
   const c: ColdCounts = { shown: 0, approved: 0, flaggedPlanted: 0, flaggedOther: 0, skipped: 0, medianSeconds: null, thenGuided: { reads: 0, caughtFirstRead: 0 } };
@@ -157,14 +181,14 @@ export function createStore(dir: string | null): Store {
           console.error('store:', (err as Error).message);
         }
     },
+    events: () => events,
     stats() {
-      // rows written before non-browser clients were marked: a go that named a client that is not a browser is not a person
-      // also left out: our own agents' browsers (ours, or rb-agent in the client's name), and goes marked as ours afterwards (a "mark" row; nothing is deleted)
-      const scripts = new Set(events.filter((e) => e.ours === true || e.type === 'mark' || (typeof e.agent === 'string' && e.agent && (!e.agent.includes('Mozilla') || e.agent.includes('rb-agent')))).map((e) => e.rid));
-      const real = events.filter((e) => !e.test && !scripts.has(e.rid));
+      const ours = oursOf(events);
+      const real = events.filter((e) => !ours.has(e.rid));
+      const rest = events.filter((e) => ours.has(e.rid));
       const tours: Record<string, Counts> = {};
       for (const t of new Set(real.map((e) => e.tour))) tours[t] = count(real.filter((e) => e.tour === t));
-      return { at: new Date().toISOString(), first: real[0]?.at ?? null, all: count(real), tours, cold: countCold(real), testReadersLeftOut: new Set(events.filter((e) => e.test || scripts.has(e.rid)).map((e) => e.rid)).size };
+      return { at: new Date().toISOString(), first: real[0]?.at ?? null, all: count(real), tours, cold: countCold(real), agents: { all: count(rest), cold: countCold(rest) }, testReadersLeftOut: ours.size };
     },
     load<T>(name: string): T | null {
       if (!dir) return null;

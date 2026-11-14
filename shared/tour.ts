@@ -187,12 +187,17 @@ export interface PublicStop {
   title: string;
   why: string;
   blocks: Block[];
+  /** empty on a stop the evidence carries: nothing has to be answered there */
   questions: PublicQuestion[];
+  /** false when the evidence carries this stop: a person may skim it, and no line is planted there */
+  required: boolean;
+  evidence?: StopEvidence;
 }
 
 export interface Flag {
   file: string;
   line: number;
+  /** what goes wrong on this line, in the reviewer's words. On the planted line it is checked: a flag without the reason does not count */
   note: string;
 }
 
@@ -201,6 +206,8 @@ export interface AnswerState {
   misses: number;
   /** set once answered right */
   right?: { choice: number; explain: string };
+  /** after a wrong try the question opens again at this time */
+  lockedUntil?: string;
 }
 
 export interface Reveal {
@@ -216,6 +223,8 @@ export interface Reveal {
   /** what the stop's text or a comment said this line must do */
   stated?: string;
   failures?: Plant['failures'];
+  /** the reviewer flagged this line, but their note did not say what it does wrong: the flag did not count */
+  noteFailed?: string;
 }
 
 /** What the reader did with the cold test: the plain diff before any guided read. */
@@ -244,6 +253,32 @@ export interface Signature {
   linesPerMinute?: number;
   /** faster than a person reads code closely */
   fast?: boolean;
+  /** the GitHub login, when the reviewer signed in: the only kind of name that can approve */
+  login?: string;
+  /** what this signature does to the commit. Absent on a short read, which decides nothing */
+  outcome?: 'approved' | 'sent-back' | 'not-counted';
+  /** the rule the commit status follows, check by check, as it stood at the signature */
+  checks?: GateCheck[];
+}
+
+/** One line of the rule a signature has to meet before the commit status turns green. */
+export interface GateCheck {
+  id: 'who' | 'questions' | 'planted' | 'pace' | 'rulings';
+  ok: boolean;
+  text: string;
+}
+
+/** The reviewer's ruling on one thing the AI did not decide. */
+export interface Ruling {
+  decision: 'accept' | 'back';
+  /** required when sent back: what the author has to do */
+  note: string;
+}
+
+/** What has been decided about this commit so far, by reviews that counted. */
+export interface CommitState {
+  approvedBy?: { who: string; at: string };
+  sentBackBy?: { who: string; at: string; points: number };
 }
 
 export interface ReaderState {
@@ -262,6 +297,10 @@ export interface ReaderState {
   cold?: ColdResult | null;
   /** every planted line has been shown to this reader: their read of this commit cannot count any more */
   exhausted?: boolean;
+  /** rulings on the things the AI did not decide, by RulingItem id */
+  rulings?: Record<string, Ruling>;
+  /** on the read that approves, once the planted bug is caught: the rule as it stands for this review */
+  checks?: GateCheck[];
 }
 
 export interface PublicTour {
@@ -285,4 +324,73 @@ export interface PublicTour {
   cold?: { blocks: Block[] };
   /** the other read of the same change: the short one from the full tour, the full one from the short */
   other?: { kind: 'short' | 'full'; href: string; stops: number };
+  /** the change's own evidence; each stop carries its part */
+  evidence?: Pick<Evidence, 'criteria' | 'tests' | 'rulings' | 'madeBy'>;
+  /** lines of code on the stops a person has to read, and on all stops */
+  lines: { required: number; all: number };
+  /** the rule a signature has to meet (server/gate.ts) */
+  rule: { maxWrong: number; maxReads: number; fastLinesPerMinute: number; lockSeconds: number };
+  /** GitHub sign-in is set up on this server */
+  signIn?: boolean;
+  /** the signed-in reviewer */
+  me?: { login: string; name?: string };
+  /** on the read that approves: who has approved or sent back this commit so far */
+  commit?: CommitState;
+}
+
+/* ---------- Evidence: what the change can show for itself, made by gen/evidence.ts ---------- */
+
+/**
+ * The evidence of one pull request, stop by stop. Everything a number is said about was run: the project's tests,
+ * offline in Docker. Where a model gave an opinion (risk, the questions it leaves to a person) the field says so.
+ */
+export interface Evidence {
+  schema: 1;
+  headSha: string;
+  /** the acceptance criteria of the issue, word for word */
+  criteria: { n: number; text: string }[];
+  /** one offline run of the project's tests at the head commit */
+  tests: { passed: number; failed: number; at: string };
+  /** keyed by stop id; every stop of the tour has one */
+  stops: Record<string, StopEvidence>;
+  /** what the AI does not decide: a person rules on each one before signing */
+  rulings: RulingItem[];
+  madeBy: { model: string; costUsd: number; at: string };
+}
+
+export interface StopEvidence {
+  /** numbers of the acceptance criteria this stop's code serves; empty when no criterion asks for it */
+  criteria: number[];
+  /** tests that fail when this stop's code is changed (seen in a run), by name */
+  tests: string[];
+  /** one-line changes tried on this stop's lines, each run against all tests */
+  changes: {
+    tried: number;
+    /** tests failed: the tests notice a change here */
+    caught: number;
+    /** every test still passed: nothing checks this line */
+    survived: { file: string; line: number; original: string; changed: string; effect: string }[];
+  };
+  /** a model's reading of what this stop can harm; empty = none of these */
+  risk: ('access' | 'money' | 'data')[];
+  /** one sentence for the risk, quoting the code it rests on; '' when risk is empty */
+  riskWhy: string;
+  /** 'read': a person has to read this stop. 'evidence': the tests carry it, a person may skim. Decided in code from the fields above */
+  route: 'read' | 'evidence';
+  /** why, as short reasons a reader can check: "decides who may see an invoice", "2 of 6 changes went unnoticed by the tests" */
+  routeWhy: string[];
+}
+
+/** One thing the AI found and does not decide. `unasked`: code no acceptance criterion asks for. `open`: a choice the issue leaves open. `untested`: behaviour no test checks. */
+export interface RulingItem {
+  id: string;
+  kind: 'unasked' | 'open' | 'untested';
+  stopId: string;
+  file: string;
+  from: number;
+  to: number;
+  /** what the AI found, one or two plain sentences */
+  found: string;
+  /** the question the person answers, one sentence ending in a question mark */
+  question: string;
 }
