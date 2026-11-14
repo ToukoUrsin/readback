@@ -9,6 +9,7 @@ import { Ask, type Msg } from './ui/Ask';
 import { lineId } from './ui/Code';
 import { Chat, FlagFill, Menu } from './ui/icons';
 import { Sidebar, type At } from './ui/Sidebar';
+import { LoadFailed, Loading } from './ui/States';
 
 const fromHash = (): At => decodeURIComponent(location.hash.replace(/^#\/?/, '')) || 'intro';
 const typing = (e: KeyboardEvent) => /^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement).tagName);
@@ -145,8 +146,8 @@ export default function App() {
     return () => window.removeEventListener('keydown', on);
   });
 
-  if (failed) return <div className="flex h-full items-center justify-center text-fg3">Readback could not load the tour: {failed}</div>;
-  if (!tour) return <div className="h-full bg-bg" />;
+  if (failed) return <LoadFailed message={failed} />;
+  if (!tour) return <Loading />;
 
   const { state } = tour;
   if (tour.cold) return <Cold tour={tour} setTour={setTour} />;
@@ -175,7 +176,7 @@ export default function App() {
             <span className="hidden text-fg4 sm:inline">›</span>
             <span className="hidden truncate md:inline">Pull request #{tour.pr.number}</span>
             <span className="hidden text-fg4 md:inline">›</span>
-            <span className="truncate font-[510] text-fg">{stop ? `Stop ${stopIndex + 1} of ${tour.stops.length}` : at === 'handin' ? (state.signature ? 'Signed' : 'Hand in') : 'Before you start'}</span>
+            <span className="truncate font-[510] text-fg">{stop ? `Stop ${stopIndex + 1} of ${tour.stops.length}` : at === 'handin' ? (state.signature ? 'Signed' : state.caught ? 'Sign' : 'Hand in') : 'Before you start'}</span>
           </div>
           <div className="ml-auto flex flex-none items-center gap-2">
             {state.read > 1 && !state.signature && <span className="chip border-flag/30! text-flag!">Read {state.read}</span>}

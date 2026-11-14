@@ -4,6 +4,7 @@ import { api } from '../api';
 import { Tokens } from '../ui/Code';
 import { ArrowRight, Check, FlagFill, Warn, X } from '../ui/icons';
 import { RevealCard } from '../ui/Reveal';
+import { Title } from '../ui/Title';
 
 interface Props {
   tour: PublicTour;
@@ -63,7 +64,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, r
         <span className="chip border-bad/30! bg-bad-soft! text-bad!">
           <X size={12} /> Not approved
         </span>
-        <h1 className="mt-4 text-[26px] leading-[1.15] font-[590] tracking-[-0.022em] sm:text-[32px]">{missedNow.headline ?? 'You read past a planted bug.'}</h1>
+        <Title text={missedNow.headline ?? 'You read past a planted bug.'}>{missedNow.headline ?? 'You read past a planted bug.'}</Title>
         <p className="mt-4 mb-6 text-[15.5px] leading-[1.6] text-fg2">Readback changed this line for your read only. It was not among the lines you flagged, so the read does not count and the change stays unapproved.</p>
         <RevealCard r={missedNow} where={titleOf(missedNow.stopId)} />
         {state.exhausted ? (
@@ -97,13 +98,13 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, r
         <span className="chip border-bad/30! bg-bad-soft! text-bad!">
           <X size={12} /> Read failed
         </span>
-        <h1 className="mt-4 text-[26px] leading-[1.15] font-[590] tracking-[-0.022em] sm:text-[32px]">This commit needs another reader.</h1>
+        <Title text="This commit needs another reader.">This commit needs another reader.</Title>
         <p className="mt-4 text-[15.5px] leading-[1.6] text-fg2">
           You were shown {state.missed.length} planted {state.missed.length === 1 ? 'line' : 'lines'} and flagged none of them. A line you have seen revealed is never planted for you again, so there is nothing left that could show you read this commit. Someone else has to.
         </p>
         <div className="card mt-6 divide-y divide-line">
           {state.missed.map((m) => (
-            <div key={`${m.file}:${m.line}`} className="flex items-baseline gap-3 px-4 py-2.5">
+            <div key={`${m.file}:${m.line}`} className="flex flex-col gap-0.5 px-4 py-2.5 sm:flex-row sm:items-baseline sm:gap-3">
               <span className="flex-none font-mono text-[12px] text-fg2">
                 {m.file.split('/').pop()}:{m.line}
               </span>
@@ -125,7 +126,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, r
         <span className="chip border-ok/30! bg-ok-soft! text-ok!">
           <Check size={12} /> {short ? 'Short read done' : 'Read and approved'}
         </span>
-        <h1 className="mt-4 text-[32px] leading-[1.12] font-[590] tracking-[-0.022em]">{short ? `${s.name} read ${short.stops} of ${short.of} stops.` : `${s.name} read this change.`}</h1>
+        <Title text={s.name}>{short ? `${s.name} read ${short.stops} of ${short.of} stops.` : `${s.name} read this change.`}</Title>
         <p className="mt-3 text-[15px] text-fg3">
           {new Date(s.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} · commit <span className="font-mono text-[13px]">{s.headSha.slice(0, 7)}</span>
         </p>
@@ -214,7 +215,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, r
         <span className="chip border-ok/30! bg-ok-soft! text-ok!">
           <Check size={12} /> Planted bug caught
         </span>
-        <h1 className="mt-4 text-[32px] leading-[1.12] font-[590] tracking-[-0.022em]">You caught it{state.read > 1 ? `, on read ${state.read}` : ''}.</h1>
+        <Title text="You caught it.">You caught it{state.read > 1 ? `, on read ${state.read}` : ''}.</Title>
         <p className="mt-4 mb-6 text-[15.5px] leading-[1.6] text-fg2">Readback changed this line for your read only. The agent never wrote it, and the tour now shows the real code again.</p>
         <RevealCard r={state.caught} where={titleOf(state.caught.stopId)} shownAs="What you were shown, and flagged" />
         {others.length > 0 && (
@@ -251,8 +252,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, r
   const openCount = open.reduce((a, x) => a + x.n, 0);
   return (
     <div className="rise mx-auto max-w-[720px] px-4 pt-10 pb-24 sm:px-6 sm:pt-14">
-      <p className="text-[12.5px] font-[510] text-accent-hi">{state.read > 1 ? `Read ${state.read}` : 'Last step'}</p>
-      <h1 className="mt-3 text-[26px] leading-[1.15] font-[590] tracking-[-0.022em] sm:text-[32px]">Hand in your review</h1>
+      <h1 className="text-[26px] leading-[1.15] font-[590] tracking-[-0.022em] sm:text-[32px]">Hand in your review</h1>
       <p className="mt-4 text-[15.5px] leading-[1.6] text-fg2">One of the lines you read was changed on purpose. If it is among the lines you flagged, the review counts. If it is not, you will see what you missed and review again.</p>
 
       <div className="card mt-7 divide-y divide-line">

@@ -7,6 +7,7 @@ import { Quiz } from '../ui/Quiz';
 
 interface Props {
   stop: PublicStop;
+  /** where the stop sits; the header shows it */
   index: number;
   total: number;
   answers: Record<string, AnswerState>;
@@ -23,26 +24,16 @@ interface Props {
   last: boolean;
 }
 
-export function StopView({ stop, index, total, answers, flags, locked, canAsk, pulse, onAnswer, onFlag, onAsk, onReread, onPrev, onNext, last }: Props) {
+export function StopView({ stop, answers, flags, locked, canAsk, pulse, onAnswer, onFlag, onAsk, onReread, onPrev, onNext, last }: Props) {
   const open = stop.questions.filter((q) => !answers[q.id]?.right).length;
   const code = stop.blocks.filter((b): b is CodeBlock => b.type === 'code');
   const files = [...new Set(code.map((b) => b.file))];
   const focus = code.flatMap((b) => (b.focus ?? []).map((f) => ({ ...f, file: b.file })));
   const here = flags.filter((f) => code.some((b) => b.file === f.file && b.from <= f.line && f.line <= b.to)).length;
   return (
-    <article key={stop.id} className="rise mx-auto max-w-[860px] px-4 pt-6 pb-28 sm:px-6 sm:pt-10">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-fg3">
-        <span className="font-[510] text-accent-hi">
-          Stop {index + 1} of {total}
-        </span>
-        {files.map((f) => (
-          <span key={f} className="hidden font-mono text-[11.5px] text-fg4 sm:inline">
-            {f}
-          </span>
-        ))}
-      </div>
-      <h1 className="mt-2 text-[22px] leading-[1.2] font-[590] tracking-[-0.02em] text-fg sm:mt-3 sm:text-[28px]">{stop.title}</h1>
-      <p className="mt-2 text-[14.5px] leading-[1.55] text-fg2 sm:mt-3 sm:text-[16px] sm:leading-[1.6]">{inline(stop.why)}</p>
+    <article key={stop.id} className="rise mx-auto max-w-[920px] px-4 pt-6 pb-28 sm:px-8 sm:pt-12">
+      <h1 className="text-[22px] leading-[1.2] font-[590] tracking-[-0.02em] text-fg sm:text-[28px]">{stop.title}</h1>
+      <p className="mt-2 max-w-[68ch] text-[14.5px] leading-[1.55] text-fg2 sm:mt-3 sm:text-[15.5px] sm:leading-[1.6]">{inline(stop.why)}</p>
 
       {focus.length > 0 && (
         <div className="-mx-4 mt-4 flex items-center gap-x-2 gap-y-1.5 overflow-x-auto px-4 text-[12.5px] [scrollbar-width:none] sm:mx-0 sm:mt-5 sm:flex-wrap sm:overflow-visible sm:px-0">
@@ -50,8 +41,8 @@ export function StopView({ stop, index, total, answers, flags, locked, canAsk, p
             <Eye size={13} /> Read closely
           </span>
           {focus.map((f) => (
-            <button key={`${f.file}:${f.from}`} className="flex-none rounded-md border border-warn/25 bg-warn/[0.07] px-2 py-[3px] font-mono text-[11.5px] text-fg2 hover:border-warn/50 hover:text-fg" title={f.why} onClick={() => onReread(f)}>
-              {files.length > 1 ? `${f.file.split('/').pop()}:` : 'lines '}
+            <button key={`${f.file}:${f.from}`} className="flex-none rounded-md border border-line-strong px-2 py-[3px] font-mono text-[11.5px] text-fg3 transition-colors hover:border-warn/45 hover:text-fg" title={f.why} onClick={() => onReread(f)}>
+              {files.length > 1 ? `${f.file.split('/').pop()}:` : f.to > f.from ? 'lines ' : 'line '}
               {f.from}
               {f.to > f.from ? `–${f.to}` : ''}
             </button>
@@ -62,7 +53,7 @@ export function StopView({ stop, index, total, answers, flags, locked, canAsk, p
       <div className="mt-5 sm:mt-6">
         {stop.blocks.map((b, i) =>
           b.type === 'prose' ? (
-            <p key={i} className="my-4 text-[15px] leading-[1.65] text-fg2">
+            <p key={i} className="my-4 max-w-[68ch] text-[15px] leading-[1.65] text-fg2">
               {inline(b.text)}
             </p>
           ) : b.type === 'diagram' ? (

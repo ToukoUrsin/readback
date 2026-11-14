@@ -1,5 +1,6 @@
 import type { Reveal, Token } from '../../../shared/tour';
 import { X } from './icons';
+import { inline } from './Prose';
 
 /** The two lines without their shared indent, and where they differ (character offsets into each). */
 function differ(a: Token[], b: Token[]) {
@@ -64,11 +65,11 @@ export function RevealCard({ r, where, shownAs = 'What you were shown' }: { r: R
         {row('+', r.original, 'add', d.endB, 'rounded-[3px] bg-[#3fb950]/25')}
       </div>
       <div className="border-t border-line px-4 py-3">
-        <p className="text-[13.5px] leading-[1.55] text-fg2">{r.what}</p>
+        <p className="text-[13.5px] leading-[1.55] text-fg2">{inline(r.what)}</p>
         {r.stated && (
           <p className="mt-2 text-[12.5px] leading-[1.55] text-fg3">
             <span className="text-fg4">What you had been told about this line: </span>
-            {r.stated}
+            {inline(r.stated)}
           </p>
         )}
       </div>

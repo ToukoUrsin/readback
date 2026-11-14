@@ -4,6 +4,7 @@ import { api, type ColdStats } from '../api';
 import { Tokens } from '../ui/Code';
 import { ArrowRight, Bot, Check, Eye, FlagFill, Logo, X } from '../ui/icons';
 import { RevealCard } from '../ui/Reveal';
+import { Title } from '../ui/Title';
 
 const Bar = ({ tour }: { tour: PublicTour }) => (
   <header className="flex h-12 flex-none items-center gap-2.5 border-b border-line px-4">
@@ -95,24 +96,25 @@ export function Cold({ tour, setTour }: { tour: PublicTour; setTour: (t: PublicT
         </div>
       </div>
 
-      <div className="flex-none border-t border-line bg-panel">
-        <div className="mx-auto flex max-w-[900px] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:px-6">
-          <p className="min-w-0 flex-1 basis-[200px] text-[13px] text-fg3">
-            {err ? <span className="text-bad">{err}</span> : pick ? (
+      <div className="flex-none border-t border-line bg-panel pb-[env(safe-area-inset-bottom)]">
+        <div className="mx-auto flex max-w-[900px] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:flex-nowrap sm:px-6">
+          <p className={`min-w-0 text-[13px] text-fg3 ${err ? 'basis-full sm:flex-1 sm:basis-auto' : 'hidden sm:block sm:flex-1'}`}>
+            {err ? (
+              <span className="text-bad">{err}</span>
+            ) : pick ? (
               <>
                 <span className="font-mono text-[12px] text-fg2">
                   {pick.file.split('/').pop()}:{pick.line}
                 </span>{' '}
                 selected
               </>
-            ) : (
-              'Your review'
-            )}
+            ) : null}
           </p>
-          <button className="btn btn-lg" disabled={!pick || busy} onClick={() => pick && send({ action: 'flag', ...pick })}>
-            <FlagFill size={13} className={pick ? 'text-flag' : ''} /> {pick ? `Request a change on line ${pick.line}` : 'Request a change'}
+          <button className="btn btn-lg min-w-0 flex-1 sm:flex-none" disabled={!pick || busy} onClick={() => pick && send({ action: 'flag', ...pick })}>
+            <FlagFill size={13} className={`flex-none ${pick ? 'text-flag' : ''}`} />
+            <span className="truncate">{pick ? `Request a change on line ${pick.line}` : 'Request a change'}</span>
           </button>
-          <button className="btn btn-ok btn-lg" disabled={busy} onClick={() => send({ action: 'approve' })}>
+          <button className="btn btn-ok btn-lg flex-none" disabled={busy} onClick={() => send({ action: 'approve' })}>
             <Check size={14} strokeWidth={2} /> Approve
           </button>
         </div>
@@ -133,6 +135,7 @@ export function ColdOutcome({ tour, result, onStart }: { tour: PublicTour; resul
   const minutes = Math.max(3, Math.round(lines / 45 + questions * 0.5));
   const decided = stats ? stats.approved + stats.flaggedPlanted + stats.flaggedOther : 0;
   const good = result.caught;
+  const headline = good ? 'You caught it, with nothing to help you.' : result.action === 'approve' ? (r.headline ?? 'You approved a bug.') : `You asked for a change on line ${result.flagged!.line}. The bug is on line ${r.line}.`;
 
   return (
     <div className="flex h-full flex-col">
@@ -148,9 +151,7 @@ export function ColdOutcome({ tour, result, onStart }: { tour: PublicTour; resul
               <X size={12} /> Not approved
             </span>
           )}
-          <h1 className="mt-4 text-[26px] leading-[1.15] font-[590] tracking-[-0.022em] sm:text-[32px]">
-            {good ? 'You caught it, with nothing to help you.' : result.action === 'approve' ? (r.headline ?? 'You approved a bug.') : `You asked for a change on line ${result.flagged!.line}. The bug is on line ${r.line}.`}
-          </h1>
+          <Title text={headline}>{headline}</Title>
           <p className="mt-4 mb-6 text-[15.5px] leading-[1.6] text-fg2">
             {good
               ? 'Readback changed this one line before you saw it. The agent never wrote it. It is a real bug: the project’s own tests fail with it.'

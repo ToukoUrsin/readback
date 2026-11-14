@@ -1,5 +1,5 @@
 import type { PublicTour } from '../../../shared/tour';
-import { ArrowRight, Bot, Check, Eye, FlagFill } from '../ui/icons';
+import { ArrowRight, Bot, Check, Eye, FlagFill, Pull } from '../ui/icons';
 import { inline } from '../ui/Prose';
 
 export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void }) {
@@ -22,19 +22,26 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
 
   return (
     <div className="rise mx-auto max-w-[720px] px-4 pt-10 pb-24 sm:px-6 sm:pt-16">
-      <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-fg3">
-        <span className="chip">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-fg3">
+        <span className="inline-flex items-center gap-1.5">
+          <Pull size={13} className="text-fg4" />
           {pr.repo} #{pr.number}
         </span>
-        {pr.authorIsAgent && <span className="chip border-transparent! bg-accent-soft! text-accent-hi!">Written by an AI agent</span>}
-        {short && <span className="chip border-transparent! bg-flag/15! text-flag!">Short read</span>}
-        <span className="chip">
-          <span className="text-ok">+{pr.additions}</span>
-          <span className="text-bad">−{pr.deletions}</span>
-          <span>{pr.files} files</span>
+        {pr.authorIsAgent && (
+          <>
+            <span className="text-fg4">·</span>
+            <span className="inline-flex items-center gap-1.5 text-accent-hi">
+              <Bot size={13} /> Written by an AI agent
+            </span>
+          </>
+        )}
+        <span className="text-fg4">·</span>
+        <span className="tabular-nums">
+          <span className="text-ok">+{pr.additions}</span> <span className="text-bad">−{pr.deletions}</span> <span className="text-fg4">in</span> {pr.files} files
         </span>
+        {short && <span className="ml-1 rounded bg-flag/15 px-1.5 py-px text-[11.5px] font-[590] text-flag">Short read</span>}
       </div>
-      <h1 className="mt-5 text-[28px] leading-[1.12] font-[590] tracking-[-0.022em] text-fg sm:text-[38px]">{pr.title}</h1>
+      <h1 className="mt-4 text-[28px] leading-[1.12] font-[590] tracking-[-0.024em] text-fg sm:text-[36px]">{pr.title}</h1>
       <p className="mt-5 text-[16px] leading-[1.6] text-fg2">{inline(tour.intro)}</p>
 
       <p className="mt-10 text-[15px] leading-[1.6] text-fg">

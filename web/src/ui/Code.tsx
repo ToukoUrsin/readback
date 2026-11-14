@@ -1,6 +1,7 @@
 import { memo, useState } from 'react';
 import type { CodeBlock, Flag, Token } from '../../../shared/tour';
 import { Chat, Eye, Flag as FlagIcon, FlagFill, X } from './icons';
+import { inline } from './Prose';
 
 export const lineId = (file: string, n: number) => `L:${file}:${n}`;
 
@@ -95,7 +96,7 @@ export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, on
                     <Eye size={13} className="mt-[2px] flex-none text-warn" />
                     <span className="text-[12.5px] leading-[18px] whitespace-normal text-fg2">
                       <span className="font-[590] text-warn">Read closely{f.to > f.from ? `, lines ${f.from}–${f.to}` : ''}. </span>
-                      {f.why}
+                      {inline(f.why)}
                     </span>
                   </div>
                 ))}
@@ -112,7 +113,7 @@ export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, on
                 {note && (
                   <div className={`${under} gap-2.5 py-1.5 pr-4 pl-[46px]`}>
                     <span className="mt-[3px] w-0.5 flex-none self-stretch rounded bg-accent" />
-                    <span className="text-[12.5px] leading-[18px] whitespace-normal text-fg2">{note}</span>
+                    <span className="text-[12.5px] leading-[18px] whitespace-normal text-fg2">{inline(note)}</span>
                   </div>
                 )}
                 {open && act && (

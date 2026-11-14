@@ -86,8 +86,8 @@ export function Ask({ stop, line, clearLine, msgs, setMsgs, onJump, onClose, foc
                   {m.text}
                 </div>
               ) : (
-                <div key={i} className={`text-[13.5px] leading-[1.55] text-fg2 ${busy && i === msgs.length - 1 ? 'caret' : ''}`}>
-                  <Rich text={m.text} onJump={onJump} />
+                <div key={i} className={`text-[13.5px] leading-[1.55] text-fg2 ${busy && i === msgs.length - 1 && m.text ? 'caret' : ''}`}>
+                  {m.text ? <Rich text={m.text} onJump={onJump} /> : <span className="thinking text-fg4">Reading the code</span>}
                 </div>
               ),
             )}

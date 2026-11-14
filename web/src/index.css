@@ -88,8 +88,7 @@
   }
   :focus-visible {
     outline: 2px solid var(--accent-hi);
-    outline-offset: 1px;
-    border-radius: 6px;
+    outline-offset: 2px;
   }
   button {
     cursor: pointer;
@@ -147,7 +146,30 @@
     color: var(--fg);
   }
   .btn:disabled {
-    opacity: 0.45;
+    opacity: 0.5;
+  }
+  /* a filled button that cannot be pressed yet goes neutral, not a faded brand color */
+  .btn-primary:disabled,
+  .btn-ok:disabled {
+    opacity: 1;
+    background: var(--raised);
+    border-color: var(--line-strong);
+    color: var(--fg4);
+    box-shadow: none;
+  }
+  .btn-primary:disabled .kbd,
+  .btn-ok:disabled .kbd {
+    color: var(--fg4);
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .btn:focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px var(--bg),
+      0 0 0 3.5px rgba(124, 133, 224, 0.75);
+  }
+  .btn:active:not(:disabled) {
+    transform: translateY(0.5px);
   }
   .btn-primary {
     background: var(--accent);
@@ -264,9 +286,7 @@
     background: rgba(235, 87, 87, 0.06);
   }
   .row.del .src {
-    opacity: 0.6;
-    text-decoration: line-through;
-    text-decoration-color: rgba(235, 87, 87, 0.5);
+    opacity: 0.62;
   }
   .row:hover {
     background: var(--hover);
@@ -382,6 +402,10 @@
     color: var(--bad);
   }
 
+  .skeleton {
+    background: linear-gradient(90deg, var(--raised) 0%, #1a1b1e 50%, var(--raised) 100%) 0 0 / 200% 100%;
+    animation: shimmer 1.6s linear infinite;
+  }
   .shake {
     animation: shake 320ms var(--ease-out-quint);
   }
@@ -390,6 +414,9 @@
   }
   .fade {
     animation: fade 240ms ease-out both;
+  }
+  .thinking {
+    animation: breathe 1.6s ease-in-out infinite;
   }
   .caret::after {
     content: '';
@@ -443,6 +470,16 @@
   }
   to {
     opacity: 1;
+  }
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes breathe {
+  50% {
+    opacity: 0.45;
   }
 }
 @keyframes blink {
