@@ -242,7 +242,7 @@ test('goes marked as ours afterwards are left out, and the rows stay', async () 
 import type { Evidence } from '../shared/tour';
 import { gate, outcomeOf, statusFor } from './gate';
 
-const ok = { login: 'ada', test: false, prepared: false, questions: 12, wrong: 1, reads: 1, linesPerMinute: 30, skimmed: 0, rulings: { total: 2, open: 0, back: 0 } };
+const ok = { login: 'ada', test: false, prepared: false, questions: 12, wrong: 1, reads: 1, linesPerMinute: 10, fastAt: 15, skimmed: 0, rulings: { total: 2, open: 0, back: 0 } };
 
 test('the gate: every check has to hold, and a typed name never approves', () => {
   expect(outcomeOf(gate(ok), 0)).toBe('approved');
@@ -266,7 +266,7 @@ const evidence: Evidence = {
   headSha: tour.pr.headSha,
   criteria: [{ n: 1, text: 'c1' }],
   tests: { passed: 3, failed: 0, at: 'now' },
-  stops: { s1: { criteria: [1], tests: ['t1'], changes: { tried: 3, caught: 2, survived: [{ file: 'a.ts', line: 1, original: 'one', changed: 'ONE', effect: 'e' }] }, risk: ['access'], riskWhy: 'r', route: 'read', routeWhy: ['x'] } },
+  stops: { s1: { criteria: [1], tests: ['t1'], changes: { tried: 3, caught: 2, survived: [1, 2, 3].map((n) => ({ file: 'a.ts', line: n, original: 'x', changed: 'X', effect: 'e' })) }, risk: ['access'], riskWhy: 'r', route: 'read', routeWhy: ['x'] } },
   rulings: [{ id: 'r1', kind: 'unasked', stopId: 's1', file: 'a.ts', from: 1, to: 1, found: 'f', question: 'q?' }],
   madeBy: { model: 'm', costUsd: 0, at: 'now' },
 };
@@ -320,7 +320,8 @@ test('a wrong answer closes the question, a fourth flag is refused, an answer th
 test('a visitor who types a name signs a record that does not approve; a signed-in reviewer has one review and it can approve or send back', async () => {
   const statuses: any[] = [];
   const store = createStore(null);
-  const deps: Partial<Deps> = { evidence, setStatus: async (s) => void statuses.push(s), me: (c) => (c.req.header('x-login') ? { login: c.req.header('x-login')! } : null), signIn: true };
+  let t = Date.now();
+  const deps: Partial<Deps> = { now: () => t, evidence, setStatus: async (s) => void statuses.push(s), me: (c) => (c.req.header('x-login') ? { login: c.req.header('x-login')! } : null), signIn: true };
   // a visitor
   const v = reader(store, false, deps);
   await toHandIn(v);
@@ -349,7 +350,7 @@ test('a visitor who types a name signs a record that does not approve; a signed-
   await ada('/api/answer', { id: 'q1', choice: 1 });
   await ada('/api/rule', { id: 'r1', decision: 'accept' });
   await ada('/api/flag', { file: 'a.ts', line: 2, note: 'the value is upper case now' });
-  await Bun.sleep(4200); // 3 lines in 4 s: under a line a second
+  t += 60_000; // three lines in a minute
   expect((await ada('/api/handin', {})).json.ok).toBe(true);
   const sig = (await ada('/api/sign', {})).json.signature;
   expect(sig.login).toBe('ada');
@@ -367,7 +368,7 @@ test('a visitor who types a name signs a record that does not approve; a signed-
   await bob('/api/answer', { id: 'q1', choice: 1 });
   await bob('/api/rule', { id: 'r1', decision: 'back', note: 'nobody asked for this code' });
   await bob('/api/flag', { file: 'a.ts', line: 2, note: 'the value is upper case now' });
-  await Bun.sleep(4200);
+  t += 60_000;
   await bob('/api/handin', {});
   expect((await bob('/api/sign', {})).json.signature.outcome).toBe('sent-back');
   expect(statuses.at(-1).state).toBe('failure');
@@ -389,7 +390,7 @@ test('a stop the evidence carries asks nothing and never holds the planted line'
   const t = await call('/api/tour');
   expect(t.stops.map((s: any) => [s.required, s.questions.length])).toEqual([[true, 1], [false, 0]]);
   expect(t.stops[1].blocks[0].lines[0].tokens[0][0]).toBe('uno'); // p0 is first in order, and is not planted
-  expect(t.lines).toEqual({ required: 3, all: 5 });
+  expect(t.lines).toEqual({ required: 3, all: 5 }); // the three lines where a tried bug went unnoticed
   await call('/api/start', {});
   await call('/api/answer', { id: 'q1', choice: 1 });
   await call('/api/flag', { file: 'a.ts', line: 2, note: 'the value is upper case now' });

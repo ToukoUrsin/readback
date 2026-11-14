@@ -17,8 +17,6 @@ import type { Grade } from './grade';
 import type { ReadEvent, Store } from './store';
 
 export const MAX_FLAGS = 3;
-/** lines a minute from which a read is marked as fast: a line a second, which nobody reads code at */
-export const FAST_LINES_PER_MINUTE = RULE.fastLinesPerMinute;
 /** a flag needs this many characters of reason before the review can be handed in */
 export const MIN_NOTE = 8;
 
@@ -60,6 +58,8 @@ export interface Deps {
   signIn?: boolean;
   /** seconds a question stays closed after a wrong try; the default is the rule's */
   lockSeconds?: number;
+  /** the clock, in milliseconds; tests move it */
+  now?: () => number;
 }
 
 export interface Shown {
@@ -137,26 +137,46 @@ export function createApp(d: Deps) {
   const sessions = new Map<string, Session>(saved?.stamp === stamp ? saved.sessions : []);
   const keep = () => d.store?.save(`sessions-${key}`, () => ({ stamp, sessions: [...sessions] }));
   const ev = d.evidence && d.evidence.headSha === tour.pr.headSha ? d.evidence : undefined;
-  /** a stop the evidence does not carry: a person has to read it. Without evidence that is every stop */
-  const required = (stopId: string) => !ev?.stops[stopId] || ev.stops[stopId]!.route === 'read';
+  const rulingItems = (ev?.rulings ?? []).filter((r) => tour.stops.some((s) => s.id === r.stopId));
+  const linesOf = (s: { blocks: Block[] }) => s.blocks.reduce((b, x) => b + (x.type === 'code' ? x.to - x.from + 1 : 0), 0);
+  /**
+   * The lines of a stop a person has to read closely, as "file:line". With evidence these are the lines marked for
+   * what they can harm, the lines where a tried bug went unnoticed by the tests, and the lines of an open point.
+   * The rest of the stop is shown as context. Without evidence every line has to be read.
+   */
+  const closeOf = (st: Tour['stops'][number]): Set<string> => {
+    const out = new Set<string>();
+    const add = (file: string, from: number, to: number) => {
+      for (const b of st.blocks) if (b.type === 'code' && b.file === file) for (let n = Math.max(from, b.from); n <= Math.min(to, b.to); n++) out.add(`${file}:${n}`);
+    };
+    for (const b of st.blocks) {
+      if (b.type !== 'code') continue;
+      if (!ev) add(b.file, b.from, b.to);
+      for (const f of b.focus ?? []) add(b.file, f.from, f.to);
+    }
+    for (const x of ev?.stops[st.id]?.changes.survived ?? []) add(x.file, x.line, x.line);
+    for (const r of rulingItems) if (r.stopId === st.id) add(r.file, r.from, r.to);
+    return out;
+  };
+  const close = new Map(tour.stops.map((s) => [s.id, closeOf(s)] as const));
+  /** a stop with nothing to read closely is carried by its evidence: it asks nothing and holds no planted line */
+  const required = (stopId: string) => (close.get(stopId)?.size ?? 0) > 0;
   const mustRead = tour.stops.filter((s) => required(s.id));
   const questions = new Map(mustRead.flatMap((s) => s.questions.map((q) => [q.id, q] as const)));
-  const linesOf = (s: { blocks: Block[] }) => s.blocks.reduce((b, x) => b + (x.type === 'code' ? x.to - x.from + 1 : 0), 0);
   const allLines = tour.stops.reduce((a, s) => a + linesOf(s), 0);
-  /** the lines a person has to read: pace is counted over these */
-  const lines = mustRead.reduce((a, s) => a + linesOf(s), 0);
-  const rulingItems = (ev?.rulings ?? []).filter((r) => tour.stops.some((s) => s.id === r.stopId));
+  /** the lines a person has to read closely: pace is counted over these */
+  const lines = mustRead.reduce((a, s) => a + close.get(s.id)!.size, 0);
+  /** lines a minute from which a read is too fast: a line a second over whole stops, a line in four seconds over lines picked for a close read */
+  const fastAt = ev ? RULE.closeLinesPerMinute : RULE.fastLinesPerMinute;
   const lockSeconds = d.lockSeconds ?? RULE.lockSeconds;
   const stopOf = (file: string, line: number) => tour.stops.find((s) => s.blocks.some((b) => b.type === 'code' && b.file === file && b.from <= line && line <= b.to))?.id ?? '';
-  /** a line a reviewer can be held to: on a stop they have to read */
-  const onTour = (file: string, line: number) => {
-    const id = stopOf(file, line);
-    return id !== '' && required(id);
-  };
+  /** a line a reviewer can be held to: one they were told to read closely */
+  const onTour = (file: string, line: number) => !!close.get(stopOf(file, line))?.has(`${file}:${line}`);
   const shownAnywhere = (file: string, line: number) => stopOf(file, line) !== '';
   const inCold = (file: string, line: number) => !!tour.cold?.blocks.some((b) => b.file === file && b.from <= line && line <= b.to);
 
-  const seconds = (s: Session) => (s.startedAt ? Math.round((Date.now() - Date.parse(s.startedAt)) / 1000) : 0);
+  const clock = d.now ?? Date.now;
+  const seconds = (s: Session) => (s.startedAt ? Math.round((clock() - Date.parse(s.startedAt)) / 1000) : 0);
   const wrong = (s: Session) => Object.values(s.answers).reduce((a, x) => a + x.misses, 0);
   const speed = (secs: number) => (secs > 0 ? Math.round((lines / secs) * 60) : 0);
   /** the person across goes, without their name: readers are counted by this */
@@ -165,19 +185,20 @@ export function createApp(d: Deps) {
 
   /** how long a stop was open: counted from one "opened" to the next, a single stay capped at 15 minutes */
   const touch = (s: Session, stop: string | null) => {
-    const now = Date.now();
+    const now = clock();
     s.dwell ??= {};
     if (s.at) s.dwell[s.at.stop] = (s.dwell[s.at.stop] ?? 0) + Math.min(now - s.at.since, 15 * 60_000) / 1000;
     s.at = stop ? { stop, since: now } : null;
   };
   /** stops to read that were open for less time than it takes to scroll them: 4 lines a second, at most a minute */
   const skimmed = (s: Session) => mustRead.filter((st) => (s.dwell?.[st.id] ?? 0) < Math.min(60, linesOf(st) / 4)).length;
+  const isFast = (lpm: number) => lpm >= fastAt;
   const ruled = (s: Session) => {
     const r = s.rulings ?? {};
     return { total: rulingItems.length, open: rulingItems.filter((x) => !r[x.id]).length, back: rulingItems.filter((x) => r[x.id]?.decision === 'back').length };
   };
   const checksOf = (s: Session): GateCheck[] =>
-    gate({ login: s.login, test: s.test, prepared: !!s.prepared, questions: questions.size, wrong: wrong(s), reads: s.read, linesPerMinute: speed(s.caughtSeconds ?? seconds(s)), skimmed: s.prepared ? 0 : skimmed(s), rulings: ruled(s) });
+    gate({ login: s.login, test: s.test, prepared: !!s.prepared, questions: questions.size, wrong: wrong(s), reads: s.read, linesPerMinute: speed(s.caughtSeconds ?? seconds(s)), fastAt, skimmed: s.prepared ? 0 : skimmed(s), rulings: ruled(s) });
   const whoOf = (sig: Signature) => (sig.login ? `@${sig.login}` : `${sig.name} (test read)`);
   /** what the reviews that counted say about this commit */
   const commit = (): CommitState => {
@@ -244,7 +265,7 @@ export function createApp(d: Deps) {
       pr: tour.pr,
       intro: tour.intro,
       // while the cold test is open the reader gets only its lines: two copies of the same code with different planted lines would give both away
-      stops: cold ? [] : tour.stops.map((st) => ({ id: st.id, title: st.title, why: st.why, blocks: withPlant(st.blocks, p), questions: required(st.id) ? st.questions.map((q) => ({ id: q.id, prompt: q.prompt, options: q.options })) : [], required: required(st.id), ...(ev?.stops[st.id] ? { evidence: ev.stops[st.id] } : {}) })),
+      stops: cold ? [] : tour.stops.map((st) => ({ id: st.id, title: st.title, why: st.why, blocks: withPlant(st.blocks, p), questions: required(st.id) ? st.questions.map((q) => ({ id: q.id, prompt: q.prompt, options: q.options })) : [], required: required(st.id), closely: close.get(st.id)!.size, ...(ev?.stops[st.id] ? { evidence: ev.stops[st.id] } : {}) })),
       coverage: tour.coverage,
       madeBy: tour.madeBy,
       maxFlags: MAX_FLAGS,
@@ -258,7 +279,7 @@ export function createApp(d: Deps) {
       ...(d.other ? { other: d.other } : {}),
       ...(ev ? { evidence: { criteria: ev.criteria, tests: ev.tests, rulings: rulingItems, madeBy: ev.madeBy } } : {}),
       lines: { required: lines, all: allLines },
-      rule: { ...RULE, lockSeconds },
+      rule: { maxWrong: RULE.maxWrong, maxReads: RULE.maxReads, fastLinesPerMinute: fastAt, lockSeconds },
       ...(d.signIn ? { signIn: true } : {}),
       ...(s.login ? { me: { login: s.login } } : {}),
       ...(!tour.short ? { commit: commit() } : {}),
@@ -346,7 +367,7 @@ export function createApp(d: Deps) {
   app.post('/api/start', (c) => {
     const s = c.get('s');
     if (!s.startedAt) {
-      s.startedAt = new Date().toISOString();
+      s.startedAt = new Date(clock()).toISOString();
       record(s, 'start', { agent: (c.req.header('user-agent') ?? '').slice(0, 200), afterCold: s.cold?.action ?? '' });
     }
     return c.json(state(s));
@@ -362,7 +383,7 @@ export function createApp(d: Deps) {
     if (!d.prepKey || key !== d.prepKey || !s.test) return c.json({ error: 'Not found.' }, 404);
     if (s.signature || s.caught) return c.json(view(s));
     if (!s.startedAt) {
-      s.startedAt = new Date().toISOString();
+      s.startedAt = new Date(clock()).toISOString();
       record(s, 'start', { agent: (c.req.header('user-agent') ?? '').slice(0, 200), afterCold: s.cold?.action ?? '' });
     }
     let answered = 0;
@@ -516,7 +537,7 @@ export function createApp(d: Deps) {
       questions: questions.size,
       misses: wrong(s),
       flagsForAuthor: s.flags.filter((f) => !(f.file === caught.file && f.line === caught.line)),
-      ...(s.prepared ? {} : { lines, linesPerMinute: speed(secs), fast: speed(secs) >= FAST_LINES_PER_MINUTE }),
+      ...(s.prepared ? {} : { lines, linesPerMinute: speed(secs), fast: isFast(speed(secs)) }),
       ...(s.login ? { login: s.login } : {}),
       ...(checks ? { checks, outcome: outcomeOf(checks, back) } : {}),
     };

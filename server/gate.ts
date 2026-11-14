@@ -9,8 +9,10 @@ export const RULE = {
   maxWrong: 3,
   /** the planted bug has to be caught on the first or the second read */
   maxReads: 2,
-  /** lines a minute from which a read is too fast to be a read: a line a second */
+  /** lines a minute from which a read of whole stops is too fast to be a read: a line a second */
   fastLinesPerMinute: 60,
+  /** the same for lines picked out for a close read: a line in four seconds */
+  closeLinesPerMinute: 15,
   /** a wrong answer closes its question for this long */
   lockSeconds: 20,
 };
@@ -26,6 +28,8 @@ export interface GateInput {
   wrong: number;
   reads: number;
   linesPerMinute: number;
+  /** the pace from which this read is too fast */
+  fastAt: number;
   /** stops to read that were open for less time than it takes to scroll them */
   skimmed: number;
   rulings: { total: number; open: number; back: number };
@@ -49,7 +53,7 @@ export function gate(x: GateInput): GateCheck[] {
       ? { id: 'pace', ok: x.test, text: 'Questions answered ahead for a recording: no pace is claimed' }
       : x.skimmed > 0
         ? { id: 'pace', ok: false, text: `${n(x.skimmed, 'stop')} to read ${x.skimmed === 1 ? 'was' : 'were'} open for less time than it takes to scroll ${x.skimmed === 1 ? 'it' : 'them'}` }
-        : { id: 'pace', ok: x.linesPerMinute < RULE.fastLinesPerMinute, text: `${x.linesPerMinute} lines a minute (under ${RULE.fastLinesPerMinute})` },
+        : { id: 'pace', ok: x.linesPerMinute < x.fastAt, text: `${x.linesPerMinute} of the lines to read closely a minute (under ${x.fastAt})` },
   );
   if (x.rulings.total)
     checks.push(

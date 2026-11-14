@@ -189,8 +189,10 @@ export interface PublicStop {
   blocks: Block[];
   /** empty on a stop the evidence carries: nothing has to be answered there */
   questions: PublicQuestion[];
-  /** false when the evidence carries this stop: a person may skim it, and no line is planted there */
+  /** false when nothing here has to be read closely: the evidence carries the stop, it asks nothing and no line is planted there */
   required: boolean;
+  /** how many of the stop's lines a person has to read closely: marked for what they can harm, unnoticed by the tests, or part of an open point */
+  closely: number;
   evidence?: StopEvidence;
 }
 
@@ -326,7 +328,7 @@ export interface PublicTour {
   other?: { kind: 'short' | 'full'; href: string; stops: number };
   /** the change's own evidence; each stop carries its part */
   evidence?: Pick<Evidence, 'criteria' | 'tests' | 'rulings' | 'madeBy'>;
-  /** lines of code on the stops a person has to read, and on all stops */
+  /** lines of code a person has to read closely, and all lines shown */
   lines: { required: number; all: number };
   /** the rule a signature has to meet (server/gate.ts) */
   rule: { maxWrong: number; maxReads: number; fastLinesPerMinute: number; lockSeconds: number };
