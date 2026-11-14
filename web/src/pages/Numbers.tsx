@@ -12,6 +12,7 @@ const SECTIONS: SectionRef[] = [
   { id: 'pace', label: 'Does faster miss more?' },
   { id: 'time', label: 'Time to a decision' },
   { id: 'readers', label: 'Readers' },
+  { id: 'history', label: 'Tokens and checks' },
   { id: 'rule', label: 'The rule' },
 ];
 
@@ -62,6 +63,7 @@ export default function Numbers() {
             <Pace n={n} />
             <Time n={n} />
             <Readers n={n} />
+            <History n={n} />
             <Section id="rule" title="The rule">
               <p className={STATEMENT}>
                 What a signature has to meet before the status <code className="icode">readback/read</code> turns green. The same list is on the concept page and in front of the reviewer before signing.
@@ -87,6 +89,103 @@ export default function Numbers() {
         )}
       </Shell>
     </Pending.Provider>
+  );
+}
+
+/* ---- what the history of the change cost, and what was checked by a second model ---- */
+
+const big = (x: number) => x.toLocaleString('en-US');
+
+function History({ n }: { n: Data }) {
+  const h = n.history;
+  const q = n.questionCheck;
+  if (!h && !q) return null;
+  const c = h?.callers;
+  const row = 'flex items-baseline justify-between gap-5 py-[7px]';
+  const dt = 'min-w-0 text-[13px] leading-[1.45] text-fg3';
+  const dd = 'flex-none text-right text-[13.5px] font-[510] tabular-nums text-fg';
+  return (
+    <Section id="history" title="Tokens and checks">
+      <p className={STATEMENT}>What the agent spent writing the change, what it costs to know what a line reaches, and how the questions were checked. None of this is counted from readers: it is measured once per pull request.</p>
+
+      {h && (
+        <>
+          <h3 className={SUB}>The agent’s sessions, from Entire</h3>
+          <p className={NOTE}>Each session is an Entire checkpoint tied to the commit it wrote. Tokens are all tokens of the session, cache reads included.</p>
+          <dl className="mt-2 max-w-[760px] divide-y divide-line border-y border-line">
+            {h.sessions.map((s) => (
+              <div key={s.n} className={row}>
+                <dt className={dt}>
+                  <span className="font-[510] text-fg2">Session {s.n}</span> · <span className="font-mono text-[12px]">{s.commit}</span> · {s.asked}
+                  {!s.steps && <span className="text-fg4"> · only the prompt, the report and the token counts were kept</span>}
+                </dt>
+                <dd className={dd}>{big(s.tokens)}</dd>
+              </div>
+            ))}
+            <div className={row}>
+              <dt className={`${dt} font-[510] text-fg2`}>All sessions</dt>
+              <dd className={dd}>{big(h.sessions.reduce((a, s) => a + s.tokens, 0))}</dd>
+            </div>
+          </dl>
+        </>
+      )}
+
+      {h && c && (
+        <>
+          <h3 className={SUB}>“What calls this function?”, asked two ways</h3>
+          <p className={NOTE}>
+            Asked for all {c.functions} functions the change added or altered. Entire’s code graph ({h.versions.graph}: {h.graph.files} files, {big(h.graph.symbols)} symbols, {big(h.graph.relations)} relations) against {c.model} with tools to read the repository, one fresh session per function.
+          </p>
+          <dl className="mt-2 max-w-[760px] divide-y divide-line border-y border-line">
+            {(
+              [
+                ['Entire’s graph: tokens', '0'],
+                ['Entire’s graph: time per question', `${h.graph.msPerQuery} ms`],
+                [`${c.model}: tokens for all ${c.functions}`, big(c.tokens)],
+                [`${c.model}: time per question, median`, `${c.medianSeconds} s`],
+                ['Functions where both named the same callers', `${c.same} of ${c.functions}`],
+                ['Functions where the model found a caller the graph did not list', c.modelFoundMore],
+                ['Functions where the graph found a caller the model missed', c.graphFoundMore],
+                [`What Readback does: the graph first, the model only for the ${c.mixed.asked} functions where the graph lists no caller`, `${big(c.mixed.tokens)} tokens`],
+                ['Saved against asking the model every time', `${big(c.tokens - c.mixed.tokens)} tokens, ${pct(c.tokens - c.mixed.tokens, c.tokens)}`],
+              ] as [string, ReactNode][]
+            ).map(([k, v]) => (
+              <div key={k} className={row}>
+                <dt className={dt}>{k}</dt>
+                <dd className={dd}>{v}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className={NOTE}>The callers the graph missed are calls from route handlers that have no name. One repository, one question: it is a measurement of this change, not a benchmark.</p>
+        </>
+      )}
+
+      {q && (
+        <>
+          <h3 className={SUB}>The questions, checked by a second model</h3>
+          <p className={NOTE}>
+            {q.writer} wrote the questions. {q.checker} answered each one twice: with the stop’s code, and with only the stop’s title and description. A question is kept when it reaches the key with the code and not without it.
+          </p>
+          <dl className="mt-2 max-w-[760px] divide-y divide-line border-y border-line">
+            {(
+              [
+                ['Questions checked', q.checked],
+                ['Key not reached with the code in front of it', q.wrongKey],
+                ['Answered right without the code', q.withoutCode],
+                [`Of our first ${q.first.checked} questions, answered right without the code`, q.first.withoutCode],
+                ['Kept in the pool', q.kept],
+                ['Fewest kept for one stop (a reviewer is asked 2 of them)', q.perStop],
+              ] as [string, ReactNode][]
+            ).map(([k, v]) => (
+              <div key={k} className={row}>
+                <dt className={dt}>{k}</dt>
+                <dd className={dd}>{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
+      )}
+    </Section>
   );
 }
 
@@ -503,7 +602,7 @@ function Pace({ n }: { n: Data }) {
       <p className={STATEMENT}>Reverts and incidents need months of real use before they can be counted. So every review carries one known bug, and the record keeps whether it was caught and how fast the reviewer read.</p>
 
       <h3 className={SUB}>Full review, by reading pace</h3>
-      <p className={NOTE}>Hand-ins of the review that approves, by lines to read closely a minute. Met is how many met the planted bug at that pace.</p>
+      <p className={NOTE}>Hand-ins of the review that approves, by lines to read closely a minute. Met is how many met the planted bug at that pace. Our agents read faster than a person can and still catch the bug, so their column says nothing about the pace limit for people. The limit is a first guess until the people column has numbers.</p>
       <Split n={n}>
         {(g, who) => (
           <>

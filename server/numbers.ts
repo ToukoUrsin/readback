@@ -158,7 +158,7 @@ export function numbers(events: ReadEvent[], d: { tour: Tour; evidence?: Evidenc
     readers,
     route: ev
       ? {
-          linesAll: stops.reduce((a, s) => a + s.lines, 0),
+          linesAll: d.tour.stops.reduce((a, s) => a + linesOf(s), 0),
           linesToRead: stops.reduce((a, s) => a + s.closely, 0),
           stopsToRead: stops.filter((s) => s.closely > 0).length,
           stops,

@@ -21,7 +21,7 @@ export interface GateInput {
   /** GitHub login, when signed in */
   login?: string;
   /** the login was proven with a gist that only that account can make, not with GitHub's sign-in page */
-  via?: 'gist';
+  via?: 'gist' | 'invite';
   /** false when this server has a list of reviewers (RB_REVIEWERS) and the login is not on it */
   listed?: boolean;
   /** our own recording browser, opened with the server's key: its name is typed, and the status says it is a test read */
@@ -44,7 +44,9 @@ const n = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : 
 export function gate(x: GateInput): GateCheck[] {
   const checks: GateCheck[] = [];
   checks.push(
-    x.login && x.listed === false
+    x.login && x.via === 'invite'
+      ? { id: 'who', ok: true, text: 'Invited with the judge link this repository\'s team gave out. The name is typed by the judge' }
+      : x.login && x.listed === false
       ? { id: 'who', ok: false, text: `@${x.login} is not on this repository's list of reviewers` }
       : x.login
         ? { id: 'who', ok: true, text: x.via === 'gist' ? `GitHub account @${x.login}, proven with a gist only that account can make` : `Signed in with GitHub as @${x.login}` }

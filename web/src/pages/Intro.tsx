@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useRef } from 'react';
 import type { PublicTour } from '../../../shared/tour';
 import { ArrowRight, Bot, Check, Eye, FlagFill, Lock, Pull, Warn, X } from '../ui/icons';
+import { tokens } from '../ui/Entire';
 import { inline } from '../ui/Prose';
 
 const when = (at: string) => new Date(at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -22,7 +23,7 @@ function Rows({ rows }: { rows: { mark: ReactNode; title: ReactNode; body: React
 }
 
 export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void }) {
-  const { pr, state, short, other, evidence, rule, commit } = tour;
+  const { pr, state, short, other, evidence, rule, commit, entire } = tour;
   const todo = tour.stops.filter((s) => s.required);
   const questions = todo.reduce((a, s) => a + s.questions.length, 0);
   const points = evidence?.rulings ?? [];
@@ -40,6 +41,15 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
         { mark: <Check size={13} className="text-ok" />, title: `${evidence.tests.passed} tests pass${evidence.tests.failed ? `, ${evidence.tests.failed} fail` : ''}`, body: 'The project’s own tests, run offline on this commit.' },
         ...(tried ? [{ mark: <Warn size={13} className="text-warn" />, title: `${tried} one-line bugs tried ${here}: the tests noticed ${caught}`, body: `${unnoticed} went unnoticed: every test still passed. Those lines are marked, with the change that was tried.` }] : []),
         ...(points.length ? [{ mark: <span className="text-[12px] font-[590] text-accent-hi">{points.length}</span>, title: `${points.length} ${points.length === 1 ? 'point' : 'points'} the AI does not decide`, body: [kinds[0] ? `${kinds[0]} nobody asked for` : '', kinds[1] ? `${kinds[1]} the issue leaves open` : '', kinds[2] ? `${kinds[2]} no test checks` : ''].filter(Boolean).join(', ') + '. A person rules on each.' }] : []),
+        ...(entire
+          ? [
+              {
+                mark: num(entire.sessions.length),
+                title: `${entire.sessions.length} agent sessions wrote it, kept by Entire: ${tokens(entire.sessions.reduce((a, s) => a + s.tokens.total, 0))} tokens`,
+                body: `Each stop says which session its lines come from and what that session was asked. Each line to read closely says what calls it, from Entire’s code graph of ${entire.graph.files} files, with no model in between.${entire.trail ? ` The open points are findings on the pull request’s trail on Entire: your rulings are written there.` : ''}`,
+              },
+            ]
+          : []),
       ]
     : [];
 
@@ -60,7 +70,7 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
   useEffect(() => start.current?.focus({ preventScroll: true }), []);
 
   const gate = [
-    'You are signed in with GitHub. A typed name is recorded and never approves.',
+    tour.via === 'invite' ? 'You came in with the judge link this repository’s team gave out, and you sign with your name. Without the link or a GitHub sign-in, a typed name is recorded and never approves.' : 'You are signed in with GitHub. A typed name is recorded and never approves.',
     `Every question is right, with at most ${rule.maxWrong} wrong tries.`,
     `You flagged the planted bug by read ${rule.maxReads} at the latest, with the reason.`,
     `You read under ${rule.fastLinesPerMinute} of the lines to read closely a minute, and opened every stop that has some.`,
@@ -171,7 +181,9 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
       </div>
       {!short && (
         <p className="mt-3 text-[13px] leading-[1.5] text-fg3">
-          {tour.me ? (
+          {tour.via === 'invite' ? (
+            'You are an invited judge: you came in with the team’s judge link. You have one review of this commit, and you type your name when you sign.'
+          ) : tour.me ? (
             <>
               Signed in as <span className="font-[510] text-fg2">@{tour.me.login}</span>. You have one review of this commit, from whatever browser.{' '}
               <a className="text-accent-hi underline-offset-2 hover:underline" href="/auth/out?to=/full">

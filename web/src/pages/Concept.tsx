@@ -16,6 +16,7 @@ const SECTIONS: SectionRef[] = [
   { id: 'trade-offs', label: 'Trade-offs' },
   { id: 'limits', label: 'Limits' },
   { id: 'scale', label: 'How it scales' },
+  { id: 'entire', label: 'What Entire holds' },
   { id: 'failures', label: 'Failure modes we saw' },
   { id: 'log', label: 'Decision log' },
 ];
@@ -110,8 +111,9 @@ export default function Concept() {
           <dl className="mt-4 divide-y divide-line border-y border-line">
             {[
               ['The AI', 'Wrote the code, made the evidence, the questions and the planted bug. It never approves and cannot set the status green.'],
-              ['The author', 'Gets the points that were sent back.'],
-              ['Who may sign', 'On this copy any GitHub account, and GitHub says whose it is: through its sign-in page, or through a gist only that account can make. A team gives the server its list of reviewers; an account that is not on it is recorded and never approves. A typed name never approves.'],
+              ['The author', 'Gets the points that were sent back, each with the reviewer’s reason.'],
+              ['A reviewer who misses the planted bug twice', 'Their review is recorded and does not approve; the change goes to another reviewer on the list. Nothing else follows from one failed review. Two misses in a row in the same area show on the numbers page, and that reviewer’s reviews there get a second reader until they catch one.'],
+              ['Who may sign', (n?.demo?.reviewers ? `On this copy the ${n.demo.reviewers === 1 ? 'one account' : `${n.demo.reviewers} accounts`} on the repository’s list of reviewers, and GitHub says whose account it is:` : 'On this copy any GitHub account, and GitHub says whose it is:') + ' through its sign-in page, or through a gist only that account can make. A team gives the server its list of reviewers; an account that is not on it is recorded and never approves. A typed name never approves. For the jury only, this copy also has a judge link: who opens it is one invited judge with one review, signs with their own name, and the record and the status say “invited judge”.' + (n?.demo?.minutes ? ` That approval is taken back after ${n.demo.minutes} minutes, so the next judge finds the commit blocked.` : '')],
             ].map(([who, what]) => (
               <div key={who} className="py-3 sm:grid sm:grid-cols-[168px_minmax(0,1fr)] sm:gap-x-6">
                 <dt className="text-[13.5px] font-[590] text-fg">{who}</dt>
@@ -130,7 +132,7 @@ export default function Concept() {
                 head: 'A question with a wrong answer key.',
                 body: (
                   <>
-                    The questions are written by a model. We have not seen one fail in our own reads, and we have no check for it beyond that. <span className="text-warn">This is open.</span>
+                    A second model answers every question twice: with the stop’s code and without it. Of <N v={n?.questionCheck?.checked} /> questions, <N v={n?.questionCheck?.wrongKey} /> had a key it did not reach with the code, and <N v={n?.questionCheck?.withoutCode} /> it got right without the code. Those are dropped; <N v={n?.questionCheck?.kept} /> are kept. A key both models get wrong the same way would pass. <span className="text-warn">That part is open.</span>
                   </>
                 ),
               },
@@ -145,7 +147,8 @@ export default function Concept() {
             items={[
               { head: 'Minutes for proof.', body: 'A review that counts takes real minutes, also for a reviewer who would have read carefully anyway.' },
               { head: 'During the review one line differs from the branch.', body: 'The real line is shown as soon as it is caught, and the approval covers the real code.' },
-              { head: 'Which lines need a person rests on the tests plus a model’s reading of risk.', body: 'A risky line the model did not mark, in code the tests cover well, is shown as context only. Every line stays visible and can be flagged.' },
+              { head: 'Which lines need a person rests on the tests plus a model’s reading of risk.', body: 'A risky line the model did not mark, in code the tests cover well, is shown as context only. Every changed line is in the review and can be flagged: what no stop explains is in the last stop, “The rest of the change”.' },
+              { head: 'The guide cannot help with the lines that matter most.', body: 'It is never given a line the reviewer signs for, so it cannot say what such a line does. It answers from the code around it, from what calls it and from what the agent was asked.' },
               { head: 'A new commit needs a new review of the whole change today.', body: 'Reviewing only the stops whose lines changed is the next step, not built.' },
             ]}
           />
@@ -168,8 +171,12 @@ export default function Concept() {
                 ),
               },
               {
-                head: 'A reviewer set on cheating can prepare answers in a second browser and compare what they are shown with the raw diff to find the planted line.',
-                body: 'They still need the minutes, a correct reason for the bug, and their verified name on a record that shows the pace. Skipping the read goes from one click with no trace to deliberate fraud with a trace.',
+                head: 'A reviewer set on cheating can compare what they are shown with the raw diff to find the planted line.',
+                body: (
+                  <>
+                    They still need the minutes, a reason that is true of that line only, and their verified name on a record that shows the pace. A second browser no longer helps: each reviewer is asked their own draw from <N v={n?.questionCheck?.kept} /> checked questions with the answers in their own order, and a signed review is planted from lines no unsigned visitor is ever shown. Skipping the read goes from one click with no trace to deliberate fraud with a trace.
+                  </>
+                ),
               },
               {
                 head: 'Reverts and incidents take months of real use to count.',
@@ -214,9 +221,13 @@ export default function Concept() {
           />
         </Section>
 
+        <Section id="entire" title="What Entire holds, and what it saves">
+          <EntireSection n={n} />
+        </Section>
+
         <Section id="failures" title="Failure modes we saw">
           <p className={`${PROSE} mt-4`}>These happened in this project.</p>
-          <Failures rule={rule} />
+          <Failures rule={rule} q={n?.questionCheck} />
         </Section>
 
         <Section id="log" title="Decision log">
@@ -326,6 +337,68 @@ function Hero({ n }: { n: Numbers | null }) {
   );
 }
 
+/* ---- Entire: sessions, graph, trail, brain ---- */
+
+const big = (x: number | undefined) => (x === undefined ? undefined : x.toLocaleString('en-US'));
+
+function EntireSection({ n }: { n: Numbers | null }) {
+  const h = n?.history;
+  const c = h?.callers;
+  const all = h?.sessions.reduce((a, s) => a + s.tokens, 0);
+  const kept = h?.sessions.filter((s) => s.steps).length;
+  return (
+    <>
+      <p className={`${PROSE} mt-4`}>A reviewer rules better knowing why the code exists and what it reaches. Both are facts about the history of the change, and Entire already holds them. Readback reads them from there instead of asking a model to guess.</p>
+      <Pairs
+        items={[
+          {
+            head: 'Sessions: why the code exists.',
+            body: (
+              <>
+                The <B v={h?.sessions.length} /> agent sessions that wrote this pull request are Entire checkpoints, each tied to the commit it wrote: <B v={big(all)} /> tokens in all. Every stop says which session its lines come from and what that session was asked, word for word. For <N v={kept} /> of them the whole session is kept; for the others only the prompt, the agent’s report and the token counts, and the page says so.
+              </>
+            ),
+          },
+          {
+            head: 'Graph: what a line reaches, without a model.',
+            body: (
+              <>
+                Under a line to read closely the page says what calls its function, for every function the change added or altered. It comes from Entire’s code graph of <N v={h?.graph.files} /> files, <N v={big(h?.graph.symbols)} /> symbols and <N v={big(h?.graph.relations)} /> relations, in about <N v={h?.graph.msPerQuery} /> ms a question and no tokens.
+              </>
+            ),
+          },
+          {
+            head: 'Measured: the same question asked of a model.',
+            body: c ? (
+              <>
+                We asked {c.model} “what calls this function?” for all <B v={c.functions} /> changed functions, with tools to read the repository: <B v={big(c.tokens)} /> tokens and <N v={c.seconds} /> seconds. In <B v={c.same} /> it named the callers the graph had. In <B v={c.modelFoundMore} /> the graph listed none and the model found some, in route handlers that have no name. So Readback takes the graph’s answer and asks a model only where the graph lists no caller: <B v={big(c.mixed.tokens)} /> tokens instead of <N v={big(c.tokens)} /> ({pct(c.tokens - c.mixed.tokens, c.tokens)} fewer){c.mixed.sameAsModel ? ', and the same callers as the model alone' : ''}. Those callers are marked as found by a model.
+              </>
+            ) : (
+              'Not measured on this copy.'
+            ),
+          },
+          {
+            head: 'Trails: one decision in both places.',
+            body: (
+              <>
+                The pull request is trail #<N v={h?.trail?.number} /> on Entire and its <N v={h?.trail?.findings} /> open points are findings there. A signature that counts resolves each accepted finding with the reviewer’s reason, answers each one sent back, and approves the trail or asks for changes. The trail’s gates then say what the commit status on GitHub says, by the same rule.
+              </>
+            ),
+          },
+          {
+            head: 'Brain: the next agent knows what a person ruled.',
+            body: (
+              <>
+                Each ruling that has a reason is written to Entire Brain as a decision of this repository, so an agent that works on it later can recall what a reviewer accepted or refused, and why, before it writes.{n?.demo?.minutes ? ' On this demo copy an invited judge’s rulings are taken out again when their approval lapses.' : ''}
+              </>
+            ),
+          },
+        ]}
+      />
+    </>
+  );
+}
+
 /* ---- principles: what Readback does, and what it costs ---- */
 
 function Principles({ tests }: { tests: number | undefined }) {
@@ -374,7 +447,7 @@ function Principles({ tests }: { tests: number | undefined }) {
 
 /* ---- failure modes: what happened, and what holds now ---- */
 
-function Failures({ rule }: { rule: Numbers['rule'] | undefined }) {
+function Failures({ rule, q }: { rule: Numbers['rule'] | undefined; q: Numbers['questionCheck'] }) {
   const rows: { was: string; more?: string; now: ReactNode }[] = [
     { was: 'The gate did not follow the record.', more: 'A reviewer with 25 wrong tries, 156 lines a minute and the typed name “Linus Torvalds” turned the pull request green.', now: 'Now one rule decides, and a typed name never approves.' },
     {
@@ -385,7 +458,24 @@ function Failures({ rule }: { rule: Numbers['rule'] | undefined }) {
         </>
       ),
     },
-    { was: 'The guide gave the planted line away.', more: 'It described what the changed line did.', now: 'Now the guide is given the code as the agent wrote it and never sees the changed line.' },
+    {
+      was: 'The guide gave the planted line away. Twice.',
+      more: 'First it described what the changed line did. Then, given the code as the agent wrote it, it described the real line, and a judge compared that with the screen.',
+      now: 'Now the guide is never given a line the reviewer signs for, in either form. It answers from the rest of the code, from what calls the function (Entire’s code graph) and from what the agent was asked (its sessions).',
+    },
+    { was: 'One template sentence passed the reason check on three flags.', now: 'Now a reason has to say something true of that line only, and the same sentence on two flags is refused.' },
+    { was: 'An unsigned browser could collect the planted lines with their explanations, and the questions were the same for everyone.', now: 'Now a signed review is planted from lines no unsigned visitor is shown, and each reviewer is asked their own draw of the questions.' },
+    {
+      was: 'Most of our first questions could be answered without the code.',
+      more: 'A second model was given the questions without the stop’s code.',
+      now: (
+        <>
+          It answered <N v={q?.first.withoutCode} /> of the first <N v={q?.first.checked} /> right. Those are gone; every question in the pool failed that test.
+        </>
+      ),
+    },
+    { was: 'A point no test checks could be accepted with one click.', now: 'Now accepting it needs the reviewer’s reason, and the reason goes on the record, to the author and onto the trail on Entire.' },
+    { was: 'A third of the changed lines were in no stop.', more: '282 of 935: the README, a stylesheet and most of the tests.', now: 'Now the last stop shows them. Nothing there has to be read closely, and all of it can be flagged.' },
     { was: 'Flagging the right line by luck or by comparing with the raw diff was enough.', now: 'Now the flag needs a reason, and the reason is checked.' },
     { was: 'Our first split sent whole stops to a person.', more: 'Every stop qualified, so nothing was saved.', now: 'Now it is decided per line.' },
     { was: 'The agent built things nobody asked for.', more: 'A counter table, nine database triggers and an in-memory store of CSV files. Nothing flagged it until the evidence step compared the code with the acceptance criteria.', now: 'It is now an open point a person rules on.' },
@@ -430,6 +520,8 @@ function Log() {
         'After outside judges broke the first gate, the status follows one rule, and reviewers can send a change back.',
         'A typed name cannot approve. GitHub sign-in only.',
         'Agents’ runs are counted and shown apart from people.',
+        'The history of the change comes from Entire: the agent’s sessions, the code graph and the trail. Our own model calls stay for what Entire cannot know.',
+        'After the second round of outside judges: the guide no longer sees any line a reviewer signs for, questions are drawn per reviewer from a checked pool, and a judge can sign under their own name.',
       ],
     },
   ];

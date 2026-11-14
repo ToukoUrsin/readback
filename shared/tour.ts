@@ -261,6 +261,12 @@ export interface Signature {
   outcome?: 'approved' | 'sent-back' | 'not-counted';
   /** the rule the commit status follows, check by check, as it stood at the signature */
   checks?: GateCheck[];
+  /** how the name was vouched for when it is not GitHub's sign-in page: a gist, or the team's judge link */
+  via?: 'gist' | 'invite';
+  /** the rulings on the open points as they stood at the signature, with the reviewer's reasons */
+  rulings?: Record<string, Ruling>;
+  /** the same signature carried to the trail of the pull request on Entire: findings resolved or answered, the trail approved or not */
+  entire?: { ok: boolean; note: string };
 }
 
 /** One line of the rule a signature has to meet before the commit status turns green. */
@@ -273,14 +279,14 @@ export interface GateCheck {
 /** The reviewer's ruling on one thing the AI did not decide. */
 export interface Ruling {
   decision: 'accept' | 'back';
-  /** required when sent back: what the author has to do */
+  /** required when sent back (what the author has to do) and when a point no test checks is accepted (why it is accepted without one) */
   note: string;
 }
 
 /** What has been decided about this commit so far, by reviews that counted. */
 export interface CommitState {
-  approvedBy?: { who: string; at: string };
-  sentBackBy?: { who: string; at: string; points: number };
+  approvedBy?: { who: string; at: string; rulings?: Record<string, Ruling> };
+  sentBackBy?: { who: string; at: string; points: number; rulings?: Record<string, Ruling> };
 }
 
 export interface ReaderState {
@@ -338,6 +344,12 @@ export interface PublicTour {
   me?: { login: string; name?: string };
   /** on the read that approves: who has approved or sent back this commit so far */
   commit?: CommitState;
+  /** what Entire holds about the change: the agent sessions behind its lines, what calls each changed function, its trail */
+  entire?: Entire;
+  /** how this reviewer's name is vouched for, when they are signed in */
+  via?: 'gist' | 'invite';
+  /** on a demo copy: minutes after which an invited judge's approval is taken back, so the next judge finds the commit blocked */
+  demoMinutes?: number;
 }
 
 /* ---------- Evidence: what the change can show for itself, made by gen/evidence.ts ---------- */
@@ -395,4 +407,53 @@ export interface RulingItem {
   found: string;
   /** the question the person answers, one sentence ending in a question mark */
   question: string;
+}
+
+/* ---------- Entire: what the history of the change shows, made by gen/entire.ts ---------- */
+
+/** One agent session behind a commit of the pull request, as Entire holds it (a checkpoint linked to the commit). */
+export interface EntireSession {
+  id: string;
+  agent: string;
+  model: string;
+  /** the commit this session wrote, and its first line */
+  commit: string;
+  subject: string;
+  checkpoint: string;
+  /** what the agent was asked: the first heading of its prompt, and the paragraph under it, word for word */
+  asked: string;
+  detail: string;
+  /** the last thing the agent said: its own report of what it did */
+  report: string;
+  /** false when only the prompt, the report and the token counts of the session were kept, not its steps */
+  transcript: boolean;
+  tokens: { total: number; input: number; cacheRead: number; cacheWrite: number; output: number; apiCalls?: number };
+}
+
+/** One function the pull request added or changed, and what calls it, from Entire's code graph (no model). */
+export interface Reach {
+  name: string;
+  file: string;
+  from: number;
+  to: number;
+  change: 'added' | 'changed';
+  /** code outside the tests that calls it, directly or through one other function (`via`) */
+  /** `by: 'model'`: the graph listed no caller for this function, so a model was asked and found this one (gen/efficiency.ts) */
+  callers: { name: string; file: string; line?: number; via?: string; by?: 'model' }[];
+  /** how many of its callers are test files */
+  testCallers: number;
+}
+
+export interface Entire {
+  schema: 1;
+  headSha: string;
+  at: string;
+  versions: { cli: string; graph: string };
+  sessions: EntireSession[];
+  /** which session wrote which lines (`entire blame`). `said`: what the agent wrote just before the edit that holds these lines */
+  lines: { file: string; from: number; to: number; session: string; said?: string }[];
+  reach: Reach[];
+  graph: { files: number; symbols: number; relations: number; functions: number; msPerQuery: number };
+  /** the pull request as a trail on Entire: its open points are findings there, by RulingItem id */
+  trail?: { number: number; url: string; repo: string; findings: Record<string, string> };
 }

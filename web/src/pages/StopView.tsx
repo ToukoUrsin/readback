@@ -1,6 +1,7 @@
-import type { AnswerState, CodeBlock, Flag, PublicStop, PublicTour, Ruling, RulingItem } from '../../../shared/tour';
+import type { AnswerState, CodeBlock, Entire, Flag, PublicStop, PublicTour, Ruling, RulingItem } from '../../../shared/tour';
 import { Code } from '../ui/Code';
 import { Diagram } from '../ui/Diagram';
+import { Origin } from '../ui/Entire';
 import { ArrowLeft, ArrowRight, Check, Eye, FlagFill, Warn } from '../ui/icons';
 import { inline } from '../ui/Prose';
 import { Quiz } from '../ui/Quiz';
@@ -17,6 +18,8 @@ interface Props {
   pulse: { file: string; from: number; to: number; key: number } | null;
   /** the change's evidence, when it has one */
   evidence?: PublicTour['evidence'];
+  /** what Entire holds about the change: sessions, callers, the trail */
+  entire?: Entire;
   /** number of the issue the acceptance criteria belong to */
   issue?: number;
   points: RulingItem[];
@@ -103,7 +106,7 @@ function Evidence({ stop, evidence, lines, issue }: { stop: PublicStop; evidence
   );
 }
 
-export function StopView({ stop, answers, flags, locked, canAsk, pulse, evidence, issue, points, rulings, lockSeconds, onAnswer, onFlag, onRule, onAsk, onReread, onPrev, onNext, last }: Props) {
+export function StopView({ stop, answers, flags, locked, canAsk, pulse, evidence, entire, issue, points, rulings, lockSeconds, onAnswer, onFlag, onRule, onAsk, onReread, onPrev, onNext, last }: Props) {
   const open = stop.questions.filter((q) => !answers[q.id]?.right).length;
   const code = stop.blocks.filter((b): b is CodeBlock => b.type === 'code');
   const files = [...new Set(code.map((b) => b.file))];
@@ -125,6 +128,7 @@ export function StopView({ stop, answers, flags, locked, canAsk, pulse, evidence
       <p className="mt-2 max-w-[68ch] text-[14.5px] leading-[1.55] text-fg2 sm:mt-3 sm:text-[15.5px] sm:leading-[1.6]">{inline(stop.why)}</p>
 
       {stop.evidence && evidence && <Evidence stop={stop} evidence={evidence} lines={lines} issue={issue} />}
+      {entire && <Origin en={entire} code={code} />}
 
       {marks.length > 0 && (
         <div className="-mx-4 mt-4 flex items-center gap-x-2 gap-y-1.5 overflow-x-auto px-4 text-[12.5px] [scrollbar-width:none] sm:mx-0 sm:mt-5 sm:flex-wrap sm:overflow-visible sm:px-0">
@@ -168,7 +172,7 @@ export function StopView({ stop, answers, flags, locked, canAsk, pulse, evidence
           ) : b.type === 'diagram' ? (
             <Diagram key={i} d={b} />
           ) : (
-            <Code key={i} block={b} flags={flags} pulse={pulse} locked={locked} canAsk={canAsk} onFlag={onFlag} onAsk={onAsk} unnoticed={unnoticed} tests={evidence?.tests.passed} points={points} rulings={rulings} onRule={onRule} />
+            <Code key={i} block={b} flags={flags} pulse={pulse} locked={locked} canAsk={canAsk} onFlag={onFlag} onAsk={onAsk} unnoticed={unnoticed} tests={evidence?.tests.passed} points={points} rulings={rulings} onRule={onRule} entire={entire} />
           ),
         )}
       </div>

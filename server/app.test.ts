@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
-import type { Tour } from '../shared/tour';
+import type { Evidence, Tour } from '../shared/tour';
 import { createApp, createShown, type Deps } from './app';
+import { digest } from './ask';
 import { createStore, type Store } from './store';
 
 const line = (n: number, text: string) => ({ n, kind: 'add' as const, tokens: [[text, '']] as [string, string][] });
@@ -126,6 +127,8 @@ test('a planted line the reader has been shown is never planted for them again; 
   // flagging the lines they were shown does not get a signature
   await call('/api/flag', { file: 'a.ts', line: 2, note: 'this line does the wrong thing' });
   await call('/api/flag', { file: 'a.ts', line: 3, note: 'this line does the wrong thing' });
+  expect((await call('/api/handin', {})).json.error).toContain('same reason'); // one sentence on two lines is not a reason
+  await call('/api/flag', { file: 'a.ts', line: 3, note: 'and this one shouts too' });
   const again = await call('/api/handin', {});
   expect(again.status).toBe(400);
   expect(again.json.error).toContain('Someone else');
@@ -239,7 +242,6 @@ test('goes marked as ours afterwards are left out, and the rows stay', async () 
 
 /* ---------- the rule the commit status follows ---------- */
 
-import type { Evidence } from '../shared/tour';
 import { gate, outcomeOf, statusFor } from './gate';
 
 const ok = { login: 'ada', test: false, prepared: false, questions: 12, wrong: 1, reads: 1, linesPerMinute: 10, fastAt: 15, skimmed: 0, rulings: { total: 2, open: 0, back: 0 } };
@@ -395,4 +397,80 @@ test('a stop the evidence carries asks nothing and never holds the planted line'
   await call('/api/answer', { id: 'q1', choice: 1 });
   await call('/api/flag', { file: 'a.ts', line: 2, note: 'the value is upper case now' });
   expect((await call('/api/handin', {})).ok).toBe(true); // q2 was never asked
+});
+
+test('a signed-in reviewer gets a planted line no unsigned visitor is shown; an invited judge signs with a typed name and it counts for a while', async () => {
+  let t = Date.now();
+  const three: Tour = { ...tour, plants: [...tour.plants, { id: 'p3', file: 'a.ts', line: 3, original: 'three', planted: 'THR33', what: 'w3', failedTests: ['t3'], tokens: [['THR33', '']], originalTokens: [['three', '']] }] };
+  const ev: Evidence = { ...evidence, rulings: [{ ...evidence.rulings[0]!, kind: 'untested' }] };
+  const app = createApp({ tour: three, evidence: ev, openPlants: ['p1', 'p2'], demoMinutes: 10, carryKey: 'k', now: () => t, lockSeconds: 0, store: createStore(null), order: (n) => Array.from({ length: n }, (_, i) => i), me: (c) => (c.req.header('x-login') ? { login: c.req.header('x-login')!, ...(c.req.header('x-login')!.startsWith('judge--') ? { via: 'invite' as const } : {}) } : null), signIn: true });
+  const as = (login?: string) => {
+    let cookie = '';
+    return async (path: string, body?: unknown) => {
+      const r = await app.request(path, { method: body === undefined ? 'GET' : 'POST', headers: { cookie, ...(login ? { 'x-login': login } : {}), 'user-agent': 'Mozilla/5.0', 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+      cookie = cookie || r.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+      return { status: r.status, json: (await r.json()) as any };
+    };
+  };
+  expect(text((await as()('/api/tour')).json)).toBe('one TWO three'); // a visitor: a line of the open pool
+  const j = as('judge--abc123');
+  const first = (await j('/api/tour')).json;
+  expect(text(first)).toBe('one two THR33'); // signed in: the line kept for signed reviews
+  expect(first.via).toBe('invite');
+  await j('/api/start', {});
+  await j('/api/seen', { stop: 's1' });
+  await j('/api/answer', { id: 'q1', choice: 1 });
+  expect((await j('/api/rule', { id: 'r1', decision: 'accept' })).status).toBe(400); // no test checks it: accepting needs a reason
+  await j('/api/rule', { id: 'r1', decision: 'accept', note: 'the token is long and random' });
+  await j('/api/flag', { file: 'a.ts', line: 3, note: 'the e became a 3' });
+  t += 60_000;
+  expect((await j('/api/handin', {})).json.ok).toBe(true);
+  expect((await j('/api/sign', {})).status).toBe(400); // an invited judge types a name
+  const sig = (await j('/api/sign', { name: 'Grace' })).json.signature;
+  expect([sig.outcome, sig.via, sig.name, sig.rulings.r1.note]).toEqual(['approved', 'invite', 'Grace', 'the token is long and random']);
+  expect(sig.checks[0]).toMatchObject({ id: 'who', ok: true });
+  const seen = (await as('carol')('/api/tour')).json.commit.approvedBy;
+  expect([seen.who, seen.rulings.r1.note]).toEqual(['Grace (invited judge)', 'the token is long and random']);
+  // the watcher reports back, with the key only
+  expect((await as()('/api/carried', { key: 'no', at: sig.at })).status).toBe(404);
+  const rid = (await j('/api/tour')).json.state.signature.at;
+  expect(rid).toBe(sig.at);
+  t += 11 * 60_000; // a demo copy: the judge's approval stops counting, the record stays
+  expect((await as('carol')('/api/tour')).json.commit.approvedBy).toBeUndefined();
+  expect((await j('/api/tour')).json.state.signature.outcome).toBe('approved');
+});
+
+test('the guide is never shown a line the reviewer signs for', () => {
+  const close = new Map([['s1', new Set(['a.ts:2', 'a.ts:3'])]]);
+  const pub = { pr: tour.pr, intro: 'i', stops: [{ ...tour.stops[0]!, questions: [], required: true, closely: 2 }] } as any;
+  const d = digest({ tour: pub, hidden: close, points: [] });
+  expect(d).toContain('one');
+  expect(d).not.toContain('two');
+  expect(d).not.toContain('three');
+  expect(d).toContain('[not shown to you; the reader is told to read it closely because: w]');
+});
+
+test('each reviewer is asked a draw of the checked questions, with the answers in their own order', async () => {
+  const q = (id: string) => ({ id, prompt: `p ${id}`, options: ['a', 'b', 'c', 'right'], answer: 3, explain: 'e', reread: { file: 'a.ts', from: 1, to: 1 } });
+  const pool = { s1: ['v1', 'v2', 'v3', 'v4', 'v5', 'v6'].map(q) };
+  const seen = new Set<string>();
+  const orders = new Set<string>();
+  for (let i = 0; i < 12; i++) {
+    const call = reader(undefined, false, { pool });
+    const st = (await call('/api/tour')).json.stops[0];
+    expect(st.questions.length).toBe(1); // as many as the tour asks at this stop
+    const mine = st.questions[0];
+    seen.add(mine.id);
+    orders.add(mine.options.join(''));
+    expect((await call('/api/tour')).json.stops[0].questions[0]).toEqual(mine); // the draw holds for the whole review
+    expect((await call('/api/answer', { id: mine.id === 'v1' ? 'v2' : 'v1', choice: 0 })).status).toBe(400); // a question of someone else's draw
+    const wrong = (mine.options.indexOf('right') + 1) % 4;
+    expect((await call('/api/answer', { id: mine.id, choice: wrong })).json.answer.misses).toBe(1);
+    expect((await call('/api/answer', { id: mine.id, choice: mine.options.indexOf('right') })).json.answer.right.explain).toBe('e');
+  }
+  expect(seen.size).toBeGreaterThan(1);
+  expect(orders.size).toBeGreaterThan(1);
+  // our own test browser gets the first questions as written, so a recording can be planned
+  const film = reader(undefined, true, { pool });
+  expect((await film('/api/tour')).json.stops[0].questions[0]).toEqual({ id: 'v1', prompt: 'p v1', options: ['a', 'b', 'c', 'right'] });
 });

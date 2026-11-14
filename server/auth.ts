@@ -9,6 +9,9 @@
  *   GET  /auth/code             -> a one-time code for this browser
  *   POST /auth/proof {url}      -> the reviewer put the code in a gist; GitHub says whose gist it is
  *
+ * A judge without a GitHub account comes in through a link the team gives out:
+ *   GET /auth/judge?k=<key>&to=/full -> a signed cookie for one invited judge (this browser), who types their name when signing
+ *
  * Nothing of GitHub's is kept: the token is used once to read the login and is then dropped.
  */
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -19,8 +22,8 @@ import { getCookie, setCookie } from 'hono/cookie';
 export interface Me {
   login: string;
   name?: string;
-  /** how GitHub vouched for the login: its sign-in page, or a gist only that account can make */
-  via?: 'gist';
+  /** how the login is vouched for: GitHub's sign-in page (absent), a gist only that account can make, or the team's judge link */
+  via?: 'gist' | 'invite';
 }
 
 export interface Auth {
@@ -31,7 +34,7 @@ export interface Auth {
 
 const COOKIE = 'rb_gh';
 
-export function createAuth(d: { clientId?: string; clientSecret?: string; secret: string; publicUrl: string }): Auth {
+export function createAuth(d: { clientId?: string; clientSecret?: string; secret: string; publicUrl: string; judgeKey?: string }): Auth {
   const mac = (v: string) => createHmac('sha256', d.secret).update(v).digest('base64url');
   const seal = (m: Me) => {
     const v = Buffer.from(JSON.stringify(m)).toString('base64url');
@@ -45,7 +48,9 @@ export function createAuth(d: { clientId?: string; clientSecret?: string; secret
     if (want.length !== got.length || !timingSafeEqual(want, got)) return null;
     try {
       const m = JSON.parse(Buffer.from(v, 'base64url').toString()) as Me;
-      return typeof m.login === 'string' && /^[A-Za-z0-9-]{1,39}$/.test(m.login) ? m : null;
+      if (typeof m.login !== 'string' || !/^[A-Za-z0-9-]{1,39}$/.test(m.login)) return null;
+      // an invited judge is not a GitHub account, and no GitHub login has two hyphens in a row
+      return (m.via === 'invite') === m.login.startsWith('judge--') ? m : null;
     } catch {
       return null;
     }
@@ -126,6 +131,14 @@ export function createAuth(d: { clientId?: string; clientSecret?: string; secret
     } catch (e) {
       return c.json({ error: `GitHub did not answer: ${(e as Error).message.slice(0, 120)}` }, 502);
     }
+  });
+  // the team's judge link: every browser that opens it is one invited judge, with one review of the commit
+  app.get('/auth/judge', (c) => {
+    const k = Buffer.from(c.req.query('k') ?? '');
+    const want = Buffer.from(d.judgeKey ?? '');
+    if (!want.length || k.length !== want.length || !timingSafeEqual(k, want)) return c.text('This judge link is not valid on this copy.', 404);
+    if (open(getCookie(c, COOKIE))?.via !== 'invite') setCookie(c, COOKIE, seal({ login: `judge--${randomBytes(3).toString('hex')}`, via: 'invite' }), { ...cookie, maxAge: 60 * 60 * 24 * 7 });
+    return c.redirect(safe(c.req.query('to')));
   });
   app.get('/auth/out', (c) => {
     setCookie(c, COOKIE, '', { ...cookie, maxAge: 0 });

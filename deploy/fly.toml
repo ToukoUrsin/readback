@@ -10,6 +10,10 @@ primary_region = "arn"
   RB_DATA = "/data"
   RB_GITHUB_WATCH = "1"
   RB_PUBLIC_URL = "https://readback-demo.fly.dev"
+  # only accounts on the repository's list can approve with a GitHub sign-in; judges come in with the judge link
+  RB_REVIEWERS = "ToukoUrsin"
+  # an invited judge's approval is taken back after this many minutes, so the next judge finds the commit blocked
+  RB_DEMO_MINUTES = "10"
 
 [mounts]
   source = "readback_data"

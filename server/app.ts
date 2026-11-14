@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { getCookie, setCookie } from 'hono/cookie';
-import type { Block, ColdResult, CommitState, Evidence, Flag, GateCheck, PublicTour, ReaderState, Reveal, Ruling, Signature, Tour, TourPlant } from '../shared/tour';
+import type { Block, ColdResult, CommitState, Entire, Evidence, Flag, GateCheck, PublicTour, Question, ReaderState, Reveal, Ruling, Signature, Stop, Tour, TourPlant } from '../shared/tour';
 import { ask, type AskDeps } from './ask';
 import type { Me } from './auth';
 import { closeLines } from './close';
@@ -63,6 +63,16 @@ export interface Deps {
   lockSeconds?: number;
   /** the clock, in milliseconds; tests move it */
   now?: () => number;
+  /** what Entire holds about the change (gen/entire.ts): shown beside the lines, and given to the guide */
+  entire?: Entire;
+  /** by stop id: questions checked by a second model (gen/questions.ts). Each reviewer is asked a draw of them, with the answers in their own order */
+  pool?: Record<string, Question[]>;
+  /** a demo copy: an invited judge's approval stops counting after this many minutes, so the next judge finds the commit blocked */
+  demoMinutes?: number;
+  /** with this key the watcher reports back what it carried to GitHub and to Entire (POST /api/carried) */
+  carryKey?: string;
+  /** ids of the planted lines that are also planted where nobody signs in (the short read). With it, a signed-in reviewer only ever gets the others */
+  openPlants?: string[];
 }
 
 export interface Shown {
@@ -110,8 +120,8 @@ interface Session extends ReaderState {
   prepared?: boolean;
   /** GitHub login of a signed-in reviewer: their one review of this commit, whatever browser they come from */
   login?: string;
-  /** set when the login was proven with a gist instead of GitHub's sign-in page */
-  via?: 'gist';
+  /** set when the login was proven with a gist instead of GitHub's sign-in page, or is an invited judge's */
+  via?: 'gist' | 'invite';
   /** seconds each stop has been open */
   dwell?: Record<string, number>;
   /** the stop that is open now */
@@ -122,6 +132,8 @@ interface Session extends ReaderState {
   noteChecked?: boolean | null;
   /** a hand-in is being checked */
   busy?: boolean;
+  /** by stop id: the questions this reviewer is asked, and the order their answers are shown in */
+  draw?: Record<string, { id: string; order: number[] }[]>;
 }
 
 const shuffle = (n: number) => {
@@ -148,7 +160,30 @@ export function createApp(d: Deps) {
   /** a stop with nothing to read closely is carried by its evidence: it asks nothing and holds no planted line */
   const required = (stopId: string) => (close.get(stopId)?.size ?? 0) > 0;
   const mustRead = tour.stops.filter((s) => required(s.id));
-  const questions = new Map(mustRead.flatMap((s) => s.questions.map((q) => [q.id, q] as const)));
+  /** the checked questions of a stop, when there are enough of them; else the ones the tour was written with */
+  const poolOf = (st: Stop) => (d.pool?.[st.id] && d.pool[st.id]!.length >= st.questions.length ? d.pool[st.id]! : st.questions);
+  const byId = new Map(mustRead.flatMap((s) => [...s.questions, ...poolOf(s)].map((q) => [q.id, q] as const)));
+  /** how many questions a review asks: the same number for every reviewer, not the same questions */
+  const asks = mustRead.reduce((a, s) => a + s.questions.length, 0);
+  /**
+   * The questions one reviewer is asked at a stop. Drawn once per review from the stop's pool, with the answers in an order of
+   * their own, so two reviewers cannot pass each other a list of letters. A review begun before the pool keeps its questions,
+   * and our own test browser gets the first ones as written, so a recording can be planned.
+   */
+  const drawOf = (s: Session, st: Stop): { q: Question; order: number[] }[] => {
+    if (!required(st.id)) return [];
+    s.draw ??= {};
+    let dr = s.draw[st.id];
+    if (!dr) {
+      const pool = poolOf(st);
+      const begun = st.questions.some((q) => s.answers[q.id]);
+      const plain = (q: Question) => ({ id: q.id, order: q.options.map((_, i) => i) });
+      dr = begun || pool === st.questions ? st.questions.map(plain) : s.test ? pool.slice(0, st.questions.length).map(plain) : shuffle(pool.length).slice(0, st.questions.length).map((i) => ({ id: pool[i]!.id, order: shuffle(pool[i]!.options.length) }));
+      s.draw[st.id] = dr;
+    }
+    return dr.map((x) => ({ q: byId.get(x.id)!, order: x.order }));
+  };
+  const drawn = (s: Session) => mustRead.flatMap((st) => drawOf(s, st));
   const allLines = tour.stops.reduce((a, s) => a + linesOf(s), 0);
   /** the lines a person has to read closely: pace is counted over these */
   const lines = mustRead.reduce((a, s) => a + close.get(s.id)!.size, 0);
@@ -186,16 +221,18 @@ export function createApp(d: Deps) {
     return { total: rulingItems.length, open: rulingItems.filter((x) => !r[x.id]).length, back: rulingItems.filter((x) => r[x.id]?.decision === 'back').length };
   };
   const checksOf = (s: Session): GateCheck[] =>
-    gate({ login: s.login, via: s.via, ...(d.reviewers && s.login ? { listed: d.reviewers.includes(s.login.toLowerCase()) } : {}), test: s.test && !!s.prepared, prepared: !!s.prepared, questions: questions.size, wrong: wrong(s), reads: s.read, linesPerMinute: speed(s.caughtSeconds ?? seconds(s)), fastAt, skimmed: s.prepared ? 0 : skimmed(s), rulings: ruled(s) });
-  const whoOf = (sig: Signature) => (sig.login ? `@${sig.login}` : `${sig.name} (test read)`);
+    gate({ login: s.login, via: s.via, ...(d.reviewers && s.login ? { listed: d.reviewers.includes(s.login.toLowerCase()) } : {}), test: s.test && !!s.prepared, prepared: !!s.prepared, questions: asks, wrong: wrong(s), reads: s.read, linesPerMinute: speed(s.caughtSeconds ?? seconds(s)), fastAt, skimmed: s.prepared ? 0 : skimmed(s), rulings: ruled(s) });
+  const whoOf = (sig: Signature) => (sig.via === 'invite' ? `${sig.name} (invited judge)` : sig.login ? `@${sig.login}` : `${sig.name} (test read)`);
+  /** on a demo copy an invited judge's signature decides for a while only: the record stays, the commit is blocked again for the next judge */
+  const lapsed = (g: Signature) => g.via === 'invite' && !!d.demoMinutes && clock() - Date.parse(g.at) > d.demoMinutes * 60_000;
   /** what the reviews that counted say about this commit */
   const commit = (): CommitState => {
     const out: CommitState = {};
     for (const s of sessions.values()) {
       const g = s.signature;
-      if (!g?.outcome || g.outcome === 'not-counted') continue;
-      if (g.outcome === 'approved' && (!out.approvedBy || g.at > out.approvedBy.at)) out.approvedBy = { who: whoOf(g), at: g.at };
-      if (g.outcome === 'sent-back' && (!out.sentBackBy || g.at > out.sentBackBy.at)) out.sentBackBy = { who: whoOf(g), at: g.at, points: Object.values(s.rulings ?? {}).filter((r) => r.decision === 'back').length };
+      if (!g?.outcome || g.outcome === 'not-counted' || lapsed(g)) continue;
+      if (g.outcome === 'approved' && (!out.approvedBy || g.at > out.approvedBy.at)) out.approvedBy = { who: whoOf(g), at: g.at, rulings: g.rulings ?? s.rulings ?? {} };
+      if (g.outcome === 'sent-back' && (!out.sentBackBy || g.at > out.sentBackBy.at)) out.sentBackBy = { who: whoOf(g), at: g.at, points: Object.values(s.rulings ?? {}).filter((r) => r.decision === 'back').length, rulings: g.rulings ?? s.rulings ?? {} };
     }
     return out;
   };
@@ -221,17 +258,24 @@ export function createApp(d: Deps) {
 
   const coldOpen = (s: Session) => !!tour.cold && !!s.coldPlant && !s.cold;
 
+  /**
+   * Two pools of planted lines on the read that approves. A browser nobody vouches for can hand in junk and be shown planted lines
+   * with their explanations; those lines are never the planted line of a signed-in reviewer, so a catalogue collected that way is worth nothing.
+   */
+  const signedPool = new Set(d.openPlants ? tour.plants.filter((p) => onTour(p.file, p.line) && !d.openPlants!.includes(p.id)).map((p) => p.id) : []);
+  const inPool = (s: Session, p: TourPlant) => !signedPool.size || signedPool.has(p.id) === !!s.login;
+
   /** the planted line of this read: the first in this reader's order they have not been shown. null once caught, or when none is left */
   const plantOf = (s: Session): TourPlant | null => {
     if (s.caught) return null;
     for (const i of s.order) {
       const p = tour.plants[i]!;
       // a planted line of the cold test that is not in a stop cannot be flagged in the read, so it is never the read's line
-      if (!seenBefore(s, p) && p.id !== s.coldPlant && onTour(p.file, p.line)) return p;
+      if (!seenBefore(s, p) && p.id !== s.coldPlant && onTour(p.file, p.line) && inPool(s, p)) return p;
     }
     return null;
   };
-  const exhausted = (s: Session) => !s.caught && tour.plants.some((p) => onTour(p.file, p.line)) && !plantOf(s);
+  const exhausted = (s: Session) => !s.caught && tour.plants.some((p) => onTour(p.file, p.line) && inPool(s, p)) && !plantOf(s);
 
   // in the cold test nothing was said about the line, so its reveal carries no `stated`
   const coldReveal = (p: TourPlant): Reveal => {
@@ -253,7 +297,7 @@ export function createApp(d: Deps) {
       pr: tour.pr,
       intro: tour.intro,
       // while the cold test is open the reader gets only its lines: two copies of the same code with different planted lines would give both away
-      stops: cold ? [] : tour.stops.map((st) => ({ id: st.id, title: st.title, why: st.why, blocks: withPlant(st.blocks, p), questions: required(st.id) ? st.questions.map((q) => ({ id: q.id, prompt: q.prompt, options: q.options })) : [], required: required(st.id), closely: close.get(st.id)!.size, ...(ev?.stops[st.id] ? { evidence: ev.stops[st.id] } : {}) })),
+      stops: cold ? [] : tour.stops.map((st) => ({ id: st.id, title: st.title, why: st.why, blocks: withPlant(st.blocks, p), questions: drawOf(s, st).map(({ q, order }) => ({ id: q.id, prompt: q.prompt, options: order.map((i) => q.options[i]!) })), required: required(st.id), closely: close.get(st.id)!.size, ...(ev?.stops[st.id] ? { evidence: ev.stops[st.id] } : {}) })),
       coverage: tour.coverage,
       madeBy: tour.madeBy,
       maxFlags: MAX_FLAGS,
@@ -271,6 +315,9 @@ export function createApp(d: Deps) {
       ...(d.signIn ? { signIn: true } : {}),
       ...(s.login ? { me: { login: s.login } } : {}),
       ...(!tour.short ? { commit: commit() } : {}),
+      ...(d.entire && d.entire.headSha === tour.pr.headSha ? { entire: d.entire } : {}),
+      ...(s.via ? { via: s.via } : {}),
+      ...(d.demoMinutes && !tour.short ? { demoMinutes: d.demoMinutes } : {}),
     };
   };
 
@@ -278,6 +325,18 @@ export function createApp(d: Deps) {
 
   // counts only: no names, no lines. Before the reader check, so asking for it starts no read.
   app.get('/api/stats', (c) => (d.store ? c.json(d.store.stats()) : c.json({ error: 'Nothing is kept on this server.' }, 404)));
+
+  /** The watcher says what it carried: the commit status on GitHub and the trail on Entire. Shown on the signature it belongs to. */
+  app.post('/api/carried', async (c) => {
+    const b = (await c.req.json().catch(() => ({}))) as { key?: string; rid?: string; at?: string; github?: { ok: boolean; note: string }; entire?: { ok: boolean; note: string } };
+    if (!d.carryKey || b.key !== d.carryKey) return c.json({ error: 'Not found.' }, 404);
+    const s = [...sessions.values()].find((x) => x.rid === b.rid && x.signature?.at === b.at);
+    if (!s?.signature) return c.json({ ok: false });
+    if (b.github) s.signature.github = { ok: !!b.github.ok, note: String(b.github.note).slice(0, 300) };
+    if (b.entire) s.signature.entire = { ok: !!b.entire.ok, note: String(b.entire.note).slice(0, 300) };
+    keep();
+    return c.json({ ok: true });
+  });
 
   app.use('/api/*', async (c, next) => {
     // our own reads carry the cookie; a client that names itself and is not a browser (curl, a health check) is not a person either
@@ -301,6 +360,8 @@ export function createApp(d: Deps) {
         if (s === open) sessions.delete(id!);
         s.login = me.login;
         if (me.via) s.via = me.via;
+        // a signed review has its own planted line: a flag set before the sign-in may sit on a line that is the agent's again
+        if (s === open && signedPool.size) s.flags = [];
         s.who = gid;
         sessions.set(gid, s);
         record(s, 'signin', { login: me.login, via: me.via ?? 'oauth', kept: s === open });
@@ -384,17 +445,17 @@ export function createApp(d: Deps) {
     let answered = 0;
     for (const st of tour.stops) {
       if (st.id === leave) continue;
-      for (const q of st.questions) {
+      for (const { q, order } of drawOf(s, st)) {
         const a = (s.answers[q.id] ??= { misses: 0 });
         if (!a.right) {
-          a.right = { choice: q.answer, explain: q.explain };
+          a.right = { choice: order.indexOf(q.answer), explain: q.explain };
           answered++;
         }
       }
     }
     // the open points of the stop that is left are ruled on in front of the camera
     s.rulings ??= {};
-    for (const r of rulingItems) if (r.stopId !== leave) s.rulings[r.id] ??= { decision: 'accept', note: '' };
+    for (const r of rulingItems) if (r.stopId !== leave) s.rulings[r.id] ??= { decision: 'accept', note: r.kind === 'untested' ? 'Ruled on before the recording.' : '' };
     s.prepared = true;
     record(s, 'prep', { answered, leave: leave ?? '' });
     return c.json(view(s));
@@ -414,14 +475,16 @@ export function createApp(d: Deps) {
   app.post('/api/answer', async (c) => {
     const s = c.get('s');
     const { id, choice } = (await c.req.json().catch(() => ({}))) as { id?: string; choice?: number };
-    const q = id ? questions.get(id) : undefined;
-    if (!q || typeof choice !== 'number' || !Number.isInteger(choice) || choice < 0 || choice >= q.options.length) return c.json({ error: 'No such question or answer.' }, 400);
+    const mine = drawn(s).find((x) => x.q.id === id);
+    const q = mine?.q;
+    if (!q || !mine || typeof choice !== 'number' || !Number.isInteger(choice) || choice < 0 || choice >= q.options.length) return c.json({ error: 'No such question or answer.' }, 400);
     const a = (s.answers[q.id] ??= { misses: 0 });
     if (a.right) return c.json({ answer: a });
     // a wrong try closes the question for a while: trying every answer is slower than reading the lines
     const wait = a.lockedUntil ? Math.ceil((Date.parse(a.lockedUntil) - Date.now()) / 1000) : 0;
     if (wait > 0) return c.json({ error: `This question opens again in ${wait} s. Read the lines again.`, answer: a, reread: q.reread }, 429);
-    if (choice === q.answer) {
+    // the reviewer's answers are in their own order: `choice` counts in that order
+    if (mine.order[choice] === q.answer) {
       a.right = { choice, explain: q.explain };
       delete a.lockedUntil;
     } else {
@@ -459,6 +522,8 @@ export function createApp(d: Deps) {
     if (b.decision !== 'accept' && b.decision !== 'back') return c.json({ error: 'Accept it, or send it back.' }, 400);
     const note = String(b.note ?? '').trim().slice(0, 400);
     if (b.decision === 'back' && note.length < MIN_NOTE) return c.json({ error: 'Say what the author has to change.' }, 400);
+    // nothing but this signature stands behind a line no test checks: the record has to say why that is enough
+    if (b.decision === 'accept' && item.kind === 'untested' && note.length < MIN_NOTE) return c.json({ error: 'No test checks this. Say why you accept it without one.' }, 400);
     s.rulings ??= {};
     s.rulings[item.id] = { decision: b.decision, note } satisfies Ruling;
     record(s, 'rule', { point: item.id, kind: item.kind, stop: item.stopId, decision: b.decision, note, read: s.read, seconds: seconds(s) });
@@ -470,7 +535,7 @@ export function createApp(d: Deps) {
     const s = c.get('s');
     if (s.caught) return c.json({ ok: true, tour: view(s) });
     if (coldOpen(s)) return c.json({ error: 'The read has not started.' }, 400);
-    const open = [...questions.keys()].filter((id) => !s.answers[id]?.right);
+    const open = drawn(s).filter((x) => !s.answers[x.q.id]?.right);
     if (open.length) return c.json({ error: `${open.length} ${open.length === 1 ? 'question is' : 'questions are'} not answered yet.` }, 400);
     const unruled = ruled(s).open;
     if (unruled) return c.json({ error: `${unruled} open ${unruled === 1 ? 'point is' : 'points are'} not ruled on yet.` }, 400);
@@ -478,6 +543,9 @@ export function createApp(d: Deps) {
     if (s.flags.length > MAX_FLAGS) return c.json({ error: `Flag at most ${MAX_FLAGS} lines. Remove the ones you are least sure of.` }, 400);
     const bare = s.flags.filter((f) => f.note.trim().length < MIN_NOTE).length;
     if (bare) return c.json({ error: `Say what goes wrong on each flagged line: ${bare} ${bare === 1 ? 'flag has' : 'flags have'} no reason.` }, 400);
+    // one sentence pasted on several lines is a net, not a reason
+    const said = s.flags.map((f) => f.note.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim());
+    if (new Set(said).size < said.length) return c.json({ error: 'Two flagged lines carry the same reason. Say what goes wrong on each line in its own words.' }, 400);
     const p = plantOf(s);
     if (!p) return c.json({ error: tour.plants.length ? 'Every planted line has been shown to you. Someone else has to read this commit.' : 'This tour has no planted line.' }, 400);
     if (s.busy) return c.json({ error: 'This hand-in is being checked.' }, 409);
@@ -515,7 +583,8 @@ export function createApp(d: Deps) {
     const s = c.get('s');
     // a signed-in reviewer signs with the name GitHub gives; a typed name is kept, and marked as not verified
     const typed = String(((await c.req.json().catch(() => ({}))) as { name?: string }).name ?? '').trim().slice(0, 80);
-    const name = s.login ?? typed;
+    // an invited judge has no GitHub name: they type their own, and the record says who invited them
+    const name = s.via === 'invite' ? typed : (s.login ?? typed);
     if (!s.caught) return c.json({ error: 'The read is not handed in.' }, 400);
     if (!name) return c.json({ error: 'A signature needs a name.' }, 400);
     if (s.signature) return c.json(state(s));
@@ -529,12 +598,14 @@ export function createApp(d: Deps) {
       headSha: tour.pr.headSha,
       seconds: secs,
       reads: s.read,
-      questions: questions.size,
+      questions: asks,
       misses: wrong(s),
       flagsForAuthor: s.flags.filter((f) => !(f.file === caught.file && f.line === caught.line)),
       ...(s.prepared ? {} : { lines, linesPerMinute: speed(secs), fast: isFast(speed(secs)) }),
       ...(s.login ? { login: s.login } : {}),
+      ...(s.via ? { via: s.via } : {}),
       ...(checks ? { checks, outcome: outcomeOf(checks, back) } : {}),
+      ...(rulingItems.length ? { rulings: { ...(s.rulings ?? {}) } } : {}),
     };
     const status = sig.outcome ? statusFor({ outcome: sig.outcome, who: whoOf(sig), questions: sig.questions, wrong: sig.misses, reads: sig.reads, linesPerMinute: sig.linesPerMinute, back }) : null;
     if (d.setStatus && status) {
@@ -546,7 +617,7 @@ export function createApp(d: Deps) {
       }
     }
     s.signature = sig;
-    record(s, 'sign', { name, ...(sig.login ? { login: sig.login } : {}), reads: sig.reads, wrongAnswers: sig.misses, seconds: sig.seconds, lines, linesPerMinute: sig.linesPerMinute, fast: sig.fast, ...(s.prepared ? { prepared: true } : {}), plant: `${caught.file}:${caught.line}`, noteChecked: s.noteChecked ?? null, flagsForAuthor: sig.flagsForAuthor, rulings: s.rulings ?? {}, ...(sig.outcome ? { outcome: sig.outcome, checks: sig.checks, ...(status ? { status } : {}) } : {}), ...(sig.github ? { github: sig.github } : {}) });
+    record(s, 'sign', { name, who: whoOf(sig), ...(sig.login ? { login: sig.login } : {}), ...(sig.via ? { via: sig.via } : {}), reads: sig.reads, wrongAnswers: sig.misses, seconds: sig.seconds, lines, linesPerMinute: sig.linesPerMinute, fast: sig.fast, ...(s.prepared ? { prepared: true } : {}), plant: `${caught.file}:${caught.line}`, noteChecked: s.noteChecked ?? null, flagsForAuthor: sig.flagsForAuthor, rulings: s.rulings ?? {}, ...(sig.outcome ? { outcome: sig.outcome, checks: sig.checks, ...(status ? { status } : {}) } : {}), ...(sig.github ? { github: sig.github } : {}) });
     d.onSign?.(sig);
     return c.json(state(s));
   });
@@ -579,7 +650,8 @@ export function createApp(d: Deps) {
   });
 
   // the guide is given the change as the agent wrote it: it cannot give away a line it has never seen
-  if (d.ask) ask(app, d.ask, (c) => view(c.get('s'), true), (c) => ++c.get('s').asked, (c, q, stopId) => record(c.get('s'), 'ask', { q, stop: stopId ?? '', read: c.get('s').read }));
+  // and never the lines the reviewer signs for: those it is not shown at all, in either form
+  if (d.ask) ask(app, d.ask, (c) => ({ tour: view(c.get('s'), true), hidden: close, points: rulingItems }), (c) => ++c.get('s').asked, (c, q, stopId) => record(c.get('s'), 'ask', { q, stop: stopId ?? '', read: c.get('s').read }));
 
   app.get('/healthz', (c) => c.text('ok'));
 

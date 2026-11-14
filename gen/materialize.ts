@@ -1,5 +1,7 @@
 /**
- * bun gen/materialize.ts --repo <dir> --plan <plan.json> [--out <tour.json>]
+ * bun gen/materialize.ts --repo <dir> --plan <plan.json> [--out <tour.json>] [--rest]
+ *
+ * --rest  adds a last stop with every changed line no stop of the plan shows, so the whole change is in the review
  *
  * Plan + the repository -> Tour. No model here: it reads files at the two commits, marks which lines the
  * pull request added, attaches removed lines, highlights everything, and counts how many changed lines the tour passes.
@@ -9,6 +11,7 @@ import { dirname, resolve } from 'node:path';
 import { createCssVariablesTheme, createHighlighter } from 'shiki';
 import type { Block, CodeBlock, Line, Plan, Token, Tour, TourPlant } from '../shared/tour';
 
+const REST = process.argv.includes('--rest');
 const args = Object.fromEntries(process.argv.slice(2).reduce<[string, string][]>((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1] ?? '']] : a), []));
 if (!args.repo || !args.plan) {
   console.error('usage: bun gen/materialize.ts --repo <dir> --plan <plan.json> [--out <tour.json>]');
@@ -150,13 +153,55 @@ const plants: TourPlant[] = plan.plants.map((p) => {
 
 const changedFiles = git(['diff', '--name-only', baseSha, headSha]).split('\n').filter(Boolean);
 const onTourLines = new Map<string, Set<number>>();
-for (const s of stops)
-  for (const b of s.blocks)
-    if (b.type === 'code') {
-      const set = onTourLines.get(b.file) ?? new Set<number>();
-      for (let n = b.from; n <= b.to; n++) set.add(n);
-      onTourLines.set(b.file, set);
+const count = () => {
+  onTourLines.clear();
+  for (const s of stops)
+    for (const b of s.blocks)
+      if (b.type === 'code') {
+        const set = onTourLines.get(b.file) ?? new Set<number>();
+        for (let n = b.from; n <= b.to; n++) set.add(n);
+        onTourLines.set(b.file, set);
+      }
+};
+count();
+
+/* ---------- the rest: changed lines no stop shows ---------- */
+
+if (REST) {
+  const blocks: CodeBlock[] = [];
+  const per: string[] = [];
+  let total = 0;
+  for (const f of changedFiles) {
+    if (show(headSha, f) === null) continue;
+    const seen = onTourLines.get(f);
+    const left = [...diffOf(f).added].filter((n) => !seen?.has(n)).sort((a, b) => a - b);
+    if (!left.length) continue;
+    total += left.length;
+    per.push(`${left.length} in \`${f}\``);
+    // runs of left-out lines, joined when at most 6 lines apart, with 2 lines around them
+    let from = left[0]!;
+    let to = left[0]!;
+    const cut = () => blocks.push(codeBlock({ file: f, from: from - 2, to: to + 2 }));
+    for (const n of left.slice(1)) {
+      if (n - to <= 6) to = n;
+      else {
+        cut();
+        from = to = n;
+      }
     }
+    cut();
+  }
+  if (blocks.length) {
+    stops.push({
+      id: 'rest',
+      title: 'The rest of the change',
+      why: `The ${total} changed lines no stop above shows: ${per.join(', ')}. Nothing here has to be read closely and no line here is planted for you. They are shown so that the whole change is in front of you, and any of them can be flagged.`,
+      blocks,
+      questions: [],
+    });
+    count();
+  }
+}
 const files = changedFiles
   .filter((f) => show(headSha, f) !== null)
   .map((f) => {

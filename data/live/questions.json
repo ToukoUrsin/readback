@@ -1,0 +1,1358 @@
+{
+ "schema": 1,
+ "headSha": "55559f75e42757817126fb003058b7ae404ac72b",
+ "at": "2026-11-14T19:47:41.889Z",
+ "madeBy": {
+  "writer": "claude-opus-5-5",
+  "checker": "claude-fable-5-2",
+  "costUsd": 12.9715
+ },
+ "stops": {
+  "schema-upgrade": [
+   {
+    "id": "schema-upgrade-v1",
+    "prompt": "`openDb` is called with the path `\":memory:\"`. Which of these steps still runs?",
+    "options": [
+     "Set `busy_timeout` to 5000",
+     "Set `synchronous` to NORMAL",
+     "Create the parent folder with `mkdirSync`",
+     "Set `journal_mode` to WAL"
+    ],
+    "answer": 0,
+    "explain": "src/db.ts:221 sets `busy_timeout` for every path. src/db.ts:218 and src/db.ts:222-225 skip the folder, WAL and `synchronous` steps when the path is `\":memory:\"`.",
+    "reread": {
+     "file": "src/db.ts",
+     "from": 216,
+     "to": 227
+    }
+   },
+   {
+    "id": "schema-upgrade-v2",
+    "prompt": "The code calls `openDb(\"a.db\")` and later calls `openDb(\"b.db\")`. What happens to the connection to `a.db`?",
+    "options": [
+     "It is reused, and `b.db` is not opened",
+     "It is closed before `b.db` is opened",
+     "`openDb` throws because a database is open",
+     "It stays open next to `b.db`"
+    ],
+    "answer": 1,
+    "explain": "src/db.ts:217 closes the stored `db` if there is one. Then src/db.ts:219 opens the new path and stores it in `db`.",
+    "reread": {
+     "file": "src/db.ts",
+     "from": 214,
+     "to": 219
+    }
+   },
+   {
+    "id": "schema-upgrade-v4",
+    "prompt": "A database is already open, and `dbGeneration` is 5. Code calls `resetSchema()` once. What is `dbGeneration` after the call?",
+    "options": [
+     "5",
+     "0",
+     "7",
+     "6"
+    ],
+    "answer": 3,
+    "explain": "`db` is already set, so `getDb` on src/db.ts:235 does not call `openDb`. `resetSchema` calls `applySchema` once on src/db.ts:241, and src/db.ts:197 adds 1 to the counter.",
+    "reread": {
+     "file": "src/db.ts",
+     "from": 230,
+     "to": 242
+    }
+   },
+   {
+    "id": "schema-upgrade-v8",
+    "prompt": "Which of these invoice columns is not part of the index `invoices_workspace_search`?",
+    "options": [
+     "`status`",
+     "`due_date`",
+     "`client_id`",
+     "`notes`"
+    ],
+    "answer": 3,
+    "explain": "src/db.ts:152 lists workspace_id, issue_date, id, number, client_id, status and due_date. `notes` is not in the list.",
+    "reread": {
+     "file": "src/db.ts",
+     "from": 149,
+     "to": 153
+    }
+   }
+  ],
+  "search-filter-sql": [
+   {
+    "id": "search-filter-sql-q2",
+    "prompt": "How does a list row get its `line_count`?",
+    "options": [
+     "From a COUNT subquery on line_items, run per invoice",
+     "From a counter column stored on the invoice",
+     "From JavaScript, after loading all line items",
+     "From a JOIN on line_items with GROUP BY"
+    ],
+    "answer": 0,
+    "explain": "Line 81 adds `(SELECT COUNT(*) FROM line_items li WHERE li.invoice_id = i.id) AS line_count` to the column list.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 79,
+     "to": 81
+    }
+   },
+   {
+    "id": "search-filter-sql-v1",
+    "prompt": "`s` is 99 letters `x`, then one space, then `yz` (102 characters in all). What does `parseSearch(s)` return?",
+    "options": [
+     "99 `x`, a space and `yz` (102 characters)",
+     "99 `x`, then one space (100 characters)",
+     "99 `x`, a space and `y` (101 characters)",
+     "99 `x` only (99 characters)"
+    ],
+    "answer": 1,
+    "explain": "src/lib/invoices.ts:27 collapses spaces and trims first, and only then cuts to `MAX_SEARCH` (100). The cut keeps the 99 `x` and the space, and nothing trims again after the cut.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 22,
+     "to": 28
+    }
+   },
+   {
+    "id": "search-filter-sql-v2",
+    "prompt": "`pageOf` is called with `total` = 0 and `pageNo` = 2. What does it return?",
+    "options": [
+     "`{ page: 2, pages: 1 }`",
+     "`{ page: 1, pages: 0 }`",
+     "`{ page: 1, pages: 1 }`",
+     "`{ page: 0, pages: 0 }`"
+    ],
+    "answer": 2,
+    "explain": "src/lib/invoices.ts:95 makes `pages` at least 1, even when there are no rows. src/lib/invoices.ts:96 then limits `page` to at most `pages`, so the result is 1.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 94,
+     "to": 97
+    }
+   },
+   {
+    "id": "search-filter-sql-v3",
+    "prompt": "`filterClause` is called with `workspaceId` = 7, `status` = `\"overdue\"`, `q` = `\"\"` and `now` = `\"2026-11-14\"`. Which `params` does it return?",
+    "options": [
+     "`[7, \"overdue\"]`",
+     "`[7, \"sent\", \"2026-11-14\"]`",
+     "`[7, \"overdue\", \"2026-11-14\"]`",
+     "`[7, \"2026-11-14\"]`"
+    ],
+    "answer": 3,
+    "explain": "src/lib/invoices.ts:64-65 writes `'sent'` straight into the SQL text and pushes only `now`. The `else if` at line 66 is skipped, and with an empty `q` the call at line 70 adds no params.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 62,
+     "to": 71
+    }
+   },
+   {
+    "id": "search-filter-sql-v4",
+    "prompt": "A row has `status` `\"sent\"` and `due_date` `\"2026-11-14\"`. `now` is also `\"2026-11-14\"`. What do `inStatus(r, \"overdue\", now)` and `inStatus(r, \"sent\", now)` return?",
+    "options": [
+     "`false` for overdue, `true` for sent",
+     "`false` for overdue, `false` for sent",
+     "`true` for overdue, `false` for sent",
+     "`true` for overdue, `true` for sent"
+    ],
+    "answer": 0,
+    "explain": "src/lib/invoices.ts:85 uses a strict `<`, so a due date equal to today is not overdue. src/lib/invoices.ts:86 then matches `\"sent\"` directly.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 83,
+     "to": 87
+    }
+   }
+  ],
+  "searched-list": [
+   {
+    "id": "searched-list-v1",
+    "prompt": "A search matches 4 invoices. All 4 have status `\"sent\"`, and 3 of them have a `due_date` before `now`. The user is on the Sent tab. What is `total`?",
+    "options": [
+     "3",
+     "7",
+     "4",
+     "1"
+    ],
+    "answer": 2,
+    "explain": "src/lib/invoices.ts:157-159 add one to `counts.sent` for every sent invoice, and also add to `counts.overdue` when it is past due. So `counts.sent` is 4, and src/lib/invoices.ts:162 sets `total` to `counts[\"sent\"]`.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 153,
+     "to": 162
+    }
+   },
+   {
+    "id": "searched-list-v2",
+    "prompt": "A matching invoice has status `\"sent\"` and its `due_date` is the same string as `now` (today). Which counts does this invoice add 1 to?",
+    "options": [
+     "`all` and `overdue` only",
+     "`sent` only",
+     "`all`, `sent` and `overdue`",
+     "`all` and `sent` only"
+    ],
+    "answer": 3,
+    "explain": "src/lib/invoices.ts:153 starts `all` at the length of `matches`, which includes this invoice. src/lib/invoices.ts:158 adds to `sent`, and src/lib/invoices.ts:159 adds to `overdue` only when `due_date < now`, which is false for an equal date.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 153,
+     "to": 161
+    }
+   },
+   {
+    "id": "searched-list-v3",
+    "prompt": "A matching invoice has status `\"cancelled\"`. Which counts include it?",
+    "options": [
+     "Only `all`",
+     "`all` and `paid`",
+     "No count at all",
+     "`all` and `draft`"
+    ],
+    "answer": 0,
+    "explain": "src/lib/invoices.ts:153 sets `all` to `matches.length`, so every match is in it. The checks at src/lib/invoices.ts:155-157 only match `\"draft\"`, `\"paid\"` and `\"sent\"`, so no other count goes up.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 153,
+     "to": 161
+    }
+   },
+   {
+    "id": "searched-list-v4",
+    "prompt": "`PAGE_SIZE` is 20 and `pageOf` returns `page` 2. Which items of `inTab` (counted from 0) give the ids for the page?",
+    "options": [
+     "Items 21 to 40",
+     "Items 20 to 39",
+     "Items 40 to 59",
+     "Items 0 to 19"
+    ],
+    "answer": 1,
+    "explain": "src/lib/invoices.ts:165 calls `inTab.slice((2 - 1) * 20, 2 * 20)`, which is `slice(20, 40)`. That takes items 20 to 39.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 162,
+     "to": 165
+    }
+   }
+  ],
+  "list-page": [
+   {
+    "id": "list-page-q1",
+    "prompt": "What does `listHref(\"draft\", \"acme\", 1)` return?",
+    "options": [
+     "/invoices?q=acme&status=draft",
+     "/invoices?q=acme&status=draft&page=1",
+     "/invoices?status=draft",
+     "/invoices?status=draft&q=acme"
+    ],
+    "answer": 0,
+    "explain": "Lines 48 to 50 set `q` first, then `status`, and add `page` only when it is greater than 1. Line 74 builds every tab link with page 1.",
+    "reread": {
+     "file": "src/routes/invoices.ts",
+     "from": 46,
+     "to": 57
+    }
+   },
+   {
+    "id": "list-page-q2",
+    "prompt": "The user is on the Overdue tab and submits the search form with new text. How does the next request know the status?",
+    "options": [
+     "The form action has `?status=overdue` in it",
+     "It does not, the list returns to the All tab",
+     "A hidden `status` input is part of the form",
+     "The status is read from the session"
+    ],
+    "answer": 2,
+    "explain": "Line 108 adds a hidden input named `status` when the current status is not `all`, so the form sends it together with `q`.",
+    "reread": {
+     "file": "src/routes/invoices.ts",
+     "from": 107,
+     "to": 113
+    }
+   },
+   {
+    "id": "list-page-v1",
+    "prompt": "The user is on the Overdue tab (`status` is `\"overdue\"`) and searches for `q = \"acme\"`. No invoices match. Where does the \"Clear search\" link in the empty table message point?",
+    "options": [
+     "/invoices?status=overdue&page=1",
+     "/invoices",
+     "/invoices?q=&status=overdue",
+     "/invoices?status=overdue"
+    ],
+    "answer": 3,
+    "explain": "src/routes/invoices.ts:79 builds the link with `listHref(status, \"\", 1)`. The empty `q` and page 1 are left out, but the status stays (src/routes/invoices.ts:48-50).",
+    "reread": {
+     "file": "src/routes/invoices.ts",
+     "from": 77,
+     "to": 80
+    }
+   },
+   {
+    "id": "list-page-v2",
+    "prompt": "A search is active: `status` is `\"paid\"` and `q` is `\"acme\"`. Which value does the page header show as the number before \"matching\"?",
+    "options": [
+     "`res.counts.all`",
+     "`res.total`",
+     "`res.rows.length`",
+     "`res.counts[status]`"
+    ],
+    "answer": 0,
+    "explain": "src/routes/invoices.ts:118 prints `res.counts.all` when `q` is set. It does not use the count for the current tab or the page rows.",
+    "reread": {
+     "file": "src/routes/invoices.ts",
+     "from": 115,
+     "to": 118
+    }
+   },
+   {
+    "id": "list-page-v3",
+    "prompt": "A search finds nothing, so `res.total` is `0` and `res.page` is `1`. What text does the pager show before the page buttons?",
+    "options": [
+     "1-1 of 0",
+     "0-0 of 0",
+     "0-1 of 0",
+     "1-0 of 0"
+    ],
+    "answer": 1,
+    "explain": "src/routes/invoices.ts:96 sets `from` to 0 when the total is 0, and src/routes/invoices.ts:97 takes the smaller of `page * PAGE_SIZE` and 0, which is 0.",
+    "reread": {
+     "file": "src/routes/invoices.ts",
+     "from": 96,
+     "to": 99
+    }
+   },
+   {
+    "id": "list-page-v4",
+    "prompt": "A row has `number` `\"INV-7\"` and `line_count` `0`. What does the small screen line under the client name show?",
+    "options": [
+     "INV-7 · 0 item",
+     "INV-7 · no items",
+     "INV-7 · 0 items",
+     "INV-7"
+    ],
+    "answer": 2,
+    "explain": "src/routes/invoices.ts:86 uses \"item\" only when `line_count === 1`. For 0 it prints the number and \"items\".",
+    "reread": {
+     "file": "src/routes/invoices.ts",
+     "from": 84,
+     "to": 91
+    }
+   }
+  ],
+  "notes": [
+   {
+    "id": "notes-q2",
+    "prompt": "A JSON body for a new invoice has `\"notes\": 42`. What is stored in the `notes` column?",
+    "options": [
+     "The text 42",
+     "An empty string",
+     "NULL",
+     "Nothing, validation rejects the request"
+    ],
+    "answer": 1,
+    "explain": "Line 229 returns an empty string for any value that is not a string. `createInvoice` then stores that string.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 227,
+     "to": 230
+    }
+   },
+   {
+    "id": "notes-v2",
+    "prompt": "A JSON body for a new invoice has no `notes` key. `createInvoice` is called with `status` \"draft\". What goes into the `notes` column?",
+    "options": [
+     "The column default, whatever it is",
+     "An empty string",
+     "The text \"null\"",
+     "NULL"
+    ],
+    "answer": 1,
+    "explain": "src/lib/invoices.ts:262 sets `notes` to `null` when the key is missing. Line 341 passes `input.notes ?? \"\"`, so an empty string is inserted.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 329,
+     "to": 342
+    }
+   },
+   {
+    "id": "notes-v4",
+    "prompt": "A JSON body has `items: [{ \"description\": \"Design\", \"quantity\": 2 }]` with no `unit_price`. What is `unit_price` of that item after `readInvoiceForm`?",
+    "options": [
+     "\"0\"",
+     "\"undefined\"",
+     "\"null\"",
+     "\"\""
+    ],
+    "answer": 3,
+    "explain": "src/lib/invoices.ts:241 takes the array branch, and line 245 does `String(it?.unit_price ?? \"\")`. The missing value becomes \"\", so the result is an empty string.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 241,
+     "to": 246
+    }
+   },
+   {
+    "id": "notes-v6",
+    "prompt": "A form body has `description` = `\"A\"` and also `description[]` = `[\"B\", \"C\"]`. It has no quantity or unit price fields. How many items does `readInvoiceForm` return?",
+    "options": [
+     "2",
+     "1",
+     "3",
+     "0"
+    ],
+    "answer": 1,
+    "explain": "src/lib/invoices.ts:248 uses `??`, so `body[\"description\"]` (\"A\") wins and `asList` makes it a list of one. Lines 249-251 give empty lists for the others, so `n` is 1.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 247,
+     "to": 255
+    }
+   },
+   {
+    "id": "notes-v7",
+    "prompt": "A user calls `GET /invoices/:id` with the id of an invoice that exists but belongs to another workspace. What does the API return?",
+    "options": [
+     "401 with no body",
+     "404 with `not_found`",
+     "403 with `forbidden`",
+     "200 with the invoice"
+    ],
+    "answer": 2,
+    "explain": "src/routes/api.ts:74-75 finds the invoice, so there is no 404. Line 76 then sees a different `workspace_id` and returns 403 with `forbidden`.",
+    "reread": {
+     "file": "src/routes/api.ts",
+     "from": 71,
+     "to": 77
+    }
+   }
+  ],
+  "share-token": [
+   {
+    "id": "share-token-q1",
+    "prompt": "An invoice already has a share link, and the owner posts to `/invoices/:id/share` again. Which token does the invoice have afterwards?",
+    "options": [
+     "A new token, and the old link stops working",
+     "The same token as before",
+     "Two tokens, and both links work",
+     "No token, the second call turns sharing off"
+    ],
+    "answer": 1,
+    "explain": "The update on line 375 has `AND share_token IS NULL`, so it changes nothing when a token exists. Line 376 then reads back the stored token.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 371,
+     "to": 377
+    }
+   },
+   {
+    "id": "share-token-q2",
+    "prompt": "A signed-in user from another workspace posts to `/invoices/:id/share/revoke`. What happens?",
+    "options": [
+     "A 404 page, as if the invoice did not exist",
+     "The link is revoked",
+     "A redirect to the invoice list",
+     "A 403 page, and the token is unchanged"
+    ],
+    "answer": 3,
+    "explain": "Lines 368 to 370 return a 403 page when the invoice belongs to another workspace. The route returns that error before it reaches `revokeShare`.",
+    "reread": {
+     "file": "src/routes/invoices.ts",
+     "from": 363,
+     "to": 372
+    }
+   },
+   {
+    "id": "share-token-v2",
+    "prompt": "The owner of invoice 7 posts to `/invoices/7/share/revoke` and the check in `ownInvoice` passes. Where does the response redirect to?",
+    "options": [
+     "`/invoices/7#share`",
+     "`/invoices?done=unshared`",
+     "`/invoices/7?done=unshared#share`",
+     "`/invoices/7?done=revoked#share`"
+    ],
+    "answer": 2,
+    "explain": "src/routes/invoices.ts:385 redirects to the invoice page with `done=unshared` and the `#share` anchor. src/routes/invoices.ts:43 has the matching `unshared` message.",
+    "reread": {
+     "file": "src/routes/invoices.ts",
+     "from": 381,
+     "to": 386
+    }
+   },
+   {
+    "id": "share-token-v5",
+    "prompt": "Some code calls `enableShare(999)` directly, and no invoice has `id` 999. What happens?",
+    "options": [
+     "It returns an empty string",
+     "It throws an error when it reads `share_token`",
+     "It inserts a new row with the token",
+     "It returns the new random token"
+    ],
+    "answer": 1,
+    "explain": "src/lib/invoices.ts:375 updates no row. src/lib/invoices.ts:376 then gets no row from the SELECT, and the `!` only affects the type check. So reading `.share_token` on the missing row throws.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 372,
+     "to": 377
+    }
+   },
+   {
+    "id": "share-token-v8",
+    "prompt": "A page has a button with `data-copy=\"#missing\"`, and no element on the page matches `#missing`. The user clicks the button. What happens?",
+    "options": [
+     "The script stops, and nothing is selected or copied",
+     "An empty string is copied and the label shows `Copied`",
+     "The whole page text is selected and copied",
+     "The script throws an error because `input` is null"
+    ],
+    "answer": 0,
+    "explain": "public/app.js:49 gets `null` from `querySelector`, and public/app.js:50 returns before `input.select()` or any copy runs.",
+    "reread": {
+     "file": "public/app.js",
+     "from": 46,
+     "to": 51
+    }
+   }
+  ],
+  "public-page": [
+   {
+    "id": "public-page-v1",
+    "prompt": "A line item has `quantity` 0.5 and `unit_price` 125. Which number does `invoicePaper` pass to `money` for the Amount cell of this row?",
+    "options": [
+     "62.5",
+     "125",
+     "63",
+     "62"
+    ],
+    "answer": 2,
+    "explain": "src/views/invoice.ts:13 computes `Math.round(li.quantity * li.unit_price)`. That is `Math.round(62.5)`, which gives 63 in JavaScript.",
+    "reread": {
+     "file": "src/views/invoice.ts",
+     "from": 9,
+     "to": 14
+    }
+   },
+   {
+    "id": "public-page-v2",
+    "prompt": "The workspace has `iban` set. The invoice has `number` \"INV-12\" and `reference` \"PO-77\". Which reference does the \"Pay to\" line show?",
+    "options": [
+     "PO-77 and INV-12",
+     "PO-77",
+     "No reference text",
+     "INV-12"
+    ],
+    "answer": 3,
+    "explain": "src/views/invoice.ts:49 writes `reference ${esc(invoice.number)}`. It uses the invoice number, not `invoice.reference`.",
+    "reread": {
+     "file": "src/views/invoice.ts",
+     "from": 48,
+     "to": 50
+    }
+   },
+   {
+    "id": "public-page-v3",
+    "prompt": "The workspace has `legal_name` set to an empty string and `name` set to \"Acme\". What text does the \"from\" block at the top of the document show?",
+    "options": [
+     "\"Acme\"",
+     "\"undefined\"",
+     "An empty block",
+     "The client name"
+    ],
+    "answer": 0,
+    "explain": "src/views/invoice.ts:21 uses `ws.legal_name || ws.name`. An empty string is falsy, so the code uses `name`, which is \"Acme\".",
+    "reread": {
+     "file": "src/views/invoice.ts",
+     "from": 18,
+     "to": 24
+    }
+   },
+   {
+    "id": "public-page-v4",
+    "prompt": "Someone opens `/share/abc`, and no invoice has the token \"abc\". Does the 404 response have the `X-Robots-Tag` header?",
+    "options": [
+     "No, the header is only set on success",
+     "Yes, with \"noindex, nofollow\"",
+     "No, `errorPage` removes all headers",
+     "Yes, with \"noindex\" only"
+    ],
+    "answer": 1,
+    "explain": "src/routes/share.ts:13 sets the header before the lookup on line 14. The 404 return on line 16 comes after that, so the header is already set.",
+    "reread": {
+     "file": "src/routes/share.ts",
+     "from": 11,
+     "to": 17
+    }
+   }
+  ],
+  "csv-export": [
+   {
+    "id": "csv-export-q1",
+    "prompt": "An invoice's notes are `-5, thanks`. Which text does `csvField` return?",
+    "options": [
+     "-5, thanks",
+     "'-5, thanks",
+     "\"-5, thanks\"",
+     "\"'-5, thanks\""
+    ],
+    "answer": 3,
+    "explain": "Line 11 puts an apostrophe in front because the text starts with `-`. Line 12 then wraps the result in double quotes because it holds a comma.",
+    "reread": {
+     "file": "src/lib/csv.ts",
+     "from": 7,
+     "to": 13
+    }
+   },
+   {
+    "id": "csv-export-v1",
+    "prompt": "A client name is the text ` =A1`: one space, then `=A1`. Which text does `csvField` return for it?",
+    "options": [
+     "`' =A1`",
+     "`'=A1`",
+     "`\"' =A1\"`",
+     "` =A1` (no change)"
+    ],
+    "answer": 3,
+    "explain": "src/lib/csv.ts:11 adds the apostrophe only when the first character is one of = + - @ tab CR. Here the first character is a space, so nothing is added. src/lib/csv.ts:12 finds no quote, comma or line break, so the text comes back unchanged.",
+    "reread": {
+     "file": "src/lib/csv.ts",
+     "from": 7,
+     "to": 13
+    }
+   },
+   {
+    "id": "csv-export-v2",
+    "prompt": "One invoice matches the filter but has no line items. What does `exportInvoices` return for it?",
+    "options": [
+     "A row with `total` 0 and `line_count` 0",
+     "No row, because the join finds no line items",
+     "A row with `total` 0 and `line_count` 1",
+     "A row with `total` and `line_count` set to null"
+    ],
+    "answer": 0,
+    "explain": "src/lib/invoices.ts:196 uses a LEFT JOIN, so the invoice is kept even when the subquery has no row for it. src/lib/invoices.ts:193 turns the missing values into 0 with COALESCE.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 191,
+     "to": 205
+    }
+   },
+   {
+    "id": "csv-export-v4",
+    "prompt": "Workspace 9 has no row in `workspace_versions`. A client is inserted in workspace 9. Then the name of that client is updated. What does `workspaceVersion(9)` return after this?",
+    "options": [
+     "1",
+     "3",
+     "2",
+     "0"
+    ],
+    "answer": 2,
+    "explain": "src/db.ts:169 inserts the row with version 1 on the first write. src/db.ts:170 adds 1 on the next write. The clients trigger at src/db.ts:177-178 raises the counter once per write, even for an update, so the result is 2.",
+    "reread": {
+     "file": "src/db.ts",
+     "from": 165,
+     "to": 179
+    }
+   }
+  ],
+  "tests": [
+   {
+    "id": "tests-q1",
+    "prompt": "What does the wildcard test expect when the search text is `NS_10`?",
+    "options": [
+     "No rows in the list",
+     "All 42 Nordlys invoices",
+     "Exactly one row",
+     "A 400 response"
+    ],
+    "answer": 0,
+    "explain": "Lines 114 to 117 run the search for `%`, `_` and `NS_10` and expect `rowCount` to be 0 each time, because `_` must match only itself.",
+    "reread": {
+     "file": "test/features.test.ts",
+     "from": 113,
+     "to": 118
+    }
+   },
+   {
+    "id": "tests-v1",
+    "prompt": "In the test \"needs the CSRF token and a session\", a new `Client` with no session posts to `/invoices/{id}/share`. What status does the test expect?",
+    "options": [
+     "401",
+     "404",
+     "302",
+     "403"
+    ],
+    "answer": 0,
+    "explain": "test/features.test.ts:243 expects 401 for `new Client()`. The 403 on test/features.test.ts:242 is for Alice's request with the bad `_csrf` value.",
+    "reread": {
+     "file": "test/features.test.ts",
+     "from": 241,
+     "to": 245
+    }
+   },
+   {
+    "id": "tests-v4",
+    "prompt": "In the schema upgrade test, the old row `X-1` was inserted before the new columns existed. After `openDb(path)`, what does the test expect for that row's `notes` and `share_token`?",
+    "options": [
+     "`notes` is `\"\"`, `share_token` is `\"\"`",
+     "`notes` is `null`, `share_token` is `\"\"`",
+     "`notes` is `null`, `share_token` is `null`",
+     "`notes` is `\"\"`, `share_token` is `null`"
+    ],
+    "answer": 3,
+    "explain": "test/features.test.ts:343 expects `{ notes: \"\", share_token: null }` for the old row.",
+    "reread": {
+     "file": "test/features.test.ts",
+     "from": 336,
+     "to": 343
+    }
+   },
+   {
+    "id": "tests-v5",
+    "prompt": "In the API notes test, the second `PUT` sends `notes: \"new\"`. How does the test then read the notes value it checks?",
+    "options": [
+     "It sends a GET to the same API URL and reads the JSON",
+     "It runs a SELECT with `getDb().query`",
+     "It calls `getInvoice(nordlys.invoice)` on the database",
+     "It reads the JSON body of the second `PUT` response"
+    ],
+    "answer": 0,
+    "explain": "test/features.test.ts:185 sends the PUT but does not keep the response. test/features.test.ts:186 calls `alice.api` again with no method and reads `.json()`, and test/features.test.ts:187 checks `got.notes`.",
+    "reread": {
+     "file": "test/features.test.ts",
+     "from": 183,
+     "to": 187
+    }
+   },
+   {
+    "id": "tests-v6",
+    "prompt": "No share link exists yet. `bob`, from another workspace, posts to `/invoices/{id}/share` for Alice's invoice. What does the test expect?",
+    "options": [
+     "Status 404, and no token is stored",
+     "Status 403, and no token is stored",
+     "Status 200, but no token is stored",
+     "Status 401, and no token is stored"
+    ],
+    "answer": 1,
+    "explain": "test/features.test.ts:248 expects status 403 for bob's request, and test/features.test.ts:249 expects `shareToken` to be `null`.",
+    "reread": {
+     "file": "test/features.test.ts",
+     "from": 247,
+     "to": 249
+    }
+   },
+   {
+    "id": "tests-v8",
+    "prompt": "In the schema upgrade test, what does the `finally` block run before it removes the temp folder?",
+    "options": [
+     "Nothing; it only calls `rmSync`",
+     "`openDb(path)` one more time",
+     "`db.close()` on the upgraded database",
+     "`openDb(\":memory:\")`"
+    ],
+    "answer": 3,
+    "explain": "test/features.test.ts:346 calls `openDb(\":memory:\")`, and only after that test/features.test.ts:347 calls `rmSync` on the folder.",
+    "reread": {
+     "file": "test/features.test.ts",
+     "from": 344,
+     "to": 348
+    }
+   }
+  ]
+ },
+ "checks": [
+  {
+   "id": "schema-upgrade-q1",
+   "stopId": "schema-upgrade",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "schema-upgrade-q2",
+   "stopId": "schema-upgrade",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "schema-upgrade-v1",
+   "stopId": "schema-upgrade",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "schema-upgrade-v2",
+   "stopId": "schema-upgrade",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "schema-upgrade-v3",
+   "stopId": "schema-upgrade",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": false,
+   "reason": "the reread range is longer than 15 lines"
+  },
+  {
+   "id": "schema-upgrade-v4",
+   "stopId": "schema-upgrade",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "schema-upgrade-v5",
+   "stopId": "schema-upgrade",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": false,
+   "reason": "the reread range is longer than 15 lines"
+  },
+  {
+   "id": "schema-upgrade-v6",
+   "stopId": "schema-upgrade",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": false,
+   "reason": "the reread range is longer than 15 lines"
+  },
+  {
+   "id": "schema-upgrade-v7",
+   "stopId": "schema-upgrade",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": false,
+   "reason": "the reread range is longer than 15 lines"
+  },
+  {
+   "id": "schema-upgrade-v8",
+   "stopId": "schema-upgrade",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "search-filter-sql-q1",
+   "stopId": "search-filter-sql",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "search-filter-sql-q2",
+   "stopId": "search-filter-sql",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "search-filter-sql-v1",
+   "stopId": "search-filter-sql",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "search-filter-sql-v2",
+   "stopId": "search-filter-sql",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "search-filter-sql-v3",
+   "stopId": "search-filter-sql",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "search-filter-sql-v4",
+   "stopId": "search-filter-sql",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "searched-list-q1",
+   "stopId": "searched-list",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "searched-list-q2",
+   "stopId": "searched-list",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "searched-list-v1",
+   "stopId": "searched-list",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "searched-list-v2",
+   "stopId": "searched-list",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "searched-list-v3",
+   "stopId": "searched-list",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "searched-list-v4",
+   "stopId": "searched-list",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "list-page-q1",
+   "stopId": "list-page",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "list-page-q2",
+   "stopId": "list-page",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "list-page-v1",
+   "stopId": "list-page",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "list-page-v2",
+   "stopId": "list-page",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "list-page-v3",
+   "stopId": "list-page",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "list-page-v4",
+   "stopId": "list-page",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "notes-q1",
+   "stopId": "notes",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "notes-q2",
+   "stopId": "notes",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "notes-v1",
+   "stopId": "notes",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "notes-v2",
+   "stopId": "notes",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "notes-v3",
+   "stopId": "notes",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": false,
+   "reason": "the reread range is not inside one code block of the stop"
+  },
+  {
+   "id": "notes-v4",
+   "stopId": "notes",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "notes-v5",
+   "stopId": "notes",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": false,
+   "reason": "the reread range is longer than 15 lines"
+  },
+  {
+   "id": "notes-v6",
+   "stopId": "notes",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "notes-v7",
+   "stopId": "notes",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "notes-v8",
+   "stopId": "notes",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "share-token-q1",
+   "stopId": "share-token",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "share-token-q2",
+   "stopId": "share-token",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "share-token-v1",
+   "stopId": "share-token",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "share-token-v2",
+   "stopId": "share-token",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "share-token-v3",
+   "stopId": "share-token",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": false,
+   "reason": "the reread range is longer than 15 lines"
+  },
+  {
+   "id": "share-token-v4",
+   "stopId": "share-token",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": false,
+   "reason": "the reread range is longer than 15 lines"
+  },
+  {
+   "id": "share-token-v5",
+   "stopId": "share-token",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "share-token-v6",
+   "stopId": "share-token",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "share-token-v7",
+   "stopId": "share-token",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "share-token-v8",
+   "stopId": "share-token",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "public-page-q1",
+   "stopId": "public-page",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "public-page-q2",
+   "stopId": "public-page",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "public-page-v1",
+   "stopId": "public-page",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "public-page-v2",
+   "stopId": "public-page",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "public-page-v3",
+   "stopId": "public-page",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "public-page-v4",
+   "stopId": "public-page",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "csv-export-q1",
+   "stopId": "csv-export",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "csv-export-q2",
+   "stopId": "csv-export",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "csv-export-v1",
+   "stopId": "csv-export",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "csv-export-v2",
+   "stopId": "csv-export",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "csv-export-v3",
+   "stopId": "csv-export",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "csv-export-v4",
+   "stopId": "csv-export",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "tests-q1",
+   "stopId": "tests",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "tests-q2",
+   "stopId": "tests",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "tests-v1",
+   "stopId": "tests",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "tests-v2",
+   "stopId": "tests",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "tests-v3",
+   "stopId": "tests",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "tests-v4",
+   "stopId": "tests",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "tests-v5",
+   "stopId": "tests",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "tests-v6",
+   "stopId": "tests",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "tests-v7",
+   "stopId": "tests",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "tests-v8",
+   "stopId": "tests",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  }
+ ],
+ "counts": {
+  "tour": 18,
+  "written": 52,
+  "kept": 43,
+  "wrongKey": 0,
+  "answerableWithoutCode": 19,
+  "tourKept": 8
+ }
+}

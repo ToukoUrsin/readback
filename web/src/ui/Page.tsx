@@ -104,6 +104,17 @@ export interface Numbers {
   madeBy: { plan: { model: string; plantModel?: string; costUsd: number }; evidence?: { model: string; costUsd: number } };
   stops: number;
   questions: number;
+  /** what Entire holds about the change (gen/entire.ts), and the same caller question asked of a model (gen/efficiency.ts) */
+  history?: {
+    sessions: { n: number; asked: string; commit: string; tokens: number; written: number; steps: boolean }[];
+    graph: { files: number; symbols: number; relations: number; functions: number; msPerQuery: number };
+    versions: { cli: string; graph: string };
+    trail?: { number: number; findings: number };
+    callers?: { functions: number; model: string; tokens: number; seconds: number; medianTokens: number; medianSeconds: number; same: number; modelFoundMore: number; graphFoundMore: number; mixed: { asked: number; tokens: number; sameAsModel: boolean } };
+  };
+  /** the questions, checked by a second model with the code and without it (gen/questions.ts) */
+  questionCheck?: { writer: string; checker: string; costUsd: number; checked: number; kept: number; wrongKey: number; withoutCode: number; first: { checked: number; withoutCode: number; kept: number }; perStop: number };
+  demo?: { judgeLink: boolean; minutes?: number; reviewers?: number };
 }
 
 /* ---- data ---- */
@@ -321,7 +332,7 @@ export function Bar({ part, whole, tone = 'bg-warn', className = '' }: { part: n
 
 export function RuleCard({ rule }: { rule: Rule | undefined }) {
   const holds: ReactNode[] = [
-    <>Signed in with GitHub. A typed name is recorded and never approves.</>,
+    <>Signed in with GitHub, or invited by the repository’s team with its judge link. Any other typed name is recorded and never approves.</>,
     <>
       Every question right, with at most <N v={rule?.maxWrong} /> wrong tries.
     </>,
@@ -329,7 +340,7 @@ export function RuleCard({ rule }: { rule: Rule | undefined }) {
       The planted bug flagged by read <N v={rule?.maxReads} /> at the latest, with a reason that says what the line does wrong.
     </>,
     <>
-      Under <N v={rule?.paceLimit} /> of the lines to read closely a minute, and no stop left unopened.
+      Under <N v={rule?.paceLimit} /> of the lines to read closely a minute over the whole review, and every stop that has such lines open for at least the time it takes to scroll it (4 lines a second, a minute at most).
     </>,
     <>Every open point ruled on, and none sent back.</>,
   ];

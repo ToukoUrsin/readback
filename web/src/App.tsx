@@ -232,7 +232,7 @@ export default function App() {
           </div>
         </header>
 
-        <div ref={main} className="min-h-0 flex-1 overflow-y-auto">
+        <div ref={main} data-main className="min-h-0 flex-1 overflow-y-auto">
           {stop ? (
             <StopView
               key={`${stop.id}:${state.read}`}
@@ -245,6 +245,7 @@ export default function App() {
               canAsk={tour.ask}
               pulse={pulse}
               evidence={tour.evidence}
+              entire={tour.entire}
               issue={tour.pr.issue?.number}
               points={points(stop.id)}
               rulings={state.rulings ?? NONE}

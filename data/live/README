@@ -1,5 +1,6 @@
 What the public copy serves. Copies, made by hand:
-  tour.json   <- data/kuitti-3-full/tour.json   (full read, PR head 55559f7, 11 planted lines)
+  tour.json   <- bun gen/materialize.ts --repo /bulk3/runs/readback/kuitti-live --plan data/kuitti-3-full/plan.json --out data/live/tour.json --rest
+                 (full read, PR head 55559f7, 11 planted lines; --rest adds the last stop with the 282 changed lines no other stop shows)
   short.json  <- data/kuitti-3-short/tour.json  (short read: 2 stops, with the cold test)
 The short read is made by:
   bun gen/short.ts --plan data/kuitti-3-full/plan.json --stops share-token,searched-list --cold "src/lib/invoices.ts:50-87" --cold-plants plant-invoices-61 --no-plants plant-invoices-147 --out data/kuitti-3-short/plan.json
@@ -21,3 +22,11 @@ What is in it and where it comes from:
              where a change went unnoticed by the tests
 Model answers, every test run, all tried changes (changes.json) and the step log (evidence.log.jsonl) are kept in
 /bulk3/runs/readback/evidence/kuitti-3-full-55559f7/ (no backups). --resume reuses them, so a rerun asks no model again.
+
+questions.json  <- bun gen/questions.ts (see its header): a pool of questions per stop, written by one model and checked by a
+                   second one twice, with the stop's code and without it. A question the checker gets right without the code
+                   is dropped. Each reviewer is asked a draw of the pool (server/app.ts drawOf).
+entire.json     <- bun gen/entire.ts --repo /bulk3/runs/readback/entire/kuitti --tour data/live/tour.json --out data/live --findings /bulk3/runs/readback/entire/findings.json
+                   the agent sessions behind the lines (entire blame, checkpoints), what calls each changed function (entire graph), the trail
+efficiency.json <- bun gen/efficiency.ts --entire data/live/entire.json --head <checkout of 55559f7> --out /bulk3/runs/readback/efficiency/out
+                   "what calls this function?" asked of Entire's graph and of claude-opus-5-5 with read tools, for all 37 changed functions

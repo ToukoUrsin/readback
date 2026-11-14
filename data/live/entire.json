@@ -1,0 +1,1809 @@
+{
+ "schema": 1,
+ "headSha": "55559f75e42757817126fb003058b7ae404ac72b",
+ "at": "2026-11-14T19:49:31.683Z",
+ "versions": {
+  "cli": "0.13.4",
+  "graph": "v0.6.0"
+ },
+ "sessions": [
+  {
+   "id": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "agent": "Claude Code",
+   "model": "claude-opus-5-5",
+   "commit": "8b1f563384e52b3fec9a501da741798b6d57398d",
+   "subject": "Invoice search, line counts, notes, share links and CSV export (#1)",
+   "checkpoint": "01M7DQEPQDRX14FYVZ0FK3QGZV",
+   "asked": "Issue #1: Invoice search, share link, notes and CSV export",
+   "detail": "As someone who sends a lot of invoices, I want to find invoices quickly, share one with a client without making them sign up, keep a note on an invoice, and take my list into a spreadsheet, so I spend less time hunting through pages and answering \"can you send that again?\" emails.",
+   "report": "I've implemented issue #1 and committed it on `agent/issue-1` as `8b1f563`. All 74 tests pass (the 53 existing ones plus 21 new) and the typecheck is clean. I haven't pushed or opened the PR. The description is below.\n\nAt first every test failed because the dependencies weren't installed. After `bun install --frozen-lockfile` the original suite passed before I changed anything.\n\n---\n\n## Invoice search, share links, notes and CSV export\n\nCloses #1.\n\n### What changed\n\n**1. Search** (`/invoices?q=…`)\n- A search box on the invoice list finds invoices by client name or invoice number. It matches anywhere in the text and ignores case.\n- It works together with the status tabs. The tabs, Previous/Next links and Export link all keep both the search and the filter.\n- The tab counts change to show how many results each status has.\n- `%` and `_` are searched for as ordinary characters, not wildcards. The search term is escaped in the HTML.\n- `GET /api/invoices` also accepts `q`.\n\n**2. Line item count**\n- The list has a new \"Items\" column. On phones it shows as \"· N items\" under the client name.\n- The API list also returns `line_items`.\n\n**3. Notes**\n- Invoices have a `notes` field (up to 2,000 characters), set in the new/edit form. Notes show on the invoice page and on the share page.\n- The form label says notes are visible to the client, because they appear on the share link.\n- If an API `PUT` leaves out `notes`, the stored notes stay as they are, so existing API clients don't wipe them.\n\n**4. Share links**\n- On the invoice page you can **Create share link** and then **Copy** or **Revoke link**.\n- `GET /share/<token>` works without signing in. It shows a read-only copy of the invoice: sender, client, line items, total and notes. The page has no CSRF token, no action buttons and no session data, and sends `X-Robots-Tag: noindex`.\n- Tokens are 32 random bytes (43 characters, base64url) with a unique index. Anything not in that format is rejected before the database is queried.\n- Revoked, unknown, malformed and deleted links all show the \"not found\" page (404).\n- Clicking create twice keeps the same link, so a double-click doesn't break a link you already sent. Revoking and then creating gives a new link.\n- Creating and revoking need a session and the CSRF token, and are blocked (403) for invoices in another workspace.\n\n**5. CSV export** (`/invoices/export.csv?q=…&status=…`)\n- Exports every invoice that matches the current search and filter, across all pages.\n- Columns: Number, Client, Status, Issue date, Due date, Paid date, Reference, Line items, Total (EUR), Notes.\n- Follows the standard CSV format (RFC 4180), with a UTF-8 marker so characters like ä open correctly in spreadsheets.\n- **Formula protection:** text starting with `= + - @`, a tab or a carriage return gets a leading `'`. This stops a client name like `=HYPERLINK(…)` from running as a formula when the file is opened.\n\n**6. Existing features still work**\n- `openDb` adds the new `notes` and `share_token` columns with `ALTER TABLE` when they're missing, so databases created earlier upgrade on start. Running it again does nothing.\n- The invoice document is moved into `src/views/invoice.ts` and shared by the invoice page and the share page. The output is the same as before, plus the notes section.\n\n### Tests\n- New `test/features.test.ts` covers search (combined with filters, paging, wildcards, escaping, other workspaces), line counts compared with the database, notes (form, escaping, API keep/replace), the share link lifecycle including CSRF and other-workspace checks, the CSV export (content, totals, formula protection, other workspaces, sign-in required) and the schema upgrade.\n- On an in-memory copy of the large seed (2,000 invoices in one workspace), a search page takes about 1 ms and a full export about 5 ms.\n\n### Worth reviewing\n- **Share tokens are stored in plain text**, so the link can be shown again later. If the database leaked, the active links would leak with it. Stori",
+   "transcript": true,
+   "tokens": {
+    "total": 2487719,
+    "input": 66,
+    "cacheRead": 2344460,
+    "cacheWrite": 101058,
+    "output": 42135,
+    "apiCalls": 33
+   }
+  },
+  {
+   "id": "14be01c8-4014-4d2d-89b1-d37c67c31ffd",
+   "agent": "Claude Code",
+   "model": "claude-opus-5-5",
+   "commit": "430b92a2629120481db167ccb72458ea9f1ba29e",
+   "subject": "Make the invoice CSV export fast under load",
+   "checkpoint": "01M7DQKBQNZV0WHCJKFRVKACKW",
+   "asked": "A new page is too slow: Invoice CSV export (GET /invoices/export.csv)",
+   "detail": "The slowest requests took 2339 ms with 200 people using it at once (allowed: 500 ms).",
+   "report": "The CSV export is fast enough now. With Alice's 2,000 invoices and 200 users at once, the slowest 5% of requests took about 145 ms on my machine, down from 2339 ms. The limit is 500 ms. I committed this on `agent/issue-1` as `430b92a`.\n\n**Why it was slow:** every download ran the full query again and rebuilt the whole CSV, which took about 16 ms each time. Bun handles one request at a time, so with 200 people waiting those 16 ms added up to seconds.\n\n**What I changed:**\n- **Saved files** (`src/routes/invoices.ts`): each finished export is kept in memory, one per workspace, filter, search and day. Later downloads get the saved copy as long as the workspace's data hasn't changed. At most 200 are kept, and the oldest is dropped first.\n- **Change counter** (`src/db.ts`): a new `workspace_versions` table keeps a number per workspace. Database triggers raise it on any insert, update or delete of that workspace's invoices, line items or clients. A saved file is only used if the number hasn't moved, so nobody gets an out-of-date CSV. Because the triggers are in the database, this also covers writes that don't go through the app. Opening a database or resetting its schema clears the saved files.\n- **Faster query** (`src/lib/invoices.ts`): totals and line counts now come from one grouped join instead of two lookups per invoice. On the big dataset it takes about 4 ms and returns exactly the same rows as the old query.\n\n**Checks:**\n- The repository's tests pass: 74 pass, 0 fail.\n- I seeded the large dataset and ran a quick load script of my own, not the one you supplied (that copy was cut off). Each load ran for 8 seconds with no errors:\n\n  | Users at once | Slowest 5% |\n  |---|---|\n  | 10 | 12 ms |\n  | 50 | 41 ms |\n  | 200 | 143 ms |\n\n- I renamed a client directly in the database file from a separate process. The trigger raised the counter, and the next export from the running app showed the new name.\n\nThe search, status filter, formula protection and file name all work as before. No test scripts were added to the repository.",
+   "transcript": false,
+   "tokens": {
+    "total": 272850,
+    "input": 24,
+    "cacheRead": 232988,
+    "cacheWrite": 30565,
+    "output": 9273
+   }
+  },
+  {
+   "id": "4c8ca09a-7af4-4a00-a023-faeec068d570",
+   "agent": "Claude Code",
+   "model": "claude-opus-5-5",
+   "commit": "55559f75e42757817126fb003058b7ae404ac72b",
+   "subject": "Make invoice search as fast as the plain invoice list",
+   "checkpoint": "01M7DQKEB211JPQAT90AMEJ467",
+   "asked": "A page got slower: Invoice search (GET /invoices?q=NS-15)",
+   "detail": "The slowest requests went from 59 ms to 130 ms with 50 people using it at once, 2.2 times slower.",
+   "report": "I fixed the slow invoice search and committed it on `agent/issue-1` as `55559f7`. Searching is now about as fast as the plain list was before search existed.\n\n**Cause:** with a search term, the page went through every invoice in the workspace twice: once for the tab counts and once for the page of results. Each time it also looked up the client and compared both the client name and the invoice number. For Nordlys Studio's 2,000 invoices that roughly doubled response times.\n\n**Fix** (`src/lib/invoices.ts`, `src/db.ts`):\n- The search term is matched against the workspace's client names first. There are only about 60 clients, so this is cheap.\n- One pass then finds every matching invoice (by number or by one of those clients), already in display order. A new index, `invoices_workspace_search`, holds every column this pass needs, so it never reads the invoices table itself. Existing databases get the index when the app starts.\n- The tab counts and the current page both come from that one result, and only the 25 invoices on the page are loaded in full.\n- The list without a search runs exactly the same queries as before.\n\n**Checks:**\n- **Same results:** I compared the new search with the old one across every workspace, status tab, several pages, and awkward terms (`%`, `_`, `\\`, different capitalisation). All 8,800 cases came out identical.\n- **Speed** (slowest 5% of requests for `/invoices?q=NS-15`, large seed data, my own load script since the one you pasted was cut off):\n\n  | People at once | Previous commit | This fix | Version before search existed |\n  |---|---|---|---|\n  | 10 | 26.6 ms | 14.1 ms | 13.3 ms |\n  | 50 | 101.6 ms | 55.2 ms | 64.8 ms |\n  | 200 | 364.2 ms | 172.5 ms | 164.0 ms |\n\n  There were no errors in any run.\n- **Tests:** `bun test` passes, 74 tests with no failures.\n\nThe type check (`tsc --noEmit`) reports one error at `src/routes/invoices.ts:184`, where the CSV export sends its cached bytes as the response body. It comes from the previous commit, not this fix. The tests pass, so it doesn't seem to break anything when the app runs, and I left it alone.\n\nNone of the test scripts were added to the repository.",
+   "transcript": false,
+   "tokens": {
+    "total": 516782,
+    "input": 32,
+    "cacheRead": 466164,
+    "cacheWrite": 40348,
+    "output": 10238
+   }
+  }
+ ],
+ "lines": [
+  {
+   "file": "src/db.ts",
+   "from": 51,
+   "to": 52,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "I'll use the Edit tool instead."
+  },
+  {
+   "file": "src/db.ts",
+   "from": 117,
+   "to": 118,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "I'll use the Edit tool instead."
+  },
+  {
+   "file": "src/db.ts",
+   "from": 142,
+   "to": 150,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "I'll use the Edit tool instead."
+  },
+  {
+   "file": "src/db.ts",
+   "from": 151,
+   "to": 152,
+   "session": "4c8ca09a-7af4-4a00-a023-faeec068d570"
+  },
+  {
+   "file": "src/db.ts",
+   "from": 153,
+   "to": 154,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3"
+  },
+  {
+   "file": "src/db.ts",
+   "from": 155,
+   "to": 188,
+   "session": "14be01c8-4014-4d2d-89b1-d37c67c31ffd"
+  },
+  {
+   "file": "src/db.ts",
+   "from": 189,
+   "to": 195,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "I'll use the Edit tool instead."
+  },
+  {
+   "file": "src/db.ts",
+   "from": 196,
+   "to": 211,
+   "session": "14be01c8-4014-4d2d-89b1-d37c67c31ffd"
+  },
+  {
+   "file": "src/db.ts",
+   "from": 212,
+   "to": 213,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3"
+  },
+  {
+   "file": "src/db.ts",
+   "from": 226,
+   "to": 226,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "I'll use the Edit tool instead."
+  },
+  {
+   "file": "src/db.ts",
+   "from": 237,
+   "to": 237,
+   "session": "14be01c8-4014-4d2d-89b1-d37c67c31ffd"
+  },
+  {
+   "file": "src/db.ts",
+   "from": 241,
+   "to": 241,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "I'll use the Edit tool instead."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 1,
+   "to": 10,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now create/update, and the share-token helpers."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 22,
+   "to": 29,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 39,
+   "to": 39,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 50,
+   "to": 54,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 55,
+   "to": 55,
+   "session": "4c8ca09a-7af4-4a00-a023-faeec068d570"
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 56,
+   "to": 62,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 64,
+   "to": 64,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 67,
+   "to": 67,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 70,
+   "to": 72,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 74,
+   "to": 87,
+   "session": "4c8ca09a-7af4-4a00-a023-faeec068d570"
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 89,
+   "to": 90,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 91,
+   "to": 100,
+   "session": "4c8ca09a-7af4-4a00-a023-faeec068d570"
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 101,
+   "to": 101,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now create/update, and the share-token helpers."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 102,
+   "to": 102,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 103,
+   "to": 103,
+   "session": "4c8ca09a-7af4-4a00-a023-faeec068d570"
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 105,
+   "to": 105,
+   "session": "4c8ca09a-7af4-4a00-a023-faeec068d570"
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 107,
+   "to": 111,
+   "session": "4c8ca09a-7af4-4a00-a023-faeec068d570"
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 113,
+   "to": 114,
+   "session": "4c8ca09a-7af4-4a00-a023-faeec068d570"
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 116,
+   "to": 116,
+   "session": "4c8ca09a-7af4-4a00-a023-faeec068d570"
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 118,
+   "to": 118,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 119,
+   "to": 119,
+   "session": "4c8ca09a-7af4-4a00-a023-faeec068d570"
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 127,
+   "to": 128,
+   "session": "4c8ca09a-7af4-4a00-a023-faeec068d570"
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 130,
+   "to": 176,
+   "session": "4c8ca09a-7af4-4a00-a023-faeec068d570"
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 180,
+   "to": 188,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 189,
+   "to": 189,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now create/update, and the share-token helpers."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 190,
+   "to": 192,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 193,
+   "to": 193,
+   "session": "14be01c8-4014-4d2d-89b1-d37c67c31ffd"
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 194,
+   "to": 195,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 196,
+   "to": 201,
+   "session": "14be01c8-4014-4d2d-89b1-d37c67c31ffd"
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 202,
+   "to": 204,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 205,
+   "to": 205,
+   "session": "14be01c8-4014-4d2d-89b1-d37c67c31ffd"
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 206,
+   "to": 207,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3"
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 213,
+   "to": 214,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 223,
+   "to": 223,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 227,
+   "to": 231,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 262,
+   "to": 262,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 296,
+   "to": 303,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 314,
+   "to": 314,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice library: search, line counts, export rows, notes, and share tokens."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 328,
+   "to": 330,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now create/update, and the share-token helpers."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 341,
+   "to": 341,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now create/update, and the share-token helpers."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 358,
+   "to": 358,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now create/update, and the share-token helpers."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 363,
+   "to": 387,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now create/update, and the share-token helpers."
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 1,
+   "to": 1,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice page: shared paper view plus a share-link card, and the share/revoke POST routes."
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 3,
+   "to": 3,
+   "session": "14be01c8-4014-4d2d-89b1-d37c67c31ffd"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 4,
+   "to": 4,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Imports, then the notes field in the form:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 8,
+   "to": 9,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Imports, then the notes field in the form:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 11,
+   "to": 14,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Imports, then the notes field in the form:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 17,
+   "to": 17,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Imports, then the notes field in the form:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 25,
+   "to": 25,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Imports, then the notes field in the form:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 42,
+   "to": 43,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice page: shared paper view plus a share-link card, and the share/revoke POST routes."
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 46,
+   "to": 55,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 59,
+   "to": 63,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 67,
+   "to": 67,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 69,
+   "to": 69,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 74,
+   "to": 74,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 77,
+   "to": 80,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 86,
+   "to": 86,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 89,
+   "to": 89,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 94,
+   "to": 94,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 96,
+   "to": 97,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 101,
+   "to": 101,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 103,
+   "to": 103,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 107,
+   "to": 114,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 118,
+   "to": 118,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 121,
+   "to": 121,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 125,
+   "to": 125,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 134,
+   "to": 154,
+   "session": "14be01c8-4014-4d2d-89b1-d37c67c31ffd"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 155,
+   "to": 169,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 170,
+   "to": 182,
+   "session": "14be01c8-4014-4d2d-89b1-d37c67c31ffd"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 183,
+   "to": 183,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 184,
+   "to": 184,
+   "session": "14be01c8-4014-4d2d-89b1-d37c67c31ffd"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 185,
+   "to": 189,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the routes. First the list page with search, line counts, and an export link:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 233,
+   "to": 233,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Imports, then the notes field in the form:"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 308,
+   "to": 308,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice page: shared paper view plus a share-link card, and the share/revoke POST routes."
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 310,
+   "to": 331,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice page: shared paper view plus a share-link card, and the share/revoke POST routes."
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 356,
+   "to": 379,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice page: shared paper view plus a share-link card, and the share/revoke POST routes."
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 381,
+   "to": 385,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now the invoice page: shared paper view plus a share-link card, and the share/revoke POST routes."
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 401,
+   "to": 401,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Imports, then the notes field in the form:"
+  },
+  {
+   "file": "src/routes/api.ts",
+   "from": 8,
+   "to": 8,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "API: search param, line count, and notes (an omitted `notes` on PUT leaves stored notes alone)."
+  },
+  {
+   "file": "src/routes/api.ts",
+   "from": 38,
+   "to": 43,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "API: search param, line count, and notes (an omitted `notes` on PUT leaves stored notes alone)."
+  },
+  {
+   "file": "src/routes/api.ts",
+   "from": 55,
+   "to": 55,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "API: search param, line count, and notes (an omitted `notes` on PUT leaves stored notes alone)."
+  },
+  {
+   "file": "src/routes/api.ts",
+   "from": 86,
+   "to": 86,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "API: search param, line count, and notes (an omitted `notes` on PUT leaves stored notes alone)."
+  },
+  {
+   "file": "public/app.js",
+   "from": 45,
+   "to": 62,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now CSS and the small copy-button enhancement."
+  },
+  {
+   "file": "src/views/invoice.ts",
+   "from": 1,
+   "to": 51,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Next, a CSV helper (with spreadsheet-formula neutralising) and a shared invoice \"paper\" view, so the owner page and the public page render the same document."
+  },
+  {
+   "file": "src/routes/share.ts",
+   "from": 1,
+   "to": 28,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Public share page:"
+  },
+  {
+   "file": "src/app.ts",
+   "from": 11,
+   "to": 11,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Public share page:"
+  },
+  {
+   "file": "src/app.ts",
+   "from": 59,
+   "to": 59,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Public share page:"
+  },
+  {
+   "file": "src/lib/csv.ts",
+   "from": 1,
+   "to": 1,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3"
+  },
+  {
+   "file": "src/lib/csv.ts",
+   "from": 2,
+   "to": 18,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Next, a CSV helper (with spreadsheet-formula neutralising) and a shared invoice \"paper\" view, so the owner page and the public page render the same document."
+  },
+  {
+   "file": "test/features.test.ts",
+   "from": 1,
+   "to": 83,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "All green. Now tests for the new behaviour, including isolation, CSRF, formula injection, and the schema migration for existing databases."
+  },
+  {
+   "file": "test/features.test.ts",
+   "from": 84,
+   "to": 86,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "One assertion builds the expected tab href with `encodeURIComponent`, but `URLSearchParams` encodes spaces as `+`. I'll make that check less brittle before running."
+  },
+  {
+   "file": "test/features.test.ts",
+   "from": 87,
+   "to": 99,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "All green. Now tests for the new behaviour, including isolation, CSRF, formula injection, and the schema migration for existing databases."
+  },
+  {
+   "file": "test/features.test.ts",
+   "from": 100,
+   "to": 112,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "I'll make that test definite by computing the expected page count from the data instead of guarding."
+  },
+  {
+   "file": "test/features.test.ts",
+   "from": 113,
+   "to": 350,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "All green. Now tests for the new behaviour, including isolation, CSRF, formula injection, and the schema migration for existing databases."
+  },
+  {
+   "file": "README.md",
+   "from": 3,
+   "to": 3,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3"
+  },
+  {
+   "file": "README.md",
+   "from": 36,
+   "to": 36,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3"
+  },
+  {
+   "file": "README.md",
+   "from": 46,
+   "to": 46,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Queries are fast on the large seed: about 5 ms for a full 2,000-row export and around 1 ms for searches. Now a short README update, then commit."
+  },
+  {
+   "file": "README.md",
+   "from": 48,
+   "to": 48,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Queries are fast on the large seed: about 5 ms for a full 2,000-row export and around 1 ms for searches. Now a short README update, then commit."
+  },
+  {
+   "file": "public/app.css",
+   "from": 246,
+   "to": 262,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "said": "Now CSS and the small copy-button enhancement."
+  }
+ ],
+ "reach": [
+  {
+   "name": "done",
+   "file": "public/app.js",
+   "from": 52,
+   "to": 55,
+   "change": "added",
+   "callers": [
+    {
+     "name": "(anonymous click handler for button[data-copy])",
+     "file": "public/app.js",
+     "line": 59,
+     "by": "model"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "createApp",
+   "file": "src/app.ts",
+   "from": 27,
+   "to": 87,
+   "change": "changed",
+   "callers": [
+    {
+     "name": "src/index.ts",
+     "file": "src/index.ts"
+    }
+   ],
+   "testCallers": 6
+  },
+  {
+   "name": "bump",
+   "file": "src/db.ts",
+   "from": 168,
+   "to": 170,
+   "change": "added",
+   "callers": [
+    {
+     "name": "(anonymous flatMap callback in VERSION_SCHEMA)",
+     "file": "src/db.ts",
+     "line": 174,
+     "by": "model"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "applySchema",
+   "file": "src/db.ts",
+   "from": 189,
+   "to": 198,
+   "change": "added",
+   "callers": [
+    {
+     "name": "openDb",
+     "file": "src/db.ts",
+     "line": 226
+    },
+    {
+     "name": "resetSchema",
+     "file": "src/db.ts",
+     "line": 241
+    },
+    {
+     "name": "scripts/seed.ts",
+     "file": "scripts/seed.ts",
+     "via": "openDb"
+    },
+    {
+     "name": "seed",
+     "file": "scripts/seed.ts",
+     "line": 126,
+     "via": "resetSchema"
+    },
+    {
+     "name": "getDb",
+     "file": "src/db.ts",
+     "line": 231,
+     "via": "openDb"
+    },
+    {
+     "name": "src/index.ts",
+     "file": "src/index.ts",
+     "via": "openDb"
+    }
+   ],
+   "testCallers": 2
+  },
+  {
+   "name": "databaseGeneration",
+   "file": "src/db.ts",
+   "from": 202,
+   "to": 204,
+   "change": "added",
+   "callers": [
+    {
+     "name": "exportCsv",
+     "file": "src/routes/invoices.ts",
+     "line": 146
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts",
+     "via": "exportCsv"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "workspaceVersion",
+   "file": "src/db.ts",
+   "from": 207,
+   "to": 212,
+   "change": "added",
+   "callers": [
+    {
+     "name": "exportCsv",
+     "file": "src/routes/invoices.ts",
+     "line": 147
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts",
+     "via": "exportCsv"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "openDb",
+   "file": "src/db.ts",
+   "from": 216,
+   "to": 228,
+   "change": "changed",
+   "callers": [
+    {
+     "name": "scripts/seed.ts",
+     "file": "scripts/seed.ts"
+    },
+    {
+     "name": "getDb",
+     "file": "src/db.ts",
+     "line": 231
+    },
+    {
+     "name": "src/index.ts",
+     "file": "src/index.ts"
+    },
+    {
+     "name": "seed",
+     "file": "scripts/seed.ts",
+     "line": 127,
+     "via": "getDb"
+    },
+    {
+     "name": "createApp",
+     "file": "src/app.ts",
+     "line": 42,
+     "via": "getDb"
+    },
+    {
+     "name": "createSession",
+     "file": "src/auth.ts",
+     "line": 60,
+     "via": "getDb"
+    },
+    {
+     "name": "destroySession",
+     "file": "src/auth.ts",
+     "line": 74,
+     "via": "getDb"
+    },
+    {
+     "name": "loadSession",
+     "file": "src/auth.ts",
+     "line": 91,
+     "via": "getDb"
+    },
+    {
+     "name": "workspaceVersion",
+     "file": "src/db.ts",
+     "line": 208,
+     "via": "getDb"
+    },
+    {
+     "name": "resetSchema",
+     "file": "src/db.ts",
+     "line": 235,
+     "via": "getDb"
+    },
+    {
+     "name": "getWorkspace",
+     "file": "src/db.ts",
+     "line": 248,
+     "via": "getDb"
+    },
+    {
+     "name": "getUser",
+     "file": "src/db.ts",
+     "line": 252,
+     "via": "getDb"
+    },
+    {
+     "name": "getUserByEmail",
+     "file": "src/db.ts",
+     "line": 256,
+     "via": "getDb"
+    },
+    {
+     "name": "getClient",
+     "file": "src/db.ts",
+     "line": 260,
+     "via": "getDb"
+    },
+    {
+     "name": "getInvoice",
+     "file": "src/db.ts",
+     "line": 264,
+     "via": "getDb"
+    },
+    {
+     "name": "lineItems",
+     "file": "src/db.ts",
+     "line": 268,
+     "via": "getDb"
+    },
+    {
+     "name": "invoiceTotal",
+     "file": "src/db.ts",
+     "line": 274,
+     "via": "getDb"
+    },
+    {
+     "name": "workspaceMembers",
+     "file": "src/db.ts",
+     "line": 283,
+     "via": "getDb"
+    },
+    {
+     "name": "workspaceClients",
+     "file": "src/db.ts",
+     "line": 291,
+     "via": "getDb"
+    },
+    {
+     "name": "replaceLineItems",
+     "file": "src/db.ts",
+     "line": 305,
+     "via": "getDb"
+    },
+    {
+     "name": "nextInvoiceSeq",
+     "file": "src/db.ts",
+     "line": 314,
+     "via": "getDb"
+    },
+    {
+     "name": "browseInvoices",
+     "file": "src/lib/invoices.ts",
+     "line": 101,
+     "via": "getDb"
+    },
+    {
+     "name": "searchInvoices",
+     "file": "src/lib/invoices.ts",
+     "line": 137,
+     "via": "getDb"
+    },
+    {
+     "name": "exportInvoices",
+     "file": "src/lib/invoices.ts",
+     "line": 189,
+     "via": "getDb"
+    },
+    {
+     "name": "createInvoice",
+     "file": "src/lib/invoices.ts",
+     "line": 324,
+     "via": "getDb"
+    },
+    {
+     "name": "updateInvoice",
+     "file": "src/lib/invoices.ts",
+     "line": 349,
+     "via": "getDb"
+    },
+    {
+     "name": "setNotes",
+     "file": "src/lib/invoices.ts",
+     "line": 364,
+     "via": "getDb"
+    },
+    {
+     "name": "enableShare",
+     "file": "src/lib/invoices.ts",
+     "line": 374,
+     "via": "getDb"
+    },
+    {
+     "name": "revokeShare",
+     "file": "src/lib/invoices.ts",
+     "line": 380,
+     "via": "getDb"
+    },
+    {
+     "name": "invoiceByShareToken",
+     "file": "src/lib/invoices.ts",
+     "line": 385,
+     "via": "getDb"
+    },
+    {
+     "name": "setStatus",
+     "file": "src/lib/invoices.ts",
+     "line": 389,
+     "via": "getDb"
+    },
+    {
+     "name": "deleteInvoice",
+     "file": "src/lib/invoices.ts",
+     "line": 395,
+     "via": "getDb"
+    },
+    {
+     "name": "src/routes/clients.ts",
+     "file": "src/routes/clients.ts",
+     "via": "getDb"
+    },
+    {
+     "name": "insertClient",
+     "file": "src/routes/clients.ts",
+     "line": 45,
+     "via": "getDb"
+    },
+    {
+     "name": "src/routes/dashboard.ts",
+     "file": "src/routes/dashboard.ts",
+     "via": "getDb"
+    },
+    {
+     "name": "src/routes/settings.ts",
+     "file": "src/routes/settings.ts",
+     "via": "getDb"
+    }
+   ],
+   "testCallers": 4
+  },
+  {
+   "name": "resetSchema",
+   "file": "src/db.ts",
+   "from": 234,
+   "to": 242,
+   "change": "changed",
+   "callers": [
+    {
+     "name": "seed",
+     "file": "scripts/seed.ts",
+     "line": 126
+    },
+    {
+     "name": "scripts/seed.ts",
+     "file": "scripts/seed.ts",
+     "via": "seed"
+    }
+   ],
+   "testCallers": 2
+  },
+  {
+   "name": "csvField",
+   "file": "src/lib/csv.ts",
+   "from": 7,
+   "to": 13,
+   "change": "added",
+   "callers": [
+    {
+     "name": "toCsv",
+     "file": "src/lib/csv.ts",
+     "line": 17,
+     "by": "model"
+    }
+   ],
+   "testCallers": 1
+  },
+  {
+   "name": "toCsv",
+   "file": "src/lib/csv.ts",
+   "from": 16,
+   "to": 18,
+   "change": "added",
+   "callers": [
+    {
+     "name": "exportCsv",
+     "file": "src/routes/invoices.ts",
+     "line": 155
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts",
+     "via": "exportCsv"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "parseSearch",
+   "file": "src/lib/invoices.ts",
+   "from": 26,
+   "to": 28,
+   "change": "added",
+   "callers": [
+    {
+     "name": "src/routes/api.ts",
+     "file": "src/routes/api.ts"
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "searchClause",
+   "file": "src/lib/invoices.ts",
+   "from": 53,
+   "to": 57,
+   "change": "added",
+   "callers": [
+    {
+     "name": "filterClause",
+     "file": "src/lib/invoices.ts",
+     "line": 70
+    },
+    {
+     "name": "browseInvoices",
+     "file": "src/lib/invoices.ts",
+     "line": 103,
+     "via": "filterClause"
+    },
+    {
+     "name": "exportInvoices",
+     "file": "src/lib/invoices.ts",
+     "line": 188,
+     "via": "filterClause"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "filterClause",
+   "file": "src/lib/invoices.ts",
+   "from": 60,
+   "to": 72,
+   "change": "added",
+   "callers": [
+    {
+     "name": "browseInvoices",
+     "file": "src/lib/invoices.ts",
+     "line": 103
+    },
+    {
+     "name": "exportInvoices",
+     "file": "src/lib/invoices.ts",
+     "line": 188
+    },
+    {
+     "name": "listInvoices",
+     "file": "src/lib/invoices.ts",
+     "line": 91,
+     "via": "browseInvoices"
+    },
+    {
+     "name": "exportCsv",
+     "file": "src/routes/invoices.ts",
+     "line": 154,
+     "via": "exportInvoices"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "likePattern",
+   "file": "src/lib/invoices.ts",
+   "from": 75,
+   "to": 77,
+   "change": "added",
+   "callers": [
+    {
+     "name": "searchClause",
+     "file": "src/lib/invoices.ts",
+     "line": 55
+    },
+    {
+     "name": "searchInvoices",
+     "file": "src/lib/invoices.ts",
+     "line": 139
+    },
+    {
+     "name": "filterClause",
+     "file": "src/lib/invoices.ts",
+     "line": 70,
+     "via": "searchClause"
+    },
+    {
+     "name": "listInvoices",
+     "file": "src/lib/invoices.ts",
+     "line": 91,
+     "via": "searchInvoices"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "inStatus",
+   "file": "src/lib/invoices.ts",
+   "from": 83,
+   "to": 87,
+   "change": "added",
+   "callers": [
+    {
+     "name": "searchInvoices",
+     "file": "src/lib/invoices.ts",
+     "line": 164
+    },
+    {
+     "name": "listInvoices",
+     "file": "src/lib/invoices.ts",
+     "line": 91,
+     "via": "searchInvoices"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "listInvoices",
+   "file": "src/lib/invoices.ts",
+   "from": 90,
+   "to": 92,
+   "change": "changed",
+   "callers": [
+    {
+     "name": "src/routes/api.ts",
+     "file": "src/routes/api.ts"
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "pageOf",
+   "file": "src/lib/invoices.ts",
+   "from": 94,
+   "to": 97,
+   "change": "added",
+   "callers": [
+    {
+     "name": "browseInvoices",
+     "file": "src/lib/invoices.ts",
+     "line": 116
+    },
+    {
+     "name": "searchInvoices",
+     "file": "src/lib/invoices.ts",
+     "line": 163
+    },
+    {
+     "name": "listInvoices",
+     "file": "src/lib/invoices.ts",
+     "line": 91,
+     "via": "browseInvoices"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "browseInvoices",
+   "file": "src/lib/invoices.ts",
+   "from": 100,
+   "to": 128,
+   "change": "added",
+   "callers": [
+    {
+     "name": "listInvoices",
+     "file": "src/lib/invoices.ts",
+     "line": 91
+    },
+    {
+     "name": "src/routes/api.ts",
+     "file": "src/routes/api.ts",
+     "via": "listInvoices"
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts",
+     "via": "listInvoices"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "searchInvoices",
+   "file": "src/lib/invoices.ts",
+   "from": 136,
+   "to": 178,
+   "change": "added",
+   "callers": [
+    {
+     "name": "listInvoices",
+     "file": "src/lib/invoices.ts",
+     "line": 91
+    },
+    {
+     "name": "src/routes/api.ts",
+     "file": "src/routes/api.ts",
+     "via": "listInvoices"
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts",
+     "via": "listInvoices"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "exportInvoices",
+   "file": "src/lib/invoices.ts",
+   "from": 187,
+   "to": 206,
+   "change": "added",
+   "callers": [
+    {
+     "name": "exportCsv",
+     "file": "src/routes/invoices.ts",
+     "line": 154
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts",
+     "via": "exportCsv"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "readNotes",
+   "file": "src/lib/invoices.ts",
+   "from": 228,
+   "to": 230,
+   "change": "added",
+   "callers": [
+    {
+     "name": "readInvoiceForm",
+     "file": "src/lib/invoices.ts",
+     "line": 262
+    },
+    {
+     "name": "src/routes/api.ts",
+     "file": "src/routes/api.ts",
+     "via": "readInvoiceForm"
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts",
+     "via": "readInvoiceForm"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "readInvoiceForm",
+   "file": "src/lib/invoices.ts",
+   "from": 239,
+   "to": 265,
+   "change": "changed",
+   "callers": [
+    {
+     "name": "src/routes/api.ts",
+     "file": "src/routes/api.ts"
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "validateInvoice",
+   "file": "src/lib/invoices.ts",
+   "from": 268,
+   "to": 305,
+   "change": "changed",
+   "callers": [
+    {
+     "name": "src/routes/api.ts",
+     "file": "src/routes/api.ts"
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "blankForm",
+   "file": "src/lib/invoices.ts",
+   "from": 307,
+   "to": 317,
+   "change": "changed",
+   "callers": [
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "createInvoice",
+   "file": "src/lib/invoices.ts",
+   "from": 319,
+   "to": 346,
+   "change": "changed",
+   "callers": [
+    {
+     "name": "src/routes/api.ts",
+     "file": "src/routes/api.ts"
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "updateInvoice",
+   "file": "src/lib/invoices.ts",
+   "from": 348,
+   "to": 361,
+   "change": "changed",
+   "callers": [
+    {
+     "name": "src/routes/api.ts",
+     "file": "src/routes/api.ts"
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "setNotes",
+   "file": "src/lib/invoices.ts",
+   "from": 363,
+   "to": 365,
+   "change": "added",
+   "callers": [
+    {
+     "name": "updateInvoice",
+     "file": "src/lib/invoices.ts",
+     "line": 358
+    },
+    {
+     "name": "src/routes/api.ts",
+     "file": "src/routes/api.ts",
+     "via": "updateInvoice"
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts",
+     "via": "updateInvoice"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "enableShare",
+   "file": "src/lib/invoices.ts",
+   "from": 372,
+   "to": 377,
+   "change": "added",
+   "callers": [
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "revokeShare",
+   "file": "src/lib/invoices.ts",
+   "from": 379,
+   "to": 381,
+   "change": "added",
+   "callers": [
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "invoiceByShareToken",
+   "file": "src/lib/invoices.ts",
+   "from": 383,
+   "to": 386,
+   "change": "added",
+   "callers": [
+    {
+     "name": "src/routes/share.ts",
+     "file": "src/routes/share.ts"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "listQuery",
+   "file": "src/routes/invoices.ts",
+   "from": 46,
+   "to": 52,
+   "change": "added",
+   "callers": [
+    {
+     "name": "listHref",
+     "file": "src/routes/invoices.ts",
+     "line": 55
+    },
+    {
+     "name": "exportHref",
+     "file": "src/routes/invoices.ts",
+     "line": 60
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "listHref",
+   "file": "src/routes/invoices.ts",
+   "from": 54,
+   "to": 57,
+   "change": "changed",
+   "callers": [
+    {
+     "name": "GET /invoices handler (STATUS_FILTERS.map callback)",
+     "file": "src/routes/invoices.ts",
+     "line": 74,
+     "by": "model"
+    },
+    {
+     "name": "GET /invoices handler",
+     "file": "src/routes/invoices.ts",
+     "line": 79,
+     "by": "model"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "exportHref",
+   "file": "src/routes/invoices.ts",
+   "from": 59,
+   "to": 62,
+   "change": "added",
+   "callers": [
+    {
+     "name": "invoiceRoutes.get(\"/invoices\") handler (anonymous arrow function)",
+     "file": "src/routes/invoices.ts",
+     "line": 112,
+     "by": "model"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "exportCsv",
+   "file": "src/routes/invoices.ts",
+   "from": 144,
+   "to": 175,
+   "change": "added",
+   "callers": [
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "invoiceFormView",
+   "file": "src/routes/invoices.ts",
+   "from": 190,
+   "to": 264,
+   "change": "changed",
+   "callers": [
+    {
+     "name": "(anonymous GET /invoices/new handler)",
+     "file": "src/routes/invoices.ts",
+     "line": 276,
+     "by": "model"
+    },
+    {
+     "name": "(anonymous POST /invoices handler)",
+     "file": "src/routes/invoices.ts",
+     "line": 287,
+     "by": "model"
+    },
+    {
+     "name": "(anonymous GET /invoices/:id/edit handler)",
+     "file": "src/routes/invoices.ts",
+     "line": 409,
+     "by": "model"
+    },
+    {
+     "name": "(anonymous POST /invoices/:id handler)",
+     "file": "src/routes/invoices.ts",
+     "line": 425,
+     "by": "model"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "ownInvoice",
+   "file": "src/routes/invoices.ts",
+   "from": 363,
+   "to": 372,
+   "change": "added",
+   "callers": [
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "invoicePaper",
+   "file": "src/views/invoice.ts",
+   "from": 5,
+   "to": 51,
+   "change": "added",
+   "callers": [
+    {
+     "name": "shareRoutes.get(\"/share/:token\") handler (anonymous arrow function)",
+     "file": "src/routes/share.ts",
+     "line": 25,
+     "by": "model"
+    },
+    {
+     "name": "invoiceRoutes.get(\"/invoices/:id\") handler (anonymous arrow function)",
+     "file": "src/routes/invoices.ts",
+     "line": 356,
+     "by": "model"
+    }
+   ],
+   "testCallers": 0
+  }
+ ],
+ "graph": {
+  "files": 30,
+  "symbols": 487,
+  "relations": 1279,
+  "functions": 37,
+  "msPerQuery": 169
+ },
+ "trail": {
+  "number": 1,
+  "url": "https://entire.com/et/readback-kuitti/-/trails/1",
+  "repo": "readback-kuitti/kuitti",
+  "findings": {
+   "export-cache-triggers": "01M7DQN62J0R12BY8RY9G1MKZD",
+   "search-index": "01M7DQN7878Z4PC9QR7D6X4FW7",
+   "notes-length-limit": "01M7DQN8F3VAGBRPT5V20CSCXN",
+   "share-link-lifetime": "01M7DQKZDP56ANP2WBMDPSKY7H",
+   "share-token-lookup": "01M7DQNAWXV94MSXQMG9MVMQ97",
+   "public-page-total": "01M7DQNC205XW431EXY0YTGFZC",
+   "export-key-workspace": "01M7DQND63CW90CD9KT0YAWQQ7"
+  }
+ }
+}

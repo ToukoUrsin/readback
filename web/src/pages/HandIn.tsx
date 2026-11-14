@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Flag, GateCheck, PublicTour, Reveal } from '../../../shared/tour';
 import { api } from '../api';
 import { hang, MIN_NOTE, POINT_KIND, Tokens } from '../ui/Code';
@@ -20,6 +20,12 @@ interface Props {
   reset: () => void;
   go: (stopId: string) => void;
 }
+
+/** the page scrolls inside the app frame, not the window */
+const toTop = () => {
+  document.querySelector('[data-main]')?.scrollTo({ top: 0 });
+  window.scrollTo(0, 0);
+};
 
 const fmtTime = (s: number) => (s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`);
 
@@ -60,7 +66,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
       const r = await api.handin();
       setTour(r.tour);
       setMissedNow(r.ok ? null : (r.tour.state.missed.at(-1) ?? null));
-      window.scrollTo(0, 0);
+      toTop();
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -72,12 +78,27 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
     setErr('');
     try {
       setTour({ ...tour, state: await api.sign(name) });
+      toTop();
     } catch (e) {
       setErr((e as Error).message);
     } finally {
       setBusy(false);
     }
   };
+
+  // a signature that counts is carried to GitHub and to Entire by the watcher a few seconds later: show what it did there
+  const sig = state.signature;
+  const waiting = !!sig && !short && !!tour.githubSoon && !!sig.outcome && sig.outcome !== 'not-counted' && (!sig.github || (!!tour.entire?.trail && !sig.entire));
+  useEffect(() => {
+    if (!waiting) return;
+    let left = 24;
+    const t = setInterval(() => {
+      if (--left < 0) return clearInterval(t);
+      api.tour().then(setTour, () => undefined);
+    }, 2500);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waiting]);
 
   /* ---- just missed ---- */
   if (missedNow)
@@ -89,7 +110,13 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
         {missedNow.noteFailed !== undefined ? (
           <>
             <Title text="Right line, wrong reason.">Right line, wrong reason.</Title>
-            <p className="mt-4 text-[15.5px] leading-[1.6] text-fg2">You flagged the line Readback changed, but your reason does not say what the line does wrong. A flag without the reason can be a guess, so the review does not count.</p>
+            <p className="mt-4 text-[15.5px] leading-[1.6] text-fg2">
+              You flagged the line Readback had changed for this read,{' '}
+              <span className="font-mono text-[13.5px]">
+                {missedNow.file.split('/').pop()}:{missedNow.line}
+              </span>
+              , but your reason does not say what the line does wrong. A flag without the reason can be a guess, so this read does not count.
+            </p>
             <p className="mt-3 mb-6 rounded-lg border border-line bg-panel px-3.5 py-2.5 text-[13.5px] leading-[1.5] text-fg2">
               <span className="text-fg4">Your reason: </span>
               {missedNow.noteFailed || 'none'}
@@ -98,7 +125,13 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
         ) : (
           <>
             <Title text={missedNow.headline ?? 'You read past a planted bug.'}>{missedNow.headline ?? 'You read past a planted bug.'}</Title>
-            <p className="mt-4 mb-6 text-[15.5px] leading-[1.6] text-fg2">Readback changed this line for your read only. It was not among the lines you flagged, so the read does not count and the change stays unapproved.</p>
+            <p className="mt-4 mb-6 text-[15.5px] leading-[1.6] text-fg2">
+              Before you opened this read, Readback changed one line of the code you were shown:{' '}
+              <span className="font-mono text-[13.5px]">
+                {missedNow.file.split('/').pop()}:{missedNow.line}
+              </span>
+              . The agent never wrote it that way. It was there the whole time you read, and it is not among the lines you flagged, so this read does not count and the change stays unapproved.
+            </p>
           </>
         )}
         <RevealCard r={missedNow} where={titleOf(missedNow.stopId)} />
@@ -113,7 +146,9 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
           </>
         ) : (
           <>
-            <p className="mt-6 text-[15px] leading-[1.6] text-fg2">A different line is changed now, and this one will not be used for you again. Your answers are kept.</p>
+            <p className="mt-6 text-[15px] leading-[1.6] text-fg2">
+              The line above is back to what the agent wrote and is never changed for you again. For your next read one other line is changed, somewhere in the lines to read closely. Your answers and rulings are kept.{!short && ` A review can approve up to read ${tour.rule.maxReads}; after that it is recorded and does not approve.`}
+            </p>
             <button
               className="btn btn-primary btn-lg mt-5"
               onClick={() => {
@@ -184,7 +219,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
         </Title>
         <p className="mt-3 text-[15px] text-fg3">
           {new Date(s.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} · commit <span className="font-mono text-[13px]">{sha}</span>
-          {s.login ? <> · signed in with GitHub as @{s.login}</> : tour.test ? ' · our own test browser' : ' · typed name, not verified'}
+          {s.via === 'invite' ? ' · invited judge, name typed' : s.login ? <> · signed in with GitHub as @{s.login}</> : tour.test ? ' · our own test browser' : ' · typed name, not verified'}
         </p>
         <div className="card mt-7 grid grid-cols-2 divide-x divide-y divide-line overflow-hidden sm:grid-cols-4 sm:divide-y-0">
           {(
@@ -217,18 +252,16 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
             </span>
           </p>
         )}
-        {sentBack.length > 0 && (
+        {points.some((p) => rulings[p.id]) && (
           <div className="card mt-5 px-4 py-3.5">
-            <p className="text-[13px] font-[590] text-fg">
-              {sentBack.length} {sentBack.length === 1 ? 'point' : 'points'} for the author
-            </p>
-            {sentBack.map((p) => (
+            <p className="text-[13px] font-[590] text-fg">{sentBack.length ? `${sentBack.length} ${sentBack.length === 1 ? 'point' : 'points'} for the author, ${accepted} accepted` : `What ${s.name} ruled on the open points`}</p>
+            {[...sentBack, ...points.filter((p) => rulings[p.id]?.decision === 'accept')].map((p) => (
               <p key={p.id} className="mt-2 text-[13px] leading-[1.5] text-fg3">
                 <span className="font-mono text-[12px] text-fg2">
-                  {p.file}:{p.from}
+                  {p.file.split('/').pop()}:{p.from}
                   {p.to > p.from ? `–${p.to}` : ''}
                 </span>{' '}
-                <span className="text-fg2">{rulings[p.id]!.note}</span>
+                <span className={`font-[590] ${rulings[p.id]!.decision === 'back' ? 'text-flag' : 'text-ok'}`}>{rulings[p.id]!.decision === 'back' ? 'Sent back.' : 'Accepted.'}</span> <span className="text-fg2">{rulings[p.id]!.note || 'No reason given.'}</span>
               </p>
             ))}
           </div>
@@ -253,6 +286,28 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
             ))}
           </div>
         )}
+        {!short && o && o !== 'not-counted' && tour.githubSoon && (
+          <div className="card mt-5 divide-y divide-line">
+            <p className="px-4 py-2 text-[11.5px] font-[510] text-fg4">Where this signature went</p>
+            {(
+              [
+                ['GitHub', s.github, `Writing the commit status readback/read for ${sha}`],
+                ...(tour.entire?.trail ? [['Entire', s.entire, `Writing your rulings to trail #${tour.entire.trail.number}, ${o === 'approved' ? 'and approving it' : 'and asking for changes'}`] as const] : []),
+              ] as [string, { ok: boolean; note: string } | undefined, string][]
+            ).map(([k, v, wait]) => (
+              <div key={k} className="flex items-start gap-3 px-4 py-2.5 text-[13px] leading-[1.45]">
+                {v ? v.ok ? <Check size={14} className="mt-[3px] flex-none text-ok" /> : <X size={13} className="mt-[3px] flex-none text-bad" /> : <span className="mt-[5px] size-[10px] flex-none animate-pulse rounded-full bg-fg4" />}
+                <span className="w-[52px] flex-none font-[590] text-fg">{k}</span>
+                <span className={`min-w-0 [overflow-wrap:anywhere] ${v ? 'text-fg2' : 'text-fg4'}`}>{v ? v.note : `${wait}…`}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {!short && s.via === 'invite' && o === 'approved' && tour.demoMinutes ? (
+          <p className="mt-3 text-[13px] leading-[1.6] text-fg3">
+            This is a demo copy: {tour.demoMinutes} minutes after an invited judge approves, the status and the trail go back to blocked, so the next judge finds the commit unapproved. The record keeps your review.
+          </p>
+        ) : null}
         <p className="mt-6 text-[13px] leading-[1.6] text-fg3">
           {short ? (
             <>
@@ -352,8 +407,8 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
           <label className="text-[13px] font-[590] text-fg" htmlFor="name">
             Sign the review
           </label>
-          <p className="mt-0.5 text-[13px] text-fg3">{short ? 'Your name goes on this short review. It does not approve the change.' : 'Your name goes on this commit, with the record of how you reviewed it.'}</p>
-          {tour.me ? (
+          <p className="mt-0.5 text-[13px] text-fg3">{short ? 'Your name goes on this short review. It does not approve the change.' : tour.via === 'invite' ? 'You came in with the judge link. Type your name: it goes on this commit, on GitHub and on the Entire trail, with the record of how you reviewed it.' : 'Your name goes on this commit, with the record of how you reviewed it.'}</p>
+          {tour.me && tour.via !== 'invite' ? (
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <button className="btn btn-primary btn-lg" disabled={busy}>
                 {will === 'approved' ? `Sign as @${tour.me.login} and approve` : will === 'sent-back' ? `Sign as @${tour.me.login} and send back` : `Sign as @${tour.me.login}`}
@@ -361,7 +416,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
             </div>
           ) : (
             <>
-              {!short && tour.signIn && (
+              {!short && tour.signIn && needsWho && (
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   <a className="btn btn-primary btn-lg" href={`/auth/github?to=${encodeURIComponent('/full#/handin')}`}>
                     Sign in with GitHub to sign
@@ -370,8 +425,8 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
                 </div>
               )}
               <div className="mt-3 flex flex-wrap gap-2">
-                <input id="name" autoFocus={!tour.signIn || !!short} value={name} onChange={(e) => setName(e.target.value)} placeholder={!short && tour.signIn ? 'Or type a name: recorded, does not approve' : 'Your name'} maxLength={80} className="h-[38px] min-w-0 flex-1 rounded-lg border border-line-strong bg-raised px-3 text-[14px] placeholder:text-fg4 focus:border-accent" />
-                <button className={`btn btn-lg ${!short && tour.signIn ? '' : 'btn-primary'}`} disabled={!name.trim() || busy}>
+                <input id="name" autoFocus={!tour.signIn || !!short || !needsWho} value={name} onChange={(e) => setName(e.target.value)} placeholder={!short && tour.signIn && needsWho ? 'Or type a name: recorded, does not approve' : 'Your name'} maxLength={80} className="h-[38px] min-w-0 flex-1 rounded-lg border border-line-strong bg-raised px-3 text-[14px] placeholder:text-fg4 focus:border-accent" />
+                <button className={`btn btn-lg ${!short && tour.signIn && needsWho ? '' : 'btn-primary'}`} disabled={!name.trim() || busy}>
                   {short ? 'Sign' : will === 'approved' ? 'Sign and approve' : will === 'sent-back' ? 'Sign and send back' : 'Sign, without approving'}
                 </button>
               </div>

@@ -1,5 +1,6 @@
 import { type CSSProperties, memo, useState } from 'react';
-import type { CodeBlock, Flag, Ruling, RulingItem, StopEvidence, Token } from '../../../shared/tour';
+import type { CodeBlock, Entire, Flag, Ruling, RulingItem, StopEvidence, Token } from '../../../shared/tour';
+import { Reached, Why } from './Entire';
 import { Chat, Check, Eye, Flag as FlagIcon, FlagFill, Warn, X } from './icons';
 import { inline } from './Prose';
 
@@ -77,18 +78,24 @@ interface Props {
   points?: RulingItem[];
   rulings?: Record<string, Ruling>;
   onRule?: (id: string, decision: Ruling['decision'], note: string) => Promise<string | null>;
+  /** the sessions behind the lines and what calls each changed function */
+  entire?: Entire;
 }
 
 /** a bar under a line, in the reading font */
 const under = 'flex font-sans';
 
-function Point({ p, ruling, locked, onRule }: { p: RulingItem; ruling?: Ruling; locked: boolean; onRule?: Props['onRule'] }) {
-  const [back, setBack] = useState(false);
-  const [note, setNote] = useState(ruling?.decision === 'back' ? ruling.note : '');
+function Point({ p, ruling, locked, onRule, entire }: { p: RulingItem; ruling?: Ruling; locked: boolean; onRule?: Props['onRule']; entire?: Entire }) {
+  // 'accept' asks for a reason too: a point no test checks is accepted in the reviewer's own words or not at all
+  const [mode, setMode] = useState<Ruling['decision'] | null>(null);
+  const back = mode !== null;
+  const setBack = (_: false) => setMode(null);
+  const needsWhy = p.kind === 'untested';
+  const [note, setNote] = useState(ruling?.note ?? '');
   const [edit, setEdit] = useState(false);
   const [err, setErr] = useState('');
   const send = async (decision: Ruling['decision']) => {
-    const e = await onRule?.(p.id, decision, decision === 'back' ? note : '');
+    const e = await onRule?.(p.id, decision, note);
     setErr(e ?? '');
     if (!e) {
       setBack(false);
@@ -114,12 +121,19 @@ function Point({ p, ruling, locked, onRule }: { p: RulingItem; ruling?: Ruling; 
                 className="flex flex-wrap items-center gap-2"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  void send('back');
+                  void send(mode!);
                 }}
               >
-                <input autoFocus value={note} onChange={(e) => setNote(e.target.value)} maxLength={400} placeholder="What does the author have to change?" className="h-8 min-w-[200px] flex-1 rounded-md border border-line-strong bg-bg px-2.5 text-[13px] placeholder:text-fg4 focus:border-flag" />
-                <button className="btn" disabled={note.trim().length < MIN_NOTE}>
-                  Send back
+                <input
+                  autoFocus
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  maxLength={400}
+                  placeholder={mode === 'back' ? 'What does the author have to change?' : needsWhy ? 'Why do you accept it without a test?' : 'Why is it fine as it is? (optional)'}
+                  className={`h-8 min-w-[200px] flex-1 rounded-md border border-line-strong bg-bg px-2.5 text-[13px] placeholder:text-fg4 ${mode === 'back' ? 'focus:border-flag' : 'focus:border-ok'}`}
+                />
+                <button className="btn" disabled={(mode === 'back' || needsWhy) && note.trim().length < MIN_NOTE}>
+                  {mode === 'back' ? 'Send back' : 'Accept'}
                 </button>
                 <button type="button" className="btn btn-ghost" onClick={() => setBack(false)}>
                   Cancel
@@ -127,13 +141,13 @@ function Point({ p, ruling, locked, onRule }: { p: RulingItem; ruling?: Ruling; 
               </form>
             ) : (
               <div className="flex flex-wrap items-center gap-2">
-                <button className="btn" disabled={locked} onClick={() => void send('accept')}>
+                <button className="btn" disabled={locked} onClick={() => setMode('accept')}>
                   <Check size={13} className="text-ok" /> Accept as it is
                 </button>
-                <button className="btn" disabled={locked} onClick={() => setBack(true)}>
+                <button className="btn" disabled={locked} onClick={() => setMode('back')}>
                   <X size={12} className="text-flag" /> Send back to the author
                 </button>
-                <span className="text-[12px] text-fg4">Your ruling goes on the record under your name.</span>
+                <span className="text-[12px] text-fg4">Your ruling and your reason go on the record under your name.</span>
               </div>
             )}
             {err && <p className="mt-1.5 text-[12.5px] text-bad">{err}</p>}
@@ -141,8 +155,12 @@ function Point({ p, ruling, locked, onRule }: { p: RulingItem; ruling?: Ruling; 
         ) : (
           <p className="mt-2.5 flex flex-wrap items-center gap-x-2 text-[13px]">
             {ruling.decision === 'accept' ? (
-              <span className="flex items-center gap-1.5 font-[590] text-ok">
-                <Check size={13} /> You accepted this.
+              <span className="min-w-0 text-fg2">
+                <span className="font-[590] text-ok">
+                  <Check size={13} className="mr-1.5 inline align-[-2px]" />
+                  You accepted this.{' '}
+                </span>
+                {ruling.note}
               </span>
             ) : (
               <span className="min-w-0 text-fg2">
@@ -157,12 +175,13 @@ function Point({ p, ruling, locked, onRule }: { p: RulingItem; ruling?: Ruling; 
             )}
           </p>
         )}
+        {entire && <Why en={entire} file={p.file} from={p.from} to={p.to} finding={entire.trail?.findings[p.id]} />}
       </div>
     </div>
   );
 }
 
-export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, onFlag, onAsk, unnoticed, tests, points, rulings, onRule }: Props) {
+export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, onFlag, onAsk, unnoticed, tests, points, rulings, onRule, entire }: Props) {
   const removed = block.lines.filter((l) => l.kind === 'del').length;
   const added = block.lines.filter((l) => l.kind === 'add').length;
   const [showRemoved, setShowRemoved] = useState(false);
@@ -228,7 +247,7 @@ export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, on
             return (
               <div key={`${n}${pulsing ? `p${pulse.key}` : ''}`}>
                 {pointsHere.map((p) => (
-                  <Point key={p.id} p={p} ruling={rulings?.[p.id]} locked={locked} onRule={onRule} />
+                  <Point key={p.id} p={p} ruling={rulings?.[p.id]} locked={locked} onRule={onRule} entire={entire} />
                 ))}
                 {starts.map((f) => (
                   <div key={`${f.from}-${f.to}`} className={`${under} items-start gap-2 py-1.5 pr-4 pl-[14px] ${i > 0 ? 'mt-1' : ''}`}>
@@ -236,6 +255,7 @@ export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, on
                     <span className="text-[12.5px] leading-[18px] whitespace-normal text-fg2">
                       <span className="font-[590] text-warn">Read closely{f.to > f.from ? `, lines ${f.from}–${f.to}` : ''}. </span>
                       {inline(f.why)}
+                      {entire && <Reached en={entire} file={block.file} line={f.from} />}
                     </span>
                   </div>
                 ))}

@@ -1,0 +1,1405 @@
+{
+ "schema": 1,
+ "headSha": "55559f75e42757817126fb003058b7ae404ac72b",
+ "at": "2026-11-14T19:49:31.886Z",
+ "question": "What calls this function? (direct callers outside the tests)",
+ "model": "claude-opus-5-5",
+ "functions": 37,
+ "graph": {
+  "tokens": 0,
+  "msPerQuery": 169,
+  "version": "v0.6.0"
+ },
+ "byModel": {
+  "answered": 37,
+  "failed": 0,
+  "tokens": 469493,
+  "medianTokens": 11715,
+  "medianSeconds": 9.8,
+  "seconds": 381
+ },
+ "same": 30,
+ "modelFoundMore": 7,
+ "graphFoundMore": 0,
+ "mixed": {
+  "asked": 7,
+  "tokens": 98242,
+  "sameAsModel": true
+ },
+ "rows": [
+  {
+   "name": "done",
+   "file": "public/app.js",
+   "line": 52,
+   "graph": [],
+   "model": {
+    "callers": [
+     {
+      "name": "(anonymous click handler for button[data-copy])",
+      "file": "public/app.js",
+      "line": 59
+     }
+    ],
+    "seconds": 7.1,
+    "turns": 3,
+    "tokens": {
+     "input": 4,
+     "cacheWrite": 5386,
+     "cacheRead": 3350,
+     "output": 256
+    }
+   },
+   "onlyModel": [
+    {
+     "name": "(anonymous click handler for button[data-copy])",
+     "file": "public/app.js",
+     "line": 59
+    }
+   ],
+   "onlyGraph": []
+  },
+  {
+   "name": "createApp",
+   "file": "src/app.ts",
+   "line": 27,
+   "graph": [
+    {
+     "name": "src/index.ts",
+     "file": "src/index.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "(top level)",
+      "file": "src/index.ts",
+      "line": 5
+     }
+    ],
+    "seconds": 11.6,
+    "turns": 5,
+    "tokens": {
+     "input": 8,
+     "cacheWrite": 3989,
+     "cacheRead": 10742,
+     "output": 456
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "bump",
+   "file": "src/db.ts",
+   "line": 168,
+   "graph": [],
+   "model": {
+    "callers": [
+     {
+      "name": "(anonymous flatMap callback in VERSION_SCHEMA)",
+      "file": "src/db.ts",
+      "line": 174
+     },
+     {
+      "name": "(anonymous flatMap callback in VERSION_SCHEMA)",
+      "file": "src/db.ts",
+      "line": 175
+     },
+     {
+      "name": "(anonymous flatMap callback in VERSION_SCHEMA)",
+      "file": "src/db.ts",
+      "line": 178
+     },
+     {
+      "name": "(anonymous flatMap callback in VERSION_SCHEMA)",
+      "file": "src/db.ts",
+      "line": 182
+     }
+    ],
+    "seconds": 9.4,
+    "turns": 4,
+    "tokens": {
+     "input": 4,
+     "cacheWrite": 4484,
+     "cacheRead": 3352,
+     "output": 699
+    }
+   },
+   "onlyModel": [
+    {
+     "name": "(anonymous flatMap callback in VERSION_SCHEMA)",
+     "file": "src/db.ts",
+     "line": 174
+    },
+    {
+     "name": "(anonymous flatMap callback in VERSION_SCHEMA)",
+     "file": "src/db.ts",
+     "line": 175
+    },
+    {
+     "name": "(anonymous flatMap callback in VERSION_SCHEMA)",
+     "file": "src/db.ts",
+     "line": 178
+    },
+    {
+     "name": "(anonymous flatMap callback in VERSION_SCHEMA)",
+     "file": "src/db.ts",
+     "line": 182
+    }
+   ],
+   "onlyGraph": []
+  },
+  {
+   "name": "applySchema",
+   "file": "src/db.ts",
+   "line": 189,
+   "graph": [
+    {
+     "name": "openDb",
+     "file": "src/db.ts"
+    },
+    {
+     "name": "resetSchema",
+     "file": "src/db.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "openDb",
+      "file": "src/db.ts",
+      "line": 226
+     },
+     {
+      "name": "resetSchema",
+      "file": "src/db.ts",
+      "line": 241
+     }
+    ],
+    "seconds": 8.1,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1441,
+     "cacheRead": 9758,
+     "output": 293
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "databaseGeneration",
+   "file": "src/db.ts",
+   "line": 202,
+   "graph": [
+    {
+     "name": "exportCsv",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "exportCsv",
+      "file": "src/routes/invoices.ts",
+      "line": 146
+     }
+    ],
+    "seconds": 9.9,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1419,
+     "cacheRead": 9840,
+     "output": 397
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "workspaceVersion",
+   "file": "src/db.ts",
+   "line": 207,
+   "graph": [
+    {
+     "name": "exportCsv",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "exportCsv",
+      "file": "src/routes/invoices.ts",
+      "line": 147
+     }
+    ],
+    "seconds": 9.5,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1399,
+     "cacheRead": 9852,
+     "output": 458
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "openDb",
+   "file": "src/db.ts",
+   "line": 216,
+   "graph": [
+    {
+     "name": "scripts/seed.ts",
+     "file": "scripts/seed.ts"
+    },
+    {
+     "name": "getDb",
+     "file": "src/db.ts"
+    },
+    {
+     "name": "src/index.ts",
+     "file": "src/index.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "getDb",
+      "file": "src/db.ts",
+      "line": 231
+     },
+     {
+      "name": "(top level)",
+      "file": "src/index.ts",
+      "line": 4
+     },
+     {
+      "name": "(top level)",
+      "file": "scripts/seed.ts",
+      "line": 267
+     }
+    ],
+    "seconds": 10.6,
+    "turns": 6,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1618,
+     "cacheRead": 10012,
+     "output": 505
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "resetSchema",
+   "file": "src/db.ts",
+   "line": 234,
+   "graph": [
+    {
+     "name": "seed",
+     "file": "scripts/seed.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "seed",
+      "file": "scripts/seed.ts",
+      "line": 126
+     }
+    ],
+    "seconds": 9.2,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1419,
+     "cacheRead": 9779,
+     "output": 428
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "csvField",
+   "file": "src/lib/csv.ts",
+   "line": 7,
+   "graph": [],
+   "model": {
+    "callers": [
+     {
+      "name": "toCsv",
+      "file": "src/lib/csv.ts",
+      "line": 17
+     }
+    ],
+    "seconds": 10.9,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1237,
+     "cacheRead": 9929,
+     "output": 411
+    }
+   },
+   "onlyModel": [
+    {
+     "name": "toCsv",
+     "file": "src/lib/csv.ts",
+     "line": 17
+    }
+   ],
+   "onlyGraph": []
+  },
+  {
+   "name": "toCsv",
+   "file": "src/lib/csv.ts",
+   "line": 16,
+   "graph": [
+    {
+     "name": "exportCsv",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "exportCsv",
+      "file": "src/routes/invoices.ts",
+      "line": 155
+     }
+    ],
+    "seconds": 9.8,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1391,
+     "cacheRead": 9804,
+     "output": 483
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "parseSearch",
+   "file": "src/lib/invoices.ts",
+   "line": 26,
+   "graph": [
+    {
+     "name": "src/routes/api.ts",
+     "file": "src/routes/api.ts"
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "invoiceRoutes.get(\"/invoices\") handler (anonymous arrow function)",
+      "file": "src/routes/invoices.ts",
+      "line": 67
+     },
+     {
+      "name": "invoiceRoutes.get(\"/invoices/export.csv\") handler (anonymous arrow function)",
+      "file": "src/routes/invoices.ts",
+      "line": 180
+     },
+     {
+      "name": "apiRoutes.get(\"/invoices\") handler (anonymous arrow function)",
+      "file": "src/routes/api.ts",
+      "line": 42
+     }
+    ],
+    "seconds": 12.4,
+    "turns": 5,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 4718,
+     "cacheRead": 9884,
+     "output": 832
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "searchClause",
+   "file": "src/lib/invoices.ts",
+   "line": 53,
+   "graph": [
+    {
+     "name": "filterClause",
+     "file": "src/lib/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "filterClause",
+      "file": "src/lib/invoices.ts",
+      "line": 70
+     }
+    ],
+    "seconds": 8.3,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1333,
+     "cacheRead": 9774,
+     "output": 344
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "filterClause",
+   "file": "src/lib/invoices.ts",
+   "line": 60,
+   "graph": [
+    {
+     "name": "browseInvoices",
+     "file": "src/lib/invoices.ts"
+    },
+    {
+     "name": "exportInvoices",
+     "file": "src/lib/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "browseInvoices",
+      "file": "src/lib/invoices.ts",
+      "line": 103
+     },
+     {
+      "name": "exportInvoices",
+      "file": "src/lib/invoices.ts",
+      "line": 188
+     }
+    ],
+    "seconds": 9.8,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 2875,
+     "cacheRead": 9855,
+     "output": 518
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "likePattern",
+   "file": "src/lib/invoices.ts",
+   "line": 75,
+   "graph": [
+    {
+     "name": "searchClause",
+     "file": "src/lib/invoices.ts"
+    },
+    {
+     "name": "searchInvoices",
+     "file": "src/lib/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "searchClause",
+      "file": "src/lib/invoices.ts",
+      "line": 55
+     },
+     {
+      "name": "searchInvoices",
+      "file": "src/lib/invoices.ts",
+      "line": 139
+     }
+    ],
+    "seconds": 9.2,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 2781,
+     "cacheRead": 9792,
+     "output": 460
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "inStatus",
+   "file": "src/lib/invoices.ts",
+   "line": 83,
+   "graph": [
+    {
+     "name": "searchInvoices",
+     "file": "src/lib/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "searchInvoices",
+      "file": "src/lib/invoices.ts",
+      "line": 164
+     }
+    ],
+    "seconds": 9.4,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1612,
+     "cacheRead": 9812,
+     "output": 311
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "listInvoices",
+   "file": "src/lib/invoices.ts",
+   "line": 90,
+   "graph": [
+    {
+     "name": "src/routes/api.ts",
+     "file": "src/routes/api.ts"
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "GET /invoices handler (invoiceRoutes.get arrow function)",
+      "file": "src/routes/invoices.ts",
+      "line": 69
+     },
+     {
+      "name": "GET /invoices handler (apiRoutes.get arrow function)",
+      "file": "src/routes/api.ts",
+      "line": 38
+     }
+    ],
+    "seconds": 13.5,
+    "turns": 5,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 2305,
+     "cacheRead": 9876,
+     "output": 830
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "pageOf",
+   "file": "src/lib/invoices.ts",
+   "line": 94,
+   "graph": [
+    {
+     "name": "browseInvoices",
+     "file": "src/lib/invoices.ts"
+    },
+    {
+     "name": "searchInvoices",
+     "file": "src/lib/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "browseInvoices",
+      "file": "src/lib/invoices.ts",
+      "line": 116
+     },
+     {
+      "name": "searchInvoices",
+      "file": "src/lib/invoices.ts",
+      "line": 163
+     }
+    ],
+    "seconds": 9.8,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 2533,
+     "cacheRead": 9824,
+     "output": 312
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "browseInvoices",
+   "file": "src/lib/invoices.ts",
+   "line": 100,
+   "graph": [
+    {
+     "name": "listInvoices",
+     "file": "src/lib/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "listInvoices",
+      "file": "src/lib/invoices.ts",
+      "line": 91
+     }
+    ],
+    "seconds": 9.3,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1155,
+     "cacheRead": 9830,
+     "output": 282
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "searchInvoices",
+   "file": "src/lib/invoices.ts",
+   "line": 136,
+   "graph": [
+    {
+     "name": "listInvoices",
+     "file": "src/lib/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "listInvoices",
+      "file": "src/lib/invoices.ts",
+      "line": 91
+     }
+    ],
+    "seconds": 10.6,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1159,
+     "cacheRead": 9834,
+     "output": 437
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "exportInvoices",
+   "file": "src/lib/invoices.ts",
+   "line": 187,
+   "graph": [
+    {
+     "name": "exportCsv",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "exportCsv",
+      "file": "src/routes/invoices.ts",
+      "line": 154
+     }
+    ],
+    "seconds": 9.8,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1317,
+     "cacheRead": 9829,
+     "output": 388
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "readNotes",
+   "file": "src/lib/invoices.ts",
+   "line": 228,
+   "graph": [
+    {
+     "name": "readInvoiceForm",
+     "file": "src/lib/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "readInvoiceForm",
+      "file": "src/lib/invoices.ts",
+      "line": 262
+     }
+    ],
+    "seconds": 12.3,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1541,
+     "cacheRead": 9779,
+     "output": 472
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "readInvoiceForm",
+   "file": "src/lib/invoices.ts",
+   "line": 239,
+   "graph": [
+    {
+     "name": "src/routes/api.ts",
+     "file": "src/routes/api.ts"
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "invoiceRoutes.post(\"/invoices\") handler (anonymous arrow function)",
+      "file": "src/routes/invoices.ts",
+      "line": 283
+     },
+     {
+      "name": "invoiceRoutes.post(\"/invoices/:id\") handler (anonymous arrow function)",
+      "file": "src/routes/invoices.ts",
+      "line": 421
+     },
+     {
+      "name": "apiRoutes.post(\"/invoices\") handler (anonymous arrow function)",
+      "file": "src/routes/api.ts",
+      "line": 65
+     },
+     {
+      "name": "apiRoutes.put(\"/invoices/:id\") handler (anonymous arrow function)",
+      "file": "src/routes/api.ts",
+      "line": 105
+     }
+    ],
+    "seconds": 12.6,
+    "turns": 5,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 6191,
+     "cacheRead": 9976,
+     "output": 1012
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "validateInvoice",
+   "file": "src/lib/invoices.ts",
+   "line": 268,
+   "graph": [
+    {
+     "name": "src/routes/api.ts",
+     "file": "src/routes/api.ts"
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "invoiceRoutes.post(\"/invoices\") handler (anonymous arrow function)",
+      "file": "src/routes/invoices.ts",
+      "line": 284
+     },
+     {
+      "name": "invoiceRoutes.post(\"/invoices/:id\") handler (anonymous arrow function)",
+      "file": "src/routes/invoices.ts",
+      "line": 422
+     },
+     {
+      "name": "apiRoutes.post(\"/invoices\") handler (anonymous arrow function)",
+      "file": "src/routes/api.ts",
+      "line": 65
+     },
+     {
+      "name": "apiRoutes.put(\"/invoices/:id\") handler (anonymous arrow function)",
+      "file": "src/routes/api.ts",
+      "line": 105
+     }
+    ],
+    "seconds": 12.1,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1758,
+     "cacheRead": 9941,
+     "output": 838
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "blankForm",
+   "file": "src/lib/invoices.ts",
+   "line": 307,
+   "graph": [
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "(anonymous handler for invoiceRoutes.get(\"/invoices/new\"))",
+      "file": "src/routes/invoices.ts",
+      "line": 269
+     }
+    ],
+    "seconds": 8.4,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1253,
+     "cacheRead": 9802,
+     "output": 339
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "createInvoice",
+   "file": "src/lib/invoices.ts",
+   "line": 319,
+   "graph": [
+    {
+     "name": "src/routes/api.ts",
+     "file": "src/routes/api.ts"
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "apiRoutes.post(\"/invoices\") handler (anonymous arrow function)",
+      "file": "src/routes/api.ts",
+      "line": 67
+     },
+     {
+      "name": "invoiceRoutes.post(\"/invoices\") handler (anonymous arrow function)",
+      "file": "src/routes/invoices.ts",
+      "line": 291
+     }
+    ],
+    "seconds": 13.1,
+    "turns": 5,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 2695,
+     "cacheRead": 9895,
+     "output": 757
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "updateInvoice",
+   "file": "src/lib/invoices.ts",
+   "line": 348,
+   "graph": [
+    {
+     "name": "src/routes/api.ts",
+     "file": "src/routes/api.ts"
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "(anonymous handler for invoiceRoutes.post \"/invoices/:id\")",
+      "file": "src/routes/invoices.ts",
+      "line": 428
+     },
+     {
+      "name": "(anonymous handler for apiRoutes.put \"/invoices/:id\")",
+      "file": "src/routes/api.ts",
+      "line": 107
+     }
+    ],
+    "seconds": 9.3,
+    "turns": 5,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 2537,
+     "cacheRead": 9869,
+     "output": 474
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "setNotes",
+   "file": "src/lib/invoices.ts",
+   "line": 363,
+   "graph": [
+    {
+     "name": "updateInvoice",
+     "file": "src/lib/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "updateInvoice",
+      "file": "src/lib/invoices.ts",
+      "line": 358
+     }
+    ],
+    "seconds": 10.9,
+    "turns": 5,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1656,
+     "cacheRead": 10530,
+     "output": 647
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "enableShare",
+   "file": "src/lib/invoices.ts",
+   "line": 372,
+   "graph": [
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "anonymous handler for invoiceRoutes.post(\"/invoices/:id/share\")",
+      "file": "src/routes/invoices.ts",
+      "line": 377
+     }
+    ],
+    "seconds": 8.3,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1355,
+     "cacheRead": 9791,
+     "output": 346
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "revokeShare",
+   "file": "src/lib/invoices.ts",
+   "line": 379,
+   "graph": [
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "anonymous handler for invoiceRoutes.post(\"/invoices/:id/share/revoke\")",
+      "file": "src/routes/invoices.ts",
+      "line": 384
+     }
+    ],
+    "seconds": 10.5,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1333,
+     "cacheRead": 9797,
+     "output": 550
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "invoiceByShareToken",
+   "file": "src/lib/invoices.ts",
+   "line": 383,
+   "graph": [
+    {
+     "name": "src/routes/share.ts",
+     "file": "src/routes/share.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "(anonymous GET /share/:token handler passed to shareRoutes.get)",
+      "file": "src/routes/share.ts",
+      "line": 14
+     }
+    ],
+    "seconds": 8.1,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1412,
+     "cacheRead": 9835,
+     "output": 330
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "listQuery",
+   "file": "src/routes/invoices.ts",
+   "line": 46,
+   "graph": [
+    {
+     "name": "listHref",
+     "file": "src/routes/invoices.ts"
+    },
+    {
+     "name": "exportHref",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "listHref",
+      "file": "src/routes/invoices.ts",
+      "line": 55
+     },
+     {
+      "name": "exportHref",
+      "file": "src/routes/invoices.ts",
+      "line": 60
+     }
+    ],
+    "seconds": 8.7,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1058,
+     "cacheRead": 9814,
+     "output": 307
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "listHref",
+   "file": "src/routes/invoices.ts",
+   "line": 54,
+   "graph": [],
+   "model": {
+    "callers": [
+     {
+      "name": "GET /invoices handler (STATUS_FILTERS.map callback)",
+      "file": "src/routes/invoices.ts",
+      "line": 74
+     },
+     {
+      "name": "GET /invoices handler",
+      "file": "src/routes/invoices.ts",
+      "line": 79
+     },
+     {
+      "name": "GET /invoices handler",
+      "file": "src/routes/invoices.ts",
+      "line": 101
+     },
+     {
+      "name": "GET /invoices handler",
+      "file": "src/routes/invoices.ts",
+      "line": 103
+     },
+     {
+      "name": "GET /invoices handler",
+      "file": "src/routes/invoices.ts",
+      "line": 111
+     }
+    ],
+    "seconds": 12.8,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 2851,
+     "cacheRead": 10207,
+     "output": 874
+    }
+   },
+   "onlyModel": [
+    {
+     "name": "GET /invoices handler (STATUS_FILTERS.map callback)",
+     "file": "src/routes/invoices.ts",
+     "line": 74
+    },
+    {
+     "name": "GET /invoices handler",
+     "file": "src/routes/invoices.ts",
+     "line": 79
+    },
+    {
+     "name": "GET /invoices handler",
+     "file": "src/routes/invoices.ts",
+     "line": 101
+    },
+    {
+     "name": "GET /invoices handler",
+     "file": "src/routes/invoices.ts",
+     "line": 103
+    },
+    {
+     "name": "GET /invoices handler",
+     "file": "src/routes/invoices.ts",
+     "line": 111
+    }
+   ],
+   "onlyGraph": []
+  },
+  {
+   "name": "exportHref",
+   "file": "src/routes/invoices.ts",
+   "line": 59,
+   "graph": [],
+   "model": {
+    "callers": [
+     {
+      "name": "invoiceRoutes.get(\"/invoices\") handler (anonymous arrow function)",
+      "file": "src/routes/invoices.ts",
+      "line": 112
+     }
+    ],
+    "seconds": 10.5,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 2373,
+     "cacheRead": 9804,
+     "output": 563
+    }
+   },
+   "onlyModel": [
+    {
+     "name": "invoiceRoutes.get(\"/invoices\") handler (anonymous arrow function)",
+     "file": "src/routes/invoices.ts",
+     "line": 112
+    }
+   ],
+   "onlyGraph": []
+  },
+  {
+   "name": "exportCsv",
+   "file": "src/routes/invoices.ts",
+   "line": 144,
+   "graph": [
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "(anonymous arrow handler for invoiceRoutes.get(\"/invoices/export.csv\"))",
+      "file": "src/routes/invoices.ts",
+      "line": 182
+     }
+    ],
+    "seconds": 8.6,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1155,
+     "cacheRead": 9805,
+     "output": 376
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "invoiceFormView",
+   "file": "src/routes/invoices.ts",
+   "line": 190,
+   "graph": [],
+   "model": {
+    "callers": [
+     {
+      "name": "(anonymous GET /invoices/new handler)",
+      "file": "src/routes/invoices.ts",
+      "line": 276
+     },
+     {
+      "name": "(anonymous POST /invoices handler)",
+      "file": "src/routes/invoices.ts",
+      "line": 287
+     },
+     {
+      "name": "(anonymous GET /invoices/:id/edit handler)",
+      "file": "src/routes/invoices.ts",
+      "line": 409
+     },
+     {
+      "name": "(anonymous POST /invoices/:id handler)",
+      "file": "src/routes/invoices.ts",
+      "line": 425
+     }
+    ],
+    "seconds": 11.2,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 5330,
+     "cacheRead": 10156,
+     "output": 720
+    }
+   },
+   "onlyModel": [
+    {
+     "name": "(anonymous GET /invoices/new handler)",
+     "file": "src/routes/invoices.ts",
+     "line": 276
+    },
+    {
+     "name": "(anonymous POST /invoices handler)",
+     "file": "src/routes/invoices.ts",
+     "line": 287
+    },
+    {
+     "name": "(anonymous GET /invoices/:id/edit handler)",
+     "file": "src/routes/invoices.ts",
+     "line": 409
+    },
+    {
+     "name": "(anonymous POST /invoices/:id handler)",
+     "file": "src/routes/invoices.ts",
+     "line": 425
+    }
+   ],
+   "onlyGraph": []
+  },
+  {
+   "name": "ownInvoice",
+   "file": "src/routes/invoices.ts",
+   "line": 363,
+   "graph": [
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "model": {
+    "callers": [
+     {
+      "name": "(anonymous handler for POST /invoices/:id/share)",
+      "file": "src/routes/invoices.ts",
+      "line": 375
+     },
+     {
+      "name": "(anonymous handler for POST /invoices/:id/share/revoke)",
+      "file": "src/routes/invoices.ts",
+      "line": 382
+     }
+    ],
+    "seconds": 9.2,
+    "turns": 4,
+    "tokens": {
+     "input": 6,
+     "cacheWrite": 1356,
+     "cacheRead": 9821,
+     "output": 371
+    }
+   },
+   "onlyModel": [],
+   "onlyGraph": []
+  },
+  {
+   "name": "invoicePaper",
+   "file": "src/views/invoice.ts",
+   "line": 5,
+   "graph": [],
+   "model": {
+    "callers": [
+     {
+      "name": "shareRoutes.get(\"/share/:token\") handler (anonymous arrow function)",
+      "file": "src/routes/share.ts",
+      "line": 25
+     },
+     {
+      "name": "invoiceRoutes.get(\"/invoices/:id\") handler (anonymous arrow function)",
+      "file": "src/routes/invoices.ts",
+      "line": 356
+     }
+    ],
+    "seconds": 16,
+    "turns": 7,
+    "tokens": {
+     "input": 10,
+     "cacheWrite": 3828,
+     "cacheRead": 21377,
+     "output": 1013
+    }
+   },
+   "onlyModel": [
+    {
+     "name": "shareRoutes.get(\"/share/:token\") handler (anonymous arrow function)",
+     "file": "src/routes/share.ts",
+     "line": 25
+    },
+    {
+     "name": "invoiceRoutes.get(\"/invoices/:id\") handler (anonymous arrow function)",
+     "file": "src/routes/invoices.ts",
+     "line": 356
+    }
+   ],
+   "onlyGraph": []
+  }
+ ]
+}
