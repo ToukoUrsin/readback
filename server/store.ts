@@ -6,7 +6,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeF
 import { resolve } from 'node:path';
 
 export interface ReadEvent {
-  type: 'start' | 'answer' | 'handin' | 'sign' | 'ask' | 'reset' | 'cold-shown' | 'cold' | 'stop' | 'failed' | 'unsign' | 'prep' | 'mark' | 'rule' | 'rule-refused' | 'signin';
+  type: 'start' | 'answer' | 'handin' | 'sign' | 'ask' | 'reset' | 'cold-shown' | 'cold' | 'stop' | 'failed' | 'unsign' | 'prep' | 'mark' | 'rule' | 'rule-refused' | 'rule-unchecked' | 'handin-unchecked' | 'signin';
   at: string;
   /** one reader's one go at a tour; a new one after "Start over" */
   rid: string;
@@ -84,6 +84,15 @@ const median = (xs: number[]) => {
  * Goes that are not a person's: our own test browsers, our agents' browsers (ours, or rb-agent in the client's name),
  * clients that are not a browser, and goes marked as ours afterwards (a "mark" row; nothing is deleted).
  */
+/**
+ * The goes of invited judges: every go that came in with the judge link, and what the same browser did before it opened
+ * the link (the first screen, the short review), so a judge's cold test is counted with the judges and not with people.
+ */
+export function invitedOf(events: ReadEvent[]): Set<string> {
+  const browsers = new Set(events.filter((e) => e.type === 'signin' && e.via === 'invite' && typeof e.browser === 'string').map((e) => e.browser as string));
+  return new Set(events.filter((e) => e.via === 'invite' || (typeof e.by === 'string' && browsers.has(e.by))).map((e) => e.rid));
+}
+
 export function oursOf(events: ReadEvent[]): Set<string> {
   const out = new Set<string>();
   for (const e of events) if (e.test || e.ours === true || e.type === 'mark' || (typeof e.agent === 'string' && e.agent && (!e.agent.includes('Mozilla') || e.agent.includes('rb-agent')))) out.add(e.rid);
@@ -184,7 +193,7 @@ export function createStore(dir: string | null): Store {
     events: () => events,
     stats() {
       const ours = oursOf(events);
-      const invited = new Set(events.filter((e) => e.via === 'invite').map((e) => e.rid));
+      const invited = invitedOf(events);
       const real = events.filter((e) => !ours.has(e.rid) && !invited.has(e.rid));
       const rest = events.filter((e) => ours.has(e.rid) && !invited.has(e.rid));
       const judges = events.filter((e) => invited.has(e.rid));

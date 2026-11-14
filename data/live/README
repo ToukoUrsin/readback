@@ -35,6 +35,7 @@ Added by hand after the generators, 14.11.2026:
   tour.json    + 3 planted lines no test notices: bun gen/untested-plants.ts --dir data/live --repo /bulk3/runs/readback/kuitti-live --skip src/db.ts:237
                  (src/views/invoice.ts:13, src/lib/csv.ts:12, src/routes/invoices.ts:149; 14 planted lines in all). The tour before: /bulk3/runs/readback/next/tour-live-before-untested.json
   questions.json  share-token-q1 taken out of the pool by hand (a judge found the open-point text on the same stop answers it): 42 kept, counts.droppedByHand 1
+  questions.json  + 46 kept questions (60 written), 14.11.2026: bun gen/questions.ts --tour data/live/tour.json --add data/live/questions.json --min-kept 8 --per-stop 6 --out and --work /bulk3/runs/readback/questions/grow1 --resume; nothing in the pool before was changed, 88 kept, 9 to 11 per stop, counts and cost are both runs added up
   short.json   short.of = 10 (the full review has 10 stops with the "rest" stop)
   entire.json  the one agent report that was cut at 4,000 characters now ends at its last full sentence (gen/entire.ts cutReport does the same on a rerun)
 

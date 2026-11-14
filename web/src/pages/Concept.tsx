@@ -63,14 +63,22 @@ export default function Concept() {
         <Hero n={n} />
 
         <Section id="line-by-line" title="Is line-by-line review still the right way?">
-          <p className="mt-4 text-[17px] leading-[1.4] font-[590] text-fg">For critical code, yes. For the whole change, no.</p>
+          <p className="mt-4 text-[17px] leading-[1.4] font-[590] text-fg">Yes, a person reads it. Not as a raw diff, and not every line with the same care.</p>
           <p className={`${PROSE} mt-2`}>
-            A person has to read critical code. Reading every line with the same care is what produces the ten-second approve, so the policy says which lines are critical and holds the reviewer to those. In this pull request that is <B v={r?.linesToRead} /> of <B v={r?.linesAll} /> lines shown.
+            A raw diff of <N v={r?.linesAll} /> lines is what produces the ten-second “looks good to me”. Readback gives the reviewer the whole change as <N v={r?.stops.length} /> stops that explain themselves: what the code does in plain words, a diagram where the parts connect, and the agent’s own sessions behind the lines. Then it checks the read, with questions only the code answers and one planted bug to find.
+          </p>
+          <p className={`${PROSE} mt-3`}>
+            The policy also says which lines are critical and holds the reviewer hardest to those. In this pull request that is <B v={r?.linesToRead} /> of <B v={r?.linesAll} /> lines shown.
           </p>
           {r && <Tiers r={r} points={n?.points.length} />}
           <p className={`${PROSE} mt-4`}>
             Who sets the tier: the test runs decide “no test notices a bug here”, a model marks what a line can harm, and the reviewer can flag any line in any tier. A team’s own always-read paths (sign-in, payments, patient data) belong in a file in the repository that the tech lead owns. That file is not built yet: today the marks come from the model and the tests alone.
           </p>
+          {n?.second && (
+            <p className={`${PROSE} mt-3`}>
+              Who checks the model’s marks: a second model from another vendor ({n.second.model}) got the same code with no marks and no notes, and marked <N v={n.second.theirs} /> lines on its own, against <N v={n.second.ours} /> of ours. <N v={n.second.both} /> lines are on both lists. <N v={n.second.theirsOnly} /> of its lines are on no list of ours: the review shows them with a grey mark, not counted, and under each of our marks it says whether the second reader marked the line too. Two models can share a blind spot. <span className="text-warn">That part is open.</span>
+            </p>
+          )}
         </Section>
 
         <Section id="principles" title="Principles">
@@ -82,6 +90,7 @@ export default function Concept() {
             One rule decides the status <code className="icode">readback/read</code>. It is the same list the reviewer sees before signing.
           </p>
           <RuleCard rule={rule} />
+          <HandInFlow rule={rule} />
         </Section>
 
         <Section id="owner" title="Who owns the decision?">
@@ -111,12 +120,16 @@ export default function Concept() {
                 head: 'A question with a wrong answer key.',
                 body: (
                   <>
-                    A second model answers every question twice: with the stop’s code and without it. Of <N v={n?.questionCheck?.checked} /> questions, <N v={n?.questionCheck?.wrongKey} /> had a key it did not reach with the code, and <N v={n?.questionCheck?.withoutCode} /> it got right without the code. Those are dropped; <N v={n?.questionCheck?.kept} /> are kept. A key both models get wrong the same way would pass. <span className="text-warn">That part is open.</span>
+                    A second model answers every question twice: with the stop’s code and without it. Of <N v={n?.questionCheck?.checked} /> questions, <N v={n?.questionCheck?.wrongKey} /> had a key it did not reach with the code, and <N v={n?.questionCheck?.withoutCode} /> it got right without the code. Those are dropped; <N v={n?.questionCheck?.kept} /> are kept{n?.questionCheck?.heldBack ? (
+                      <>
+                        , and <N v={n.questionCheck.heldBack} /> of them are not asked, because their lines hold a line that can be planted
+                      </>
+                    ) : null}. A key both models get wrong the same way would pass. <span className="text-warn">That part is open.</span>
                   </>
                 ),
               },
               { head: 'Everybody catching the planted bug at once, or nobody.', body: 'Then it measures nothing. The numbers page shows caught and missed by kind of bug and by pace.' },
-              { head: 'The reason check not answering.', body: 'Then the flag counts and the record says the reason was not checked.' },
+              { head: 'The reason check not answering.', body: 'Then nothing is decided. The ruling or the hand-in is refused and the reviewer presses the button again: a reason nobody checked never counts.' },
             ]}
           />
         </Section>
@@ -124,7 +137,31 @@ export default function Concept() {
         <Section id="trade-offs" title="Trade-offs">
           <Pairs
             items={[
-              { head: 'Minutes for proof.', body: 'A review that counts takes real minutes, also for a reviewer who would have read carefully anyway.' },
+              {
+                head: 'Minutes for proof.',
+                body: (
+                  <>
+                    A review that counts takes real minutes, also for a reviewer who would have read carefully anyway: about 22 here, and never under <N v={r && rule ? Math.ceil(r.linesToRead / rule.paceLimit) : undefined} /> (<N v={r?.linesToRead} /> lines at under <N v={rule?.paceLimit} /> a minute). The comparison is reading it all with care.{' '}
+                    <a href="https://smartbear.com/resources/case-studies/cisco-systems-collaborator/" target="_blank" rel="noreferrer" className="text-accent-hi underline-offset-2 hover:underline">
+                      SmartBear’s study of 2,500 reviews at Cisco
+                    </a>{' '}
+                    advises reading under 300 to 500 lines an hour, because faster reviewers found fewer of the defects. At 500 lines an hour the <N v={n?.pr.additions} /> added lines of this change are close to two hours.
+                  </>
+                ),
+              },
+              {
+                head: 'The pace limit is a first guess.',
+                body: (
+                  <>
+                    <N v={rule?.paceLimit} /> lines a minute is faster than that study’s 500 lines an hour. It is loose on purpose: it only stops a review nobody could have read, and the questions and the planted bug do the rest.{' '}
+                    <a href="/numbers" className="text-accent-hi underline-offset-2 hover:underline">
+                      Numbers
+                    </a>{' '}
+                    shows caught and missed by pace, so a team tightens it on its own reviewers.
+                  </>
+                ),
+              },
+              { head: 'Accepting every open point is the short way to green.', body: 'A send-back costs the reviewer a second, shorter review. What stands against the easy accept: each one needs a reason about those lines, a reason that would fit any line is refused, and the reasons are written on the pull request under the reviewer’s name, where the team reads them.' },
               { head: 'During the review one line differs from the branch.', body: 'The real line is shown as soon as it is caught, and the approval covers the real code.' },
               { head: 'Which lines need a person rests on the tests plus a model’s reading of risk.', body: 'A risky line the model did not mark, in code the tests cover well, is shown as context only. Every changed line is in the review and can be flagged: what no stop explains is in the last stop, “The rest of the change”.' },
               { head: 'The guide cannot help with the lines that matter most.', body: 'It is never given a line the reviewer signs for, so it cannot say what such a line does. It answers from the code around it, from what calls it and from what the agent was asked.' },
@@ -153,7 +190,7 @@ export default function Concept() {
                 head: 'A reviewer set on cheating can compare what they are shown with the raw diff to find the planted line.',
                 body: (
                   <>
-                    They still need the minutes, a reason that is true of that line only, and their verified name on a record that shows the pace. With a GitHub sign-in a reviewer has one review of a commit, whatever browser they use.{n?.demo?.judgeLink ? ' The judge link on this demo copy is weaker on purpose: every browser that opens it is a new judge with a new review.' : ''} Each reviewer is asked their own draw from <N v={n?.questionCheck?.kept} /> checked questions with the answers in their own order, and a signed review is planted from lines no unsigned visitor is ever shown. Skipping the read goes from one click with no trace to deliberate fraud with a trace.
+                    They still need the minutes, a reason that is true of that line only, and their verified name on a record that shows the pace. With a GitHub sign-in a reviewer has one review of a commit, whatever browser they use.{n?.demo?.judgeLink ? ' The judge link on this demo copy is weaker on purpose: every browser that opens it is a new judge with a new review.' : ''} Each reviewer is asked their own draw from <N v={n?.questionCheck?.inUse ?? n?.questionCheck?.kept} /> checked questions with the answers in their own order, and a signed review is planted and asked from lines and questions no unsigned visitor is ever shown. Nothing a browser did before the sign-in carries into the review that counts: its clock, its answers and its questions start again. Skipping the read goes from one click with no trace to deliberate fraud with a trace.
                   </>
                 ),
               },
@@ -170,7 +207,7 @@ export default function Concept() {
                 ),
               },
               { head: 'Our own recording browser can sign without a GitHub sign-in.', body: 'Opened with a key only the server has, it signs with a typed name as “(test read)” and sets the status. The status text says so. A real installation has no such key.' },
-              { head: 'Every status is posted with the team’s GitHub token.', body: 'The reviewer’s name is in the status text, not in GitHub’s “creator” field. A GitHub App would fix that.' },
+              { head: 'Every status is posted with the team’s GitHub token.', body: 'So is the record of the review that Readback writes on the pull request. The reviewer’s name is in the text, not in GitHub’s “creator” field. A GitHub App would fix that.' },
               { head: 'The numbers from people on this copy are small.', body: 'Runs by our own agents are shown apart and are not results.' },
             ]}
           />
@@ -341,7 +378,7 @@ function Tiers({ r, points }: { r: NonNullable<Numbers['route']>; points: number
           <div>
             <p className="text-[14px] leading-[1.45] font-[590] text-fg">{name}</p>
             <p className="mt-0.5 text-[13px] text-fg3">
-              <B v={lines} /> lines ({pct(lines, r.linesAll)})
+              <B v={lines} /> lines ({((lines / r.linesAll) * 100).toFixed(1)}%)
             </p>
             <Bar part={lines} whole={r.linesAll} tone={i === 0 ? 'bg-warn' : 'bg-fg4'} className="mt-[7px] max-w-[160px]" />
           </div>
@@ -464,6 +501,40 @@ function Principles({ tests }: { tests: number | undefined }) {
 }
 
 /* ---- failure modes: what happened, and what holds now ---- */
+
+/** One hand-in, and the only three things it can do. */
+function HandInFlow({ rule }: { rule: Numbers['rule'] | undefined }) {
+  const rows: { tone: string; when: string; then: ReactNode }[] = [
+    { tone: 'bg-ok', when: 'The planted line is among your flags, and your reason says what it does wrong.', then: 'Caught. You sign, and the rule above decides what the signature does: approved, sent back, or not counted.' },
+    {
+      tone: 'bg-warn',
+      when: 'The planted line is not among your flags, or your reason does not say what is wrong with it.',
+      then: (
+        <>
+          Missed. The line is shown to you with the tests that fail on it, a different line is planted, and you read again. Caught by read <N v={rule?.maxReads} /> can still approve. Later than that, the review is recorded and does not approve.
+        </>
+      ),
+    },
+    { tone: 'bg-fg4', when: 'A flag on a line the agent really wrote.', then: 'Never a catch and never a miss. It is kept through every read and goes to the author with your reason when you sign.' },
+  ];
+  return (
+    <>
+      <h3 className="mt-7 text-[14.5px] leading-[1.4] font-[590] text-fg">What one hand-in can do</h3>
+      <p className={`${PROSE} mt-1.5`}>Every read has exactly one planted line, on your screen only. A hand-in needs every question right, every open point ruled on, and one to three flagged lines, each with its own reason.</p>
+      <div className="card mt-3 divide-y divide-line">
+        {rows.map((x) => (
+          <div key={x.when} className="grid gap-x-6 gap-y-1 px-4 py-3 sm:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+            <p className="flex gap-2.5 text-[13.5px] leading-[1.5] font-[510] text-fg">
+              <span className={`mt-[7px] size-[7px] flex-none rounded-full ${x.tone}`} aria-hidden />
+              {x.when}
+            </p>
+            <p className="pl-[17px] text-[13.5px] leading-[1.55] text-fg2 sm:pl-0">{x.then}</p>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
 
 function Failures({ rule, q }: { rule: Numbers['rule'] | undefined; q: Numbers['questionCheck'] }) {
   const rows: { was: string; more?: string; now: ReactNode }[] = [

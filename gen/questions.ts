@@ -7,6 +7,10 @@
  *   [--resume]            reuse a saved answer when the same prompt was asked before
  *   [--minutes <n>]       no second writing round is started after this many minutes
  *   [--only a,b]          only these stops (for a trial run; the file is then not complete)
+ *   [--add <questions.json>]   grow that pool instead of making a new one (see "Adding" below)
+ *   [--min-kept 8]             with --add: the number of kept questions every stop should reach
+ *   [--add-log <questions.log.json>]  with --add: the log of the run that made the pool, for the text of its dropped
+ *                              questions (default: questions.log.json in the default --work folder)
  *
  * A pool of questions per stop, so that two reviewers do not get the same ones, and every key checked by a second model.
  *   1. write   the writer model gets one stop as the reader sees it and writes new questions. Their options are
@@ -20,6 +24,14 @@
  *              keyed option must still be the one picked.
  *   4. keep    (a) right, (b) not, no plant rule broken. A stop with fewer than 4 kept questions gets one more round.
  * Writes <out>/questions.json. Every number in it comes from a call that ran; a tour question that fails is recorded, not fixed.
+ *
+ * Adding (--add): every entry of `stops` and `checks` in the given file stays as it is, in its place. Each stop with fewer
+ * than --min-kept kept questions gets up to 3 more writing rounds. The writer is told every question the stop already has,
+ * kept and dropped, as in the second round above. The new questions get the next free numbers (-vN) and go through steps
+ * 2 to 4 with the planted lines the tour has now. `counts` and `madeBy.costUsd` become the old numbers plus this run, and
+ * `added` gets one entry for this run. The questions already kept are not changed or dropped: they are only looked at
+ * once more against the planted lines of today's tour (reread range, explanation, and one answer with the planted lines
+ * in place), and what is found is printed and written to `added[].existing` and to the log.
  *
  * The pull request is untrusted data: no model here gets a tool.
  */
@@ -42,8 +54,8 @@ for (let i = 0; i < argv.length; i++) {
   if (next === undefined || next.startsWith('--')) args[a.slice(2)] = 'true';
   else args[a.slice(2)] = argv[++i]!;
 }
-if (!args.tour || !args.out) {
-  console.error('usage: bun gen/questions.ts --tour <tour.json> --out <dir> [--per-stop 4] [--writer <id>] [--checker <id>] [--work <dir>] [--resume] [--minutes <n>] [--only a,b]');
+if (!args.tour || !args.out || ((args['min-kept'] || args['add-log']) && !args.add) || args.add === 'true') {
+  console.error('usage: bun gen/questions.ts --tour <tour.json> --out <dir> [--per-stop 4] [--writer <id>] [--checker <id>] [--work <dir>] [--resume] [--minutes <n>] [--only a,b] [--add <questions.json> [--min-kept 8] [--add-log <questions.log.json>]]');
   process.exit(2);
 }
 const tour = JSON.parse(readFileSync(resolve(args.tour), 'utf8')) as Tour;
@@ -51,9 +63,13 @@ const OUT = ensureDir(resolve(args.out));
 const WRITER = args.writer || 'claude-opus-5-5';
 const CHECKER = args.checker || 'claude-fable-5-2';
 const PER_STOP = Math.max(1, Number(args['per-stop'] || 4));
-const MIN_KEPT = 4;
+const ADD = args.add ? resolve(args.add) : '';
+const MIN_KEPT = ADD ? Math.max(1, Number(args['min-kept'] || 8)) : 4;
+/** with --add: the most writing rounds one stop gets */
+const ADD_ROUNDS = 3;
 const MINUTES = Number(args.minutes || 0);
-const WORK = ensureDir(resolve(args.work || `/bulk3/runs/readback/questions/${tour.pr.headSha.slice(0, 7)}`));
+const DEFAULT_WORK = `/bulk3/runs/readback/questions/${tour.pr.headSha.slice(0, 7)}`;
+const WORK = ensureDir(resolve(args.work || DEFAULT_WORK));
 const STEPS = ensureDir(join(WORK, 'steps'));
 const ONLY = args.only ? args.only.split(',') : null;
 const t0 = Date.now();
@@ -247,6 +263,12 @@ function shapeProblem(q: Question, stop: Stop, others: Question[]): string {
   if (!codeBlocks(stop).some((b) => b.file === r.file && b.from <= r.from && r.to <= b.to)) return 'the reread range is not inside one code block of the stop';
   if (r.to - r.from + 1 > LIMITS.reread) return `the reread range is longer than ${LIMITS.reread} lines`;
   if (others.some((o) => norm(o.prompt) === norm(q.prompt))) return 'repeats another question';
+  return plantProblem(q, stop);
+}
+
+/** Step 3 as far as a program can check it: no planted line in the reread range, none named by the explanation. */
+function plantProblem(q: Question, stop: Stop): string {
+  const r = q.reread;
   for (let n = r.from; n <= r.to; n++) if (isPlanted(r.file, n)) return 'a planted line is inside its reread range';
   const named = linesNamed(q.explain);
   if (plantsIn(stop).some((p) => named.has(p.line) && (p.file === r.file || q.explain.includes(p.file)))) return 'its explanation rests on a planted line';
@@ -313,14 +335,14 @@ async function check(q: Question, stop: Stop, source: 'tour' | 'new', others: Qu
 
 /* ---------- step 1: writing ---------- */
 
-async function write(stop: Stop, stopIdx: number, roundNo: number, known: Item[], firstNo: number): Promise<Question[]> {
+async function write(stop: Stop, stopIdx: number, roundNo: number, known: Item[], firstNo: number, name = `write-${stop.id}-r${roundNo}`): Promise<Question[]> {
   const earlier = known.map((it) => `- ${it.q.prompt}\n${it.q.options.map((o, i) => `    ${i === it.q.answer ? 'right' : 'wrong'}: ${o}`).join('\n')}${it.kept ? '' : `\n    This one was thrown away: ${it.reason}.`}`);
   const prompt = [
     `# The stop\nLines marked "x" may be shown differently to some readers: no question may need them.\n\n${stopText(stop, { code: true, mark: true })}`,
     `# Questions this stop already has\nDo not ask these again, and do not ask about the same lines in other words.${roundNo > 1 ? ' Learn from the ones that were thrown away.' : ''}\n${earlier.join('\n')}`,
     `# What to return\n${PER_STOP} new questions for this stop.`,
   ].join('\n\n');
-  const r = await ask<{ questions: Question[]; security?: string }>(`write-${stop.id}-r${roundNo}`, { system: WRITE_SYSTEM, prompt, schema: writeSchema, model: WRITER, effort: 'high', timeoutMs: 15 * 60_000 });
+  const r = await ask<{ questions: Question[]; security?: string }>(name, { system: WRITE_SYSTEM, prompt, schema: writeSchema, model: WRITER, effort: 'high', timeoutMs: 15 * 60_000 });
   if (r.out.security) log('write', `${stop.id}: the writer reports an injection attempt: ${r.out.security.slice(0, 200)}`);
   const raw = Array.isArray(r.out.questions) ? r.out.questions.slice(0, PER_STOP) : [];
   return raw.map((x, k) => {
@@ -374,6 +396,134 @@ async function doStop(stop: Stop, stopIdx: number, writing: Promise<Question[]>)
   return items;
 }
 
+const round = (n: number) => Math.round(n * 10000) / 10000;
+const checkOf = (it: Item) => ({ id: it.q.id, stopId: it.stop.id, source: it.source, withCode: it.withCode, withoutCode: it.withoutCode, kept: it.kept, ...(it.kept ? {} : { reason: it.reason }) });
+
+/* ---------- --add: more questions for a pool that exists; what is in it stays ---------- */
+
+interface PoolCheck {
+  id: string;
+  stopId: string;
+  source: string;
+  withCode: boolean;
+  withoutCode: boolean;
+  kept: boolean;
+  reason?: string;
+}
+interface PoolFile {
+  headSha: string;
+  madeBy: { writer: string; checker: string; costUsd: number };
+  stops: Record<string, Question[]>;
+  checks: PoolCheck[];
+  counts: Record<string, number>;
+  added?: object[];
+}
+
+async function addRun() {
+  const stop1 = (msg: string): never => {
+    console.error(`--add: ${msg}`);
+    process.exit(1);
+  };
+  const old = JSON.parse(readFileSync(ADD, 'utf8')) as PoolFile;
+  if (old.headSha !== tour.pr.headSha) stop1(`${ADD} is for commit ${String(old.headSha).slice(0, 7)}, the tour is at ${tour.pr.headSha.slice(0, 7)}`);
+  // the file keeps the text of the kept questions only. A dropped one is on the tour, or in the log of the run that wrote it
+  const logPath = resolve(args['add-log'] || join(DEFAULT_WORK, 'questions.log.json'));
+  const oldLog = existsSync(logPath) ? (JSON.parse(readFileSync(logPath, 'utf8')) as { items: (Omit<Item, 'stop'> & { stop: string })[] }) : { items: [] };
+  const logged = new Map(oldLog.items.map((it) => [it.q.id, it]));
+  const ids = new Set(old.checks.map((c) => c.id));
+  if (ids.size !== old.checks.length) stop1(`${ADD} has the same id twice in checks`);
+
+  /** every question a stop has, kept and dropped, in the order of `checks` */
+  const knownOf = (stop: Stop): Item[] =>
+    old.checks
+      .filter((c) => c.stopId === stop.id)
+      .map((c) => {
+        const q = c.kept ? old.stops[stop.id]!.find((x) => x.id === c.id) : (stop.questions.find((x) => x.id === c.id) ?? logged.get(c.id)?.q);
+        if (!q) return stop1(`no text for ${c.kept ? 'kept' : 'dropped'} question ${c.id}: not in ${c.kept ? ADD : `the tour or ${logPath} (--add-log)`}`);
+        return { q, stop, kept: c.kept, reason: c.reason ?? '' } as Item;
+      });
+  for (const s of stops) {
+    if (!old.stops[s.id]) stop1(`${ADD} has no pool for stop ${s.id}; make one without --add first`);
+    const kept = old.checks.filter((c) => c.stopId === s.id && c.kept).map((c) => c.id);
+    if (kept.join() !== old.stops[s.id]!.map((q) => q.id).join()) stop1(`stop ${s.id}: the kept questions in checks are not the ones in stops`);
+  }
+
+  log('run', `--add ${ADD}: ${stops.length} stops, ${stops.reduce((n, s) => n + old.stops[s.id]!.length, 0)} kept questions, ${tour.plants.length} planted lines on the tour · at least ${MIN_KEPT} kept per stop, ${PER_STOP} asked for in a round, at most ${ADD_ROUNDS} rounds · writer ${WRITER}, checker ${CHECKER} · answers in ${STEPS}`);
+
+  async function addToStop(stop: Stop, stopIdx: number): Promise<Item[]> {
+    const known = knownOf(stop);
+    const fresh: Item[] = [];
+    // the next free number: the dropped ones keep theirs
+    let no = 1 + Math.max(0, ...old.checks.filter((c) => c.stopId === stop.id).map((c) => Number(/-v(\d+)$/.exec(c.id)?.[1] ?? 0)));
+    const keptNow = () => known.filter((it) => it.kept).length;
+    for (let r = 1; r <= ADD_ROUNDS && keptNow() < MIN_KEPT; r++) {
+      if (MINUTES && (Date.now() - t0) / 60_000 > MINUTES) {
+        skipped.push(stop.id);
+        log('write', `${stop.id}: ${keptNow()} kept, fewer than ${MIN_KEPT}, but ${MINUTES} minutes are over: no further round`);
+        break;
+      }
+      rounds2++;
+      log('write', `${stop.id}: ${keptNow()} kept, fewer than ${MIN_KEPT}; round ${r} of at most ${ADD_ROUNDS}`);
+      // the step is named after its first new number, so that a later --add in the same folder does not write over it
+      const more = await write(stop, stopIdx, 2, known, no, `write-${stop.id}-v${no}`);
+      for (const q of more) if (ids.has(q.id)) throw new Error(`new id ${q.id} is already in the pool`);
+      for (const q of more) ids.add(q.id);
+      const all = known.map((it) => it.q);
+      const checked = await Promise.all(more.map((q) => check(q, stop, 'new', [...all, ...more.filter((o) => o !== q)])));
+      known.push(...checked);
+      fresh.push(...checked);
+      no += more.length;
+      if (!more.length) break;
+    }
+    if (keptNow() < MIN_KEPT) log('write', `${stop.id}: stays at ${keptNow()} kept, fewer than ${MIN_KEPT}`);
+    return fresh;
+  }
+
+  /** A kept question against the planted lines the tour has now. It stays in the pool whatever comes out: this is only reported. */
+  async function lookAgain(q: Question, stop: Stop): Promise<{ id: string; stopId: string; problem: string; said?: string } | null> {
+    const problem = plantProblem(q, stop);
+    if (problem) return { id: q.id, stopId: stop.id, problem };
+    if (!plantsIn(stop).length) return null;
+    const p = await pick(`p-${q.id}`, WITH_CODE_SYSTEM, stopText(stop, { code: true, planted: true }), q, NONE);
+    return p.choice === q.answer ? null : { id: q.id, stopId: stop.id, problem: `its answer changes when a planted line is shown (key ${q.answer}, picked ${p.choice})`, said: p.why };
+  }
+
+  // the writers go into the queue first: they take the longest
+  const adding = stops.map((s, i) => addToStop(s, i));
+  const looking = stops.flatMap((s) => old.stops[s.id]!.map((q) => lookAgain(q, s)));
+  const fresh = (await Promise.all(adding)).flat();
+  const existing = (await Promise.all(looking)).filter((x) => x !== null);
+
+  const minutes = (Date.now() - t0) / 60_000;
+  const at = new Date().toISOString();
+  const keptOf = (id: string) => fresh.filter((it) => it.stop.id === id && it.kept).map((it) => it.q);
+  const now = { written: fresh.length, kept: fresh.filter((it) => it.kept).length, wrongKey: fresh.filter((it) => !it.withCode).length, answerableWithoutCode: fresh.filter((it) => it.withoutCode).length };
+  const out = {
+    ...old,
+    madeBy: { ...old.madeBy, costUsd: round(old.madeBy.costUsd + cost) },
+    stops: Object.fromEntries(Object.entries(old.stops).map(([id, qs]) => [id, [...qs, ...keptOf(id)]])),
+    checks: [...old.checks, ...fresh.map(checkOf)],
+    // the old numbers plus this run; a number this run has no part in (tour, tourKept, droppedByHand) stays
+    counts: { ...old.counts, ...Object.fromEntries(Object.entries(now).map(([k, n]) => [k, (old.counts[k] ?? 0) + n])) },
+    added: [...(old.added ?? []), { at, writer: WRITER, checker: CHECKER, costUsd: round(cost), minutes: round(minutes), minKept: MIN_KEPT, perRound: PER_STOP, rounds: rounds2, plants: tour.plants.length, ...now, existing }],
+  };
+  // the log goes on from the earlier one, so that the next --add finds the text of every dropped question in one file
+  const earlier = oldLog.items.filter((it) => old.checks.some((c) => c.id === it.q.id)).map((it) => ({ ...it, ...(({ kept, reason }) => ({ kept, reason: reason ?? '' }))(old.checks.find((c) => c.id === it.q.id)!) }));
+  writeFileSync(join(WORK, 'questions.log.json'), JSON.stringify({ at, minutes: round(minutes), modelCalls: calls, addedTo: ADD, earlierLog: logPath, rounds: rounds2, roundsSkipped: skipped, counts: out.counts, thisRun: now, existing, items: [...earlier, ...fresh.map((it) => ({ ...it, stop: it.stop.id }))] }, null, 1));
+  if (ONLY) log('run', `--only: ${join(OUT, 'questions.json')} is not written`);
+  else writeFileSync(join(OUT, 'questions.json'), `${JSON.stringify(out, null, 1)}\n`);
+
+  console.log(`${join(OUT, 'questions.json')}: ${now.kept} questions added of ${now.written} written (${out.counts.kept} kept in all) · ${now.wrongKey} with a key the checker did not confirm, ${now.answerableWithoutCode} answerable without the code · this run $${cost.toFixed(2)}, $${out.madeBy.costUsd.toFixed(2)} in all · ${minutes.toFixed(1)} min`);
+  for (const s of stops) console.log(`  ${s.id}: ${old.stops[s.id]!.length} kept before, ${out.stops[s.id]!.length} now${out.stops[s.id]!.length < MIN_KEPT ? ` (fewer than ${MIN_KEPT})` : ''}`);
+  for (const it of fresh.filter((x) => !x.kept)) console.log(`  dropped ${it.q.id} (new): ${it.reason}`);
+  for (const x of existing) console.log(`  already in the pool, left there: ${x.id}: ${x.problem}`);
+}
+
+if (ADD) {
+  await addRun();
+  process.exit(0);
+}
+
 log('run', `${stops.length} stops, ${stops.reduce((n, s) => n + s.questions.length, 0)} questions on the tour, ${tour.plants.length} planted lines · writer ${WRITER}, checker ${CHECKER} · answers in ${STEPS}`);
 // every writer goes into the queue first: they take the longest
 const writers = stops.map((s, i) =>
@@ -389,7 +539,6 @@ const items = (await Promise.all(stops.map((s, i) => doStop(s, i, writers[i]!)))
 
 /* ---------- step 4: the file ---------- */
 
-const round = (n: number) => Math.round(n * 10000) / 10000;
 const ofTour = items.filter((it) => it.source === 'tour');
 const fresh = items.filter((it) => it.source === 'new');
 const out = {
@@ -398,7 +547,7 @@ const out = {
   at: new Date().toISOString(),
   madeBy: { writer: WRITER, checker: CHECKER, costUsd: round(cost) },
   stops: Object.fromEntries(stops.map((s) => [s.id, items.filter((it) => it.stop === s && it.kept).map((it) => it.q)])),
-  checks: items.map((it) => ({ id: it.q.id, stopId: it.stop.id, source: it.source, withCode: it.withCode, withoutCode: it.withoutCode, kept: it.kept, ...(it.kept ? {} : { reason: it.reason }) })),
+  checks: items.map(checkOf),
   counts: {
     tour: ofTour.length,
     written: fresh.length,

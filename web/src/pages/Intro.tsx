@@ -68,8 +68,10 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
   const yours = [
     {
       mark: <Eye size={13} className="text-warn" />,
-      title: evidence ? `Read ${tour.lines.required} of ${all} lines closely` : `Read ${tour.lines.all} lines`,
-      body: evidence ? 'The lines that decide who sees what, move money or change stored data, the lines where a tried bug went unnoticed, and the open points. The rest is shown as context.' : 'This change has no evidence of its own, so every line has to be read.',
+      title: `Read the change in ${tour.stops.length} ${tour.stops.length === 1 ? 'stop' : 'stops'}`,
+      body: evidence
+        ? `Each stop says in plain words what its code does, with a diagram where the parts connect. ${tour.lines.required} of ${all} lines are marked “Read closely”: the lines that decide who sees what, move money or change stored data, the lines where a tried bug went unnoticed, and the open points.${tour.stops.some((s) => s.second) ? ' Under each mark you see whether a second model, reading without our marks, marked the line too.' : ''}`
+        : 'Each stop says in plain words what its code does. This change has no evidence of its own, so every line has to be read closely.',
     },
     { mark: <Check size={13} className="text-ok" />, title: `Answer ${questions} questions`, body: `Each one can only be answered from the code of its stop. A wrong answer closes the question for ${rule.lockSeconds} seconds and stays on the record.` },
     ...(points.length ? [{ mark: <span className="text-[12px] font-[590] text-accent-hi">?</span>, title: `Rule on ${points.length} open ${points.length === 1 ? 'point' : 'points'}`, body: 'Accept it as it is, or send it back to the author with what has to change. Either way you give your reason, and a reason that would fit any line is refused.' }] : []),
@@ -85,7 +87,7 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
     tour.via === 'invite' ? 'You came in with the judge link this repository’s team gave out, and you sign with your name. Without the link or a GitHub sign-in, a typed name is recorded and never approves.' : 'You are signed in with GitHub. A typed name is recorded and never approves.',
     `Every question is right, with at most ${rule.maxWrong} wrong tries.`,
     `You flagged the planted bug by read ${rule.maxReads} at the latest, with the reason.`,
-    `You read under ${rule.fastLinesPerMinute} of the lines to read closely a minute, and kept every stop that has some open at least as long as it takes to scroll it. The hand-in page shows both before you hand in.`,
+    `You read under ${rule.fastLinesPerMinute} of the lines to read closely a minute, and no stop with lines to read closely was open for less time than it takes to scroll through it. The hand-in page shows both before you hand in.`,
     ...(points.length ? ['You ruled on every open point, each with a reason, and sent none back. Send one back and the status turns red for the author, and stays red until the author pushes: no other review approves over it.'] : []),
     ...(fu ? [`The rest of the change stands on the review of ${fu.earlier.headSha.slice(0, 7)} by ${fu.earlier.who}: ${fu.untouched.stops} of its ${fu.untouched.of} stops are untouched by this commit.`] : []),
   ];
@@ -243,15 +245,15 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
         </p>
       )}
 
+      <h2 className="mt-9 mb-2.5 text-[13px] font-[590] text-fg">How you read it</h2>
+      <Rows rows={yours} />
+
       {shows.length > 0 && (
         <>
-          <h2 className="mt-9 mb-2.5 text-[13px] font-[590] text-fg">What the change shows for itself</h2>
+          <h2 className="mt-8 mb-2.5 text-[13px] font-[590] text-fg">What comes with the change</h2>
           <Rows rows={shows} />
         </>
       )}
-
-      <h2 className="mt-8 mb-2.5 text-[13px] font-[590] text-fg">What is left for you</h2>
-      <Rows rows={yours} />
 
       {!short && (
         <>
@@ -272,7 +274,7 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
               [
                 ['Who owns the decision?', 'You. Your name goes on the commit status with how you reviewed it. The AI that wrote the change has no way to sign.'],
                 ['When not to trust it?', 'When the tests are weak, more lines come to you. Risk marks are a model’s reading: any line can be flagged.'],
-                ['How does it scale?', `By what is left for a person: ${tour.lines.required} of ${all} lines here. After a send-back only the answer is read again.`],
+                ['How does it scale?', `The closest read goes to ${tour.lines.required} of ${all} lines here. After a send-back only the answer is read again.`],
               ] as const
             ).map(([q, a]) => (
               <div key={q} className="px-4 py-3">
@@ -322,7 +324,7 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
               </a>
             </>
           ) : tour.signIn ? (
-            'Without signing in, your review is recorded and cannot approve. You can sign in later and keep it.'
+            'Without signing in, your review is recorded and cannot approve. Signing in later starts the review again: one that counts begins when the reviewer is known.'
           ) : tour.test ? (
             'This is our own test browser.'
           ) : (

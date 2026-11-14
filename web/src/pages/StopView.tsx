@@ -172,7 +172,7 @@ export function StopView({ stop, answers, flags, locked, canAsk, pulse, evidence
           ) : b.type === 'diagram' ? (
             <Diagram key={i} d={b} />
           ) : (
-            <Code key={i} block={b} flags={flags} pulse={pulse} locked={locked} canAsk={canAsk} onFlag={onFlag} onAsk={onAsk} unnoticed={unnoticed} tests={evidence?.tests.passed} points={points} rulings={rulings} onRule={onRule} entire={entire} />
+            <Code key={i} block={b} flags={flags} pulse={pulse} locked={locked} canAsk={canAsk} onFlag={onFlag} onAsk={onAsk} unnoticed={unnoticed} tests={evidence?.tests.passed} points={points} rulings={rulings} onRule={onRule} entire={entire} second={stop.second} />
           ),
         )}
       </div>

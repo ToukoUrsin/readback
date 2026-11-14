@@ -343,6 +343,10 @@
     color: var(--flag);
   }
   /* lines the guide marked: read these closely */
+  /* a line only the second reader would send to a person: marked, lighter than ours */
+  .row.also {
+    border-left-color: var(--fg4);
+  }
   .row.focus {
     border-left-color: var(--warn);
     background: rgba(242, 201, 76, 0.05);

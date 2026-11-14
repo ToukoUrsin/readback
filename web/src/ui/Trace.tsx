@@ -70,7 +70,7 @@ export function Trace({ tour, name }: { tour: PublicTour; name: string }) {
                     ) : null}
                   </dd>
                 ) : (
-                  <dd className="text-fg3">Carried by the tests: nothing here had to be read closely</dd>
+                  <dd className="text-fg3">{e.tests.length ? 'Carried by the tests: nothing here had to be read closely' : 'Nothing here had to be read closely'}</dd>
                 )}
                 <dt className="text-fg3">Decided</dt>
                 {st.required ? (

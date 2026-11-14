@@ -196,6 +196,25 @@ export interface PublicStop {
   /** how many of the stop's lines a person has to read closely: marked for what they can harm, unnoticed by the tests, or part of an open point */
   closely: number;
   evidence?: StopEvidence;
+  /** what a second model marked in this stop, reading the same code without our marks */
+  second?: StopSecond;
+}
+
+/** One stop as a second reader saw it. `agreed`: lines our marks and the second reader both send to a person. `also`: lines only the second reader would send, on no close-read list: shown with a lighter mark, never counted, never planted */
+export interface StopSecond {
+  model: string;
+  agreed: { file: string; line: number }[];
+  also: { file: string; from: number; to: number; harm: string; why: string }[];
+}
+
+/** gen/second.ts: a model of another vendor marks the lines a person has to read, with no marks of ours to lean on */
+export interface SecondRead {
+  schema: 1;
+  headSha: string;
+  at: string;
+  madeBy: { model: string; tokens: { in: number; out: number } };
+  counts: { shown: number; ours: number; theirs: number; both: number; oursOnly: number; theirsOnly: number; closely: number };
+  stops: { id: string; title: string; shown: number; ours: number; both: number; oursOnly: number; theirs: number; agreed: { file: string; line: number }[]; theirsOnly: { file: string; line: number; harm: string; why: string }[] }[];
 }
 
 export interface Flag {

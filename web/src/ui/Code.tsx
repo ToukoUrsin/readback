@@ -1,5 +1,5 @@
 import { type CSSProperties, memo, type TextareaHTMLAttributes, useState } from 'react';
-import type { CodeBlock, Entire, Flag, Ruling, RulingItem, StopEvidence, Token } from '../../../shared/tour';
+import type { CodeBlock, Entire, Flag, Ruling, RulingItem, StopEvidence, StopSecond, Token } from '../../../shared/tour';
 import { reachOf, Reached, sessionOf, Why } from './Entire';
 import { Chat, Check, Eye, Flag as FlagIcon, FlagFill, Warn, X } from './icons';
 import { inline } from './Prose';
@@ -103,6 +103,8 @@ interface Props {
   onRule?: (id: string, decision: Ruling['decision'], note: string) => Promise<string | null>;
   /** the sessions behind the lines and what calls each changed function */
   entire?: Entire;
+  /** what a second model marked in this stop, reading without our marks */
+  second?: StopSecond;
 }
 
 /** a bar under a line, in the reading font */
@@ -214,7 +216,7 @@ function Point({ p, ruling, locked, onRule, entire, brief }: { p: RulingItem; ru
   );
 }
 
-export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, onFlag, onAsk, unnoticed, tests, points, rulings, onRule, entire }: Props) {
+export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, onFlag, onAsk, unnoticed, tests, points, rulings, onRule, entire, second }: Props) {
   const removed = block.lines.filter((l) => l.kind === 'del').length;
   const added = block.lines.filter((l) => l.kind === 'add').length;
   const [showRemoved, setShowRemoved] = useState(false);
@@ -230,6 +232,18 @@ export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, on
   for (const f of focus) for (let n = f.from; n <= f.to; n++) closely.add(n);
   for (const u of here) closely.add(u.line);
   for (const p of pts) for (let n = Math.max(p.from, block.from); n <= Math.min(p.to, block.to); n++) closely.add(n);
+  // the second reader: which of our marked lines it marked too, and the lines only it would send to a person (never counted, never planted)
+  const agreed = new Set((second?.agreed ?? []).filter((a) => a.file === block.file).map((a) => a.line));
+  const extra = (second?.also ?? []).filter((a) => a.file === block.file && a.from <= block.to && a.to >= block.from);
+  const also = new Set<number>();
+  for (const a of extra) for (let n = Math.max(a.from, block.from); n <= Math.min(a.to, block.to); n++) if (!closely.has(n)) also.add(n);
+  const second2 = (f: { from: number; to: number }) => {
+    if (!second) return null;
+    const all = f.to - f.from + 1;
+    let n = 0;
+    for (let l = f.from; l <= f.to; l++) if (agreed.has(l)) n++;
+    return n === all ? 'The second reader marked this too.' : n ? `The second reader marked ${n} of these ${all} lines.` : 'The second reader did not mark this.';
+  };
   // what calls a function is said under the first mark inside it, not again under every mark that follows in the same function
   const told = new Set<string>();
   const firstIn = (line: number) => {
@@ -308,12 +322,24 @@ export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, on
                       <span className="font-[590] text-warn">Read closely{f.to > f.from ? `, lines ${f.from}–${f.to}` : ''}. </span>
                       {inline(f.why)}
                       {entire && firstIn(f.from) && <Reached en={entire} file={block.file} line={f.from} />}
+                      {second2(f) && <span className="block text-[12px] text-fg4">{second2(f)}</span>}
                     </span>
                   </div>
                 ))}
+                {extra
+                  .filter((a) => Math.max(a.from, block.from) === n && also.has(n))
+                  .map((a) => (
+                    <div key={`s${a.from}`} className={`${under} items-start gap-2 py-1.5 pr-4 pl-[14px] ${i > 0 ? 'mt-1' : ''}`}>
+                      <Eye size={13} className="mt-[2px] flex-none text-fg4" />
+                      <span className="text-[12.5px] leading-[18px] whitespace-normal text-fg3">
+                        <span className="font-[590] text-fg2">Second reader only{a.to > a.from ? `, lines ${a.from}–${a.to}` : ''}. </span>
+                        {inline(a.why)} <span className="text-fg4">Our marks do not send this to you, so it is not counted in the lines to read closely.</span>
+                      </span>
+                    </div>
+                  ))}
                 <div
                   id={lineId(block.file, n)}
-                  className={`row ${act ? 'pick' : ''} ${l.kind === 'add' ? 'add' : ''} ${closely.has(n) ? 'focus' : ''} ${flag ? 'flagged' : ''} ${open ? 'sel' : ''} ${pulsing ? 'pulse' : ''}`}
+                  className={`row ${act ? 'pick' : ''} ${l.kind === 'add' ? 'add' : ''} ${closely.has(n) ? 'focus' : also.has(n) ? 'also' : ''} ${flag ? 'flagged' : ''} ${open ? 'sel' : ''} ${pulsing ? 'pulse' : ''}`}
                   onClick={() => act && !window.getSelection()?.toString() && setSel(open ? null : n)}
                 >
                   <span className="num">{n}</span>

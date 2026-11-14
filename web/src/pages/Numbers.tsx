@@ -195,7 +195,8 @@ function History({ n }: { n: Data }) {
                 ['Answered right without the code', q.withoutCode],
                 [`Of our first ${q.first.checked} questions, answered right without the code`, q.first.withoutCode],
                 ['Kept in the pool', q.kept],
-                ['Fewest kept for one stop (a reviewer is asked 2 of them)', q.perStop],
+                ...(q.heldBack ? ([['Kept but not asked: their lines hold a line that can be planted', q.heldBack]] as [string, ReactNode][]) : []),
+                ['Fewest in use for one stop (a reviewer is asked 2 of them)', q.perStop],
               ] as [string, ReactNode][]
             ).map(([k, v]) => (
               <div key={k} className={row}>
@@ -443,6 +444,34 @@ function Share({ n }: { n: Data }) {
             </span>
             <span>One block per stop, as wide as its lines.</span>
           </p>
+
+          {n.second && (
+            <>
+              <h3 className={SUB}>A second reader for the marks</h3>
+              <p className={NOTE}>
+                {n.second.model} got the same <N v={n.second.shown} /> lines with no marks, no stop titles and no notes, only the issue, and marked on its own which lines a person has to read for access, money or data. Compared line by line with the marks of our model.
+              </p>
+              <dl className="mt-2 max-w-[760px] divide-y divide-line border-y border-line">
+                {(
+                  [
+                    ['Lines our model marked for what they can harm', n.second.ours],
+                    ['Lines the second reader marked', n.second.theirs],
+                    ['Marked by both', n.second.both],
+                    ['Only ours', n.second.oursOnly],
+                    ['Only the second reader, and on no close-read list (shown in the review with a grey mark, not counted)', n.second.theirsOnly],
+                  ] as [string, number][]
+                ).map(([k, v]) => (
+                  <div key={k} className="flex items-baseline justify-between gap-6 py-2 text-[13.5px]">
+                    <dt className="text-fg2">{k}</dt>
+                    <dd className="font-[590] text-fg tabular-nums">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className={`${NOTE} mt-2.5`}>
+                The <N v={n.second.closely} /> lines to read closely also hold lines no test notices and the open points, which neither count above includes. One run, one change: {n.second.tokens.in.toLocaleString('en-US')} tokens in, {n.second.tokens.out.toLocaleString('en-US')} out.
+              </p>
+            </>
+          )}
 
           <h3 className={SUB}>Per stop</h3>
           <p className={NOTE}>

@@ -8,7 +8,7 @@
 import type { Evidence, Tour } from '../shared/tour';
 import { closeLines } from './close';
 import { RULE } from './gate';
-import { type ColdCounts, type Counts, count, countCold, oursOf, type ReadEvent } from './store';
+import { type ColdCounts, type Counts, count, countCold, invitedOf, oursOf, type ReadEvent } from './store';
 
 export interface Group {
   /** goes at a review or a cold test */
@@ -125,7 +125,7 @@ function group(events: ReadEvent[]): Group {
 export function numbers(events: ReadEvent[], d: { tour: Tour; evidence?: Evidence }): Numbers {
   const ours = oursOf(events);
   // a go that came in with the judge link is a judge's, whatever browser it used
-  const invited = new Set(events.filter((e) => e.via === 'invite').map((e) => e.rid));
+  const invited = invitedOf(events);
   const people = events.filter((e) => !ours.has(e.rid) && !invited.has(e.rid));
   const judges = events.filter((e) => invited.has(e.rid));
   const agents = events.filter((e) => ours.has(e.rid) && !invited.has(e.rid));

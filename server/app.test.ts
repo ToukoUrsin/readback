@@ -526,8 +526,18 @@ test('each reviewer is asked a draw of the checked questions, with the answers i
     expect((await call('/api/answer', { id: mine.id, choice: wrong })).json.answer.misses).toBe(1);
     expect((await call('/api/answer', { id: mine.id, choice: mine.options.indexOf('right') })).json.answer.right.explain).toBe('e');
   }
-  expect(seen.size).toBeGreaterThan(1);
+  // a browser nobody vouches for is asked the first question of the pool, with the options in its own order
+  expect([...seen]).toEqual(['v1']);
   expect(orders.size).toBeGreaterThan(1);
+  // a known reviewer is asked from the rest of the pool: a key collected without signing in is worth nothing
+  const app = createApp({ tour, order: (n) => Array.from({ length: n }, (_, i) => i), lockSeconds: 0, pool, me: (c) => (c.req.header('x-login') ? { login: c.req.header('x-login')! } : null) });
+  const known = new Set<string>();
+  for (let i = 0; i < 12; i++) {
+    const r = await app.request('/api/tour', { headers: { 'x-login': `r${i}`, 'user-agent': 'Mozilla/5.0' } });
+    known.add(((await r.json()) as any).stops[0].questions[0].id);
+  }
+  expect(known.has('v1')).toBe(false);
+  expect(known.size).toBeGreaterThan(1);
   // our own test browser gets the first questions as written, so a recording can be planned
   const film = reader(undefined, true, { pool });
   expect((await film('/api/tour')).json.stops[0].questions[0]).toEqual({ id: 'v1', prompt: 'p v1', options: ['a', 'b', 'c', 'right'] });

@@ -15,7 +15,8 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { resolve } from 'node:path';
 import type { Entire, Evidence, Ruling, Tour } from '../shared/tour';
 import { carry, takeBack } from '../server/entire';
-import { setStatus } from '../server/github';
+import { setRecord, setStatus } from '../server/github';
+import { RECORD_MARK, recordGone, recordOf } from '../server/prrecord';
 
 const ROOT = resolve(import.meta.dir, '..');
 const APP = process.env.FLY_APP ?? 'readback-demo';
@@ -54,6 +55,7 @@ interface Row {
   rulings?: Record<string, Ruling>;
   /** what the rule says this signature writes to GitHub; absent when it does not count */
   status?: { state: 'success' | 'failure'; description: string };
+  seconds?: number;
 }
 /** the signature the commit stands on now, and what it left on Entire */
 interface Standing {
@@ -62,6 +64,8 @@ interface Standing {
   memories: string[];
   /** set for an invited judge on a demo copy: when the approval is taken back */
   until?: number;
+  who?: string;
+  outcome?: string;
 }
 const handledPath = resolve(DIR, 'handled.json');
 const standingPath = resolve(DIR, 'standing.json');
@@ -73,8 +77,20 @@ const stand = (s: Standing | null) => {
 };
 const key = (r: Row) => `${r.rid}:${r.type}:${r.at}`;
 
-async function back(why: string, entireWhy: string) {
+/** the record on the pull request itself: one comment, rewritten in place; a failure here never holds up the status */
+async function comment(body: string) {
+  try {
+    log(`record on pull request #${tour.pr.number}: ${await setRecord({ repo, pr: tour.pr.number, body, mark: RECORD_MARK })}`);
+    return true;
+  } catch (e) {
+    log(`record on the pull request failed: ${(e as Error).message.slice(0, 160)}`);
+    return false;
+  }
+}
+
+async function back(why: string, entireWhy: string, said = 'It was taken back.') {
   await setStatus({ repo, sha: headSha, state: 'pending', description: NOBODY, targetUrl: URL_FULL });
+  await comment(recordGone({ tour, url: URL_FULL, read: READ, why: said, ...(standing?.who ? { last: { who: standing.who, at: standing.at, outcome: standing.outcome } } : {}) }));
   if (trail) {
     const e = await takeBack({ trail, why: entireWhy, memories: standing?.memories });
     log(`entire: ${e.note}`);
@@ -84,7 +100,7 @@ async function back(why: string, entireWhy: string) {
 }
 
 if (process.argv.includes('--reset')) {
-  await back('reset by hand', NOBODY_ENTIRE);
+  await back('reset by hand', NOBODY_ENTIRE, 'The commit was put back to unread by hand.');
   process.exit(0);
 }
 
@@ -126,23 +142,27 @@ for (;;) {
         const description = r.status.description.slice(0, 140);
         await setStatus({ repo, sha: headSha, state: r.status.state, description, targetUrl: URL_FULL });
         log(`${r.status.state}: ${description}`);
+        const who = r.who ?? r.name ?? 'a reviewer';
         const github = { ok: true, note: `readback/read is ${r.status.state === 'success' ? 'green' : 'red'} on ${headSha.slice(0, 7)}: "${description}"` };
         await report(r, { github });
         let memories: string[] = [];
         if (trail) {
           // a signature replaces the one before it: what that one resolved is opened again first
           if (standing) await takeBack({ trail, why: 'A newer review replaces this one.', memories: standing.memories });
-          const e = await carry({ trail, headSha, who: r.who ?? r.name ?? 'a reviewer', outcome: r.outcome, description, rulings: r.rulings ?? {}, items: evidence?.rulings ?? [], remember: !r.test });
+          const e = await carry({ trail, headSha, who, outcome: r.outcome, description, rulings: r.rulings ?? {}, items: evidence?.rulings ?? [], remember: !r.test });
           memories = e.memories;
           log(`entire: ${e.note}`);
           await report(r, { entire: { ok: e.ok, note: e.note } });
         }
-        stand({ rid: r.rid, at: r.at, memories, ...(r.via === 'invite' && DEMO_MINUTES ? { until: Date.parse(r.at) + DEMO_MINUTES * 60_000 } : {}) });
+        // the status is what blocks or frees the merge, so it goes first; the record on the pull request follows
+        if (await comment(recordOf({ tour, evidence, url: URL_FULL, read: READ, signed: { who, at: r.at, outcome: r.outcome, description, seconds: r.seconds, rulings: r.rulings ?? {} } })))
+          await report(r, { github: { ok: true, note: `${github.note} The trace of this review is written on the pull request.` } });
+        stand({ rid: r.rid, at: r.at, memories, who, outcome: r.outcome, ...(r.via === 'invite' && DEMO_MINUTES ? { until: Date.parse(r.at) + DEMO_MINUTES * 60_000 } : {}) });
       } else if (standing?.rid === r.rid) {
-        await back('a test signature was taken back', 'The signature was taken back. ' + NOBODY_ENTIRE);
+        await back('a test signature was taken back', 'The signature was taken back. ' + NOBODY_ENTIRE, 'The signature was taken back by the reviewer.');
       }
     }
-    if (standing?.until && Date.now() > standing.until) await back(`an invited judge's ${DEMO_MINUTES} minutes are over`, `The demo time of an invited judge's review is over. ${NOBODY_ENTIRE}`);
+    if (standing?.until && Date.now() > standing.until) await back(`an invited judge's ${DEMO_MINUTES} minutes are over`, `The demo time of an invited judge's review is over. ${NOBODY_ENTIRE}`, `On this demo copy an invited judge's review counts for ${DEMO_MINUTES} minutes, so the next judge finds the commit blocked.`);
     first = false;
     writeFileSync(handledPath, JSON.stringify([...handled]));
   } catch (e) {

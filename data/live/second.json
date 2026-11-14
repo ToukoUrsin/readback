@@ -1,0 +1,428 @@
+{
+ "schema": 1,
+ "headSha": "55559f75e42757817126fb003058b7ae404ac72b",
+ "at": "2026-11-14T22:56:55.012Z",
+ "madeBy": {
+  "model": "gemini-4-hydrogen",
+  "tokens": {
+   "in": 31080,
+   "out": 18795
+  }
+ },
+ "counts": {
+  "shown": 1372,
+  "ours": 55,
+  "theirs": 75,
+  "both": 36,
+  "oursOnly": 19,
+  "theirsOnly": 23,
+  "closely": 103
+ },
+ "stops": [
+  {
+   "id": "schema-upgrade",
+   "title": "Old databases get the two new invoice columns when they are opened",
+   "shown": 84,
+   "ours": 7,
+   "both": 4,
+   "oursOnly": 3,
+   "agreed": [
+    {
+     "file": "src/db.ts",
+     "line": 150
+    },
+    {
+     "file": "src/db.ts",
+     "line": 191
+    },
+    {
+     "file": "src/db.ts",
+     "line": 192
+    },
+    {
+     "file": "src/db.ts",
+     "line": 193
+    }
+   ],
+   "theirs": 11,
+   "theirsOnly": [
+    {
+     "file": "src/db.ts",
+     "line": 117,
+     "harm": "data",
+     "why": "Adds notes and share_token columns to the invoices table schema."
+    },
+    {
+     "file": "src/db.ts",
+     "line": 118,
+     "harm": "data",
+     "why": "Adds notes and share_token columns to the invoices table schema."
+    },
+    {
+     "file": "src/db.ts",
+     "line": 143,
+     "harm": "data",
+     "why": "Defines column migrations applied via ALTER TABLE to existing databases."
+    },
+    {
+     "file": "src/db.ts",
+     "line": 144,
+     "harm": "data",
+     "why": "Defines column migrations applied via ALTER TABLE to existing databases."
+    },
+    {
+     "file": "src/db.ts",
+     "line": 145,
+     "harm": "data",
+     "why": "Defines column migrations applied via ALTER TABLE to existing databases."
+    },
+    {
+     "file": "src/db.ts",
+     "line": 146,
+     "harm": "data",
+     "why": "Defines column migrations applied via ALTER TABLE to existing databases."
+    },
+    {
+     "file": "src/db.ts",
+     "line": 194,
+     "harm": "data",
+     "why": "Alters existing database tables on startup when added columns are missing."
+    }
+   ]
+  },
+  {
+   "id": "search-filter-sql",
+   "title": "A search adds one LIKE condition on client name or invoice number",
+   "shown": 126,
+   "ours": 4,
+   "both": 3,
+   "oursOnly": 1,
+   "agreed": [
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 61
+    },
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 62
+    },
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 80
+    }
+   ],
+   "theirs": 4,
+   "theirsOnly": [
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 56,
+     "harm": "access",
+     "why": "The OR search predicate must stay parenthesized so it cannot bypass the workspace_id filter and leak invoices across workspaces."
+    }
+   ]
+  },
+  {
+   "id": "searched-list",
+   "title": "A search reads all matching ids once, then counts and pages in memory",
+   "shown": 49,
+   "ours": 4,
+   "both": 3,
+   "oursOnly": 1,
+   "agreed": [
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 141
+    },
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 147
+    },
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 148
+    }
+   ],
+   "theirs": 3,
+   "theirsOnly": []
+  },
+  {
+   "id": "list-page",
+   "title": "Tabs, pager and export link all carry the search text",
+   "shown": 146,
+   "ours": 3,
+   "both": 0,
+   "oursOnly": 3,
+   "agreed": [],
+   "theirs": 0,
+   "theirsOnly": []
+  },
+  {
+   "id": "notes",
+   "title": "Notes are cleaned and cut to 2000 characters before they are stored",
+   "shown": 178,
+   "ours": 5,
+   "both": 3,
+   "oursOnly": 2,
+   "agreed": [
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 262
+    },
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 358
+    },
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 364
+    }
+   ],
+   "theirs": 5,
+   "theirsOnly": [
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 363,
+     "harm": "access",
+     "why": "The exported setNotes helper updates invoices by invoiceId without checking workspace_id, allowing cross-tenant writes if any caller omits an ownership check."
+    },
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 365,
+     "harm": "access",
+     "why": "The exported setNotes helper updates invoices by invoiceId without checking workspace_id, allowing cross-tenant writes if any caller omits an ownership check."
+    }
+   ]
+  },
+  {
+   "id": "share-token",
+   "title": "A share link is a random token stored on the invoice row",
+   "shown": 108,
+   "ours": 11,
+   "both": 8,
+   "oursOnly": 3,
+   "agreed": [
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 373
+    },
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 375
+    },
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 380
+    },
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 384
+    },
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 385
+    },
+    {
+     "file": "src/routes/invoices.ts",
+     "line": 368
+    },
+    {
+     "file": "src/routes/invoices.ts",
+     "line": 369
+    },
+    {
+     "file": "src/routes/invoices.ts",
+     "line": 370
+    }
+   ],
+   "theirs": 15,
+   "theirsOnly": [
+    {
+     "file": "src/routes/invoices.ts",
+     "line": 375,
+     "harm": "access",
+     "why": "Guards share-link creation with the workspace ownership check before calling enableShare."
+    },
+    {
+     "file": "src/routes/invoices.ts",
+     "line": 376,
+     "harm": "access",
+     "why": "Guards share-link creation with the workspace ownership check before calling enableShare."
+    },
+    {
+     "file": "src/routes/invoices.ts",
+     "line": 377,
+     "harm": "access",
+     "why": "Guards share-link creation with the workspace ownership check before calling enableShare."
+    },
+    {
+     "file": "src/routes/invoices.ts",
+     "line": 382,
+     "harm": "access",
+     "why": "Guards share-link revocation with the workspace ownership check before calling revokeShare."
+    },
+    {
+     "file": "src/routes/invoices.ts",
+     "line": 383,
+     "harm": "access",
+     "why": "Guards share-link revocation with the workspace ownership check before calling revokeShare."
+    },
+    {
+     "file": "src/routes/invoices.ts",
+     "line": 384,
+     "harm": "access",
+     "why": "Guards share-link revocation with the workspace ownership check before calling revokeShare."
+    }
+   ]
+  },
+  {
+   "id": "public-page",
+   "title": "The public page shows the invoice document without a session",
+   "shown": 125,
+   "ours": 8,
+   "both": 6,
+   "oursOnly": 2,
+   "agreed": [
+    {
+     "file": "src/views/invoice.ts",
+     "line": 13
+    },
+    {
+     "file": "src/routes/share.ts",
+     "line": 14
+    },
+    {
+     "file": "src/routes/share.ts",
+     "line": 15
+    },
+    {
+     "file": "src/routes/share.ts",
+     "line": 16
+    },
+    {
+     "file": "src/routes/share.ts",
+     "line": 17
+    },
+    {
+     "file": "src/app.ts",
+     "line": 59
+    }
+   ],
+   "theirs": 8,
+   "theirsOnly": [
+    {
+     "file": "src/views/invoice.ts",
+     "line": 46,
+     "harm": "money",
+     "why": "Formats and displays the invoice total on both the authenticated invoice page and the public share view."
+    }
+   ]
+  },
+  {
+   "id": "csv-export",
+   "title": "The export holds every matching invoice, not only the current page",
+   "shown": 150,
+   "ours": 13,
+   "both": 9,
+   "oursOnly": 4,
+   "agreed": [
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 197
+    },
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 199
+    },
+    {
+     "file": "src/routes/invoices.ts",
+     "line": 145
+    },
+    {
+     "file": "src/routes/invoices.ts",
+     "line": 149
+    },
+    {
+     "file": "src/routes/invoices.ts",
+     "line": 166
+    },
+    {
+     "file": "src/routes/invoices.ts",
+     "line": 182
+    },
+    {
+     "file": "src/db.ts",
+     "line": 173
+    },
+    {
+     "file": "src/db.ts",
+     "line": 174
+    },
+    {
+     "file": "src/db.ts",
+     "line": 175
+    }
+   ],
+   "theirs": 29,
+   "theirsOnly": [
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 202,
+     "harm": "access",
+     "why": "Applies the workspace-scoped filter clause and binds workspaceId and filter parameters in placeholder order."
+    },
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 204,
+     "harm": "access",
+     "why": "Applies the workspace-scoped filter clause and binds workspaceId and filter parameters in placeholder order."
+    },
+    {
+     "file": "src/lib/invoices.ts",
+     "line": 205,
+     "harm": "access",
+     "why": "Applies the workspace-scoped filter clause and binds workspaceId and filter parameters in placeholder order."
+    },
+    {
+     "file": "src/routes/invoices.ts",
+     "line": 146,
+     "harm": "access",
+     "why": "Keys and validates the shared in-memory CSV cache by workspaceId, database generation, and workspace version so cached exports cannot cross workspaces or go stale."
+    },
+    {
+     "file": "src/routes/invoices.ts",
+     "line": 147,
+     "harm": "access",
+     "why": "Keys and validates the shared in-memory CSV cache by workspaceId, database generation, and workspace version so cached exports cannot cross workspaces or go stale."
+    },
+    {
+     "file": "src/routes/invoices.ts",
+     "line": 148,
+     "harm": "access",
+     "why": "Keys and validates the shared in-memory CSV cache by workspaceId, database generation, and workspace version so cached exports cannot cross workspaces or go stale."
+    }
+   ]
+  },
+  {
+   "id": "tests",
+   "title": "Tests cover each feature through HTTP, but not the export cache",
+   "shown": 89,
+   "ours": 0,
+   "both": 0,
+   "oursOnly": 0,
+   "agreed": [],
+   "theirs": 0,
+   "theirsOnly": []
+  },
+  {
+   "id": "rest",
+   "title": "The rest of the change",
+   "shown": 317,
+   "ours": 0,
+   "both": 0,
+   "oursOnly": 0,
+   "agreed": [],
+   "theirs": 0,
+   "theirsOnly": []
+  }
+ ]
+}
