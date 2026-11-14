@@ -1,0 +1,4 @@
+[
+  { "find": "Compare the end of this query with the end of the list query from the earlier stop.", "replace": "Look at how this query ends." },
+  { "find": "`MAX_NOTES` belongs to the notes feature, shown in a later stop.", "replace": "`MAX_NOTES` belongs to the notes feature, which the full read shows." }
+]

@@ -165,7 +165,7 @@ const files = changedFiles
   .filter((f) => f.changed > 0);
 const coverage = { changed: files.reduce((a, f) => a + f.changed, 0), onTour: files.reduce((a, f) => a + f.onTour, 0), files };
 
-const tour: Tour = { schema: 1, pr: plan.pr, intro: plan.intro, stops, plants, coverage, madeBy: plan.madeBy };
+const tour: Tour = { schema: 1, pr: plan.pr, intro: plan.intro, stops, plants, coverage, madeBy: plan.madeBy, ...(plan.short ? { short: plan.short } : {}) };
 writeFileSync(outPath, JSON.stringify(tour));
 console.log(`${outPath}: ${stops.length} stops, ${stops.reduce((a, s) => a + s.questions.length, 0)} questions, ${plants.length} planted lines, ${coverage.onTour} of ${coverage.changed} changed lines on the tour`);
 for (const f of files) console.log(`  ${f.onTour}/${f.changed}  ${f.file}`);

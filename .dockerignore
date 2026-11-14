@@ -4,3 +4,6 @@ gen
 data/dev
 data/**/gen.log.jsonl
 data/**/signatures.jsonl
+data/readers
+data/**/plan.json
+data/**/edits.json

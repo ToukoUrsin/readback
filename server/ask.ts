@@ -55,12 +55,13 @@ function digest(t: PublicTour): string {
   return out.join('\n\n');
 }
 
-export function ask(app: Hono<any>, d: AskDeps, tourOf: (c: Context<any>) => PublicTour, count: (c: Context<any>) => number) {
+export function ask(app: Hono<any>, d: AskDeps, tourOf: (c: Context<any>) => PublicTour, count: (c: Context<any>) => number, asked?: (c: Context<any>, q: string, stopId?: string) => void) {
   app.post('/api/ask', async (c) => {
     const b = (await c.req.json().catch(() => ({}))) as { q?: string; stopId?: string; line?: { file: string; line: number }; history?: { role: 'user' | 'model'; text: string }[] };
     const q = String(b.q ?? '').trim().slice(0, 800);
     if (!q) return c.text('Ask something about the code.', 400);
     if (count(c) > PER_READER || d.budget-- <= 0) return c.text('The guide has answered as much as it may on this server.', 429);
+    asked?.(c, q, typeof b.stopId === 'string' ? b.stopId.slice(0, 80) : undefined);
     const t = tourOf(c);
     const stop = t.stops.find((s) => s.id === b.stopId);
     const where = [stop ? `The reader is on the stop "${stop.title}".` : '', b.line ? `They are pointing at ${b.line.file}:${b.line.line}.` : ''].filter(Boolean).join(' ');

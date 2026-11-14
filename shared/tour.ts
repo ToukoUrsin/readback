@@ -34,6 +34,8 @@ export interface Plan {
   /** every one proven: the project's own tests pass without it and fail with it */
   plants: Plant[];
   madeBy: { model: string; costUsd: number; at: string; plantModel?: string };
+  /** set on a short read: it shows only some stops of the full tour, and does not approve the change */
+  short?: { stops: number; of: number };
 }
 
 export interface PlanStop {
@@ -148,6 +150,7 @@ export interface Tour {
   /** changed lines of the pull request, and how many of them a reader passes on the tour */
   coverage: { changed: number; onTour: number; files: { file: string; changed: number; onTour: number }[] };
   madeBy: Plan['madeBy'];
+  short?: Plan['short'];
 }
 
 /* ---------- What a reader's browser gets ---------- */
@@ -228,4 +231,7 @@ export interface PublicTour {
   /** whether a signature is written to GitHub as a commit status */
   github: boolean;
   ask: boolean;
+  short?: Plan['short'];
+  /** the other read of the same change: the short one from the full tour, the full one from the short */
+  other?: { kind: 'short' | 'full'; href: string; stops: number };
 }

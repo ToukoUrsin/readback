@@ -3,7 +3,7 @@ import { ArrowRight, Bot, Check, FlagFill } from '../ui/icons';
 import { inline } from '../ui/Prose';
 
 export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void }) {
-  const { pr, coverage, state } = tour;
+  const { pr, coverage, state, short, other } = tour;
   const questions = tour.stops.reduce((a, s) => a + s.questions.length, 0);
   const src = coverage.files.filter((f) => !/(^|\/)(test|tests|__tests__)\//.test(f.file) && !/\.(md|css|ya?ml)$/.test(f.file));
   const srcChanged = src.reduce((a, f) => a + f.changed, 0);
@@ -12,7 +12,7 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
   const minutes = Math.max(3, Math.round(lines / 45 + questions * 0.5));
 
   const rules = [
-    { mark: <span className="text-[12px] font-[590] text-fg2">{tour.stops.length}</span>, title: `Read ${tour.stops.length} stops, in order`, body: 'Each stop shows one part of the change: what it does, why it is built that way, and the code itself.' },
+    { mark: <span className="text-[12px] font-[590] text-fg2">{tour.stops.length}</span>, title: short ? `Read ${short.stops} of the ${short.of} stops, in order` : `Read ${tour.stops.length} stops, in order`, body: 'Each stop shows one part of the change: what it does, why it is built that way, and the code itself.' },
     { mark: <Check size={13} className="text-ok" />, title: `Answer ${questions} questions`, body: 'Each one can only be answered from the code of its stop. A stop opens when the one before it is answered.' },
     { mark: <FlagFill size={13} className="text-flag" />, title: 'Catch the planted bug', body: 'One line you will read was changed on purpose. It is a real bug: the project’s own tests fail with it. Flag it, or the read does not count and you read again with a different one.' },
     { mark: <Bot size={13} className="text-accent-hi" />, title: 'Ask the guide', body: 'It explains any line. It will not tell you what is wrong.' },
@@ -25,6 +25,7 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
           {pr.repo} #{pr.number}
         </span>
         {pr.authorIsAgent && <span className="chip border-transparent! bg-accent-soft! text-accent-hi!">Written by an AI agent</span>}
+        {short && <span className="chip border-transparent! bg-flag/15! text-flag!">Short read</span>}
         <span className="chip">
           <span className="text-ok">+{pr.additions}</span>
           <span className="text-bad">−{pr.deletions}</span>
@@ -34,7 +35,20 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
       <h1 className="mt-5 text-[32px] leading-[1.12] font-[590] tracking-[-0.022em] text-fg sm:text-[40px]">{pr.title}</h1>
       <p className="mt-5 text-[16px] leading-[1.6] text-fg2">{inline(tour.intro)}</p>
 
-      <p className="mt-10 text-[15px] leading-[1.6] text-fg">Nobody has read this code yet. Before it can merge, you read it, and you show that you did.</p>
+      <p className="mt-10 text-[15px] leading-[1.6] text-fg">
+        {short ? (
+          <>
+            This is the short read: {short.stops} of the {short.of} stops. It works like the full read, but it does not approve the change.{' '}
+            {other && (
+              <a className="text-accent-hi underline-offset-2 hover:underline" href={other.href}>
+                Take the full read
+              </a>
+            )}
+          </>
+        ) : (
+          'Nobody has read this code yet. Before it can merge, you read it, and you show that you did.'
+        )}
+      </p>
 
       <div className="card mt-5 divide-y divide-line">
         {rules.map((r) => (
@@ -56,6 +70,14 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
           About {minutes} minutes · {lines} lines of code
         </span>
       </div>
+      {!short && other?.kind === 'short' && (
+        <p className="mt-4 text-[13px] text-fg3">
+          Only a few minutes?{' '}
+          <a className="text-accent-hi underline-offset-2 hover:underline" href={other.href}>
+            Take the short read: {other.stops} stops
+          </a>
+        </p>
+      )}
 
       <p className="mt-10 border-t border-line pt-5 text-[12.5px] leading-[1.6] text-fg4">
         The tour passes {srcOnTour} of the {srcChanged} source lines this change added or changed{coverage.changed > srcChanged ? `, and ${coverage.onTour - srcOnTour} of the ${coverage.changed - srcChanged} lines of tests, styles and docs` : ''}. Tour written by {tour.madeBy.model}

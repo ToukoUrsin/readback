@@ -32,3 +32,18 @@ bun test server
 ```
 
 `RB_GITHUB=1` also sets the commit status on a signature. `deploy/deploy.sh` puts the public copy on Fly.
+
+## Reads are kept
+
+Every start, answer, hand-in and signature is one line in `data/readers/reads.jsonl` (`RB_DATA`; `/data` on Fly, a volume).
+`GET /api/stats` gives the counts without names. A browser that once opened `/?test=1` is marked as ours and left out.
+
+## The short read
+
+`/short` serves some stops of the same tour for someone with five minutes. It is made without a model:
+
+    bun gen/short.ts --plan data/kuitti-2/plan.json --log data/kuitti-2/gen.log.jsonl --candidates <scratch>/steps/plants-1.json \
+      --stops search-clause,csv-export --edits data/kuitti-2-short/edits.json --out data/kuitti-2-short/plan.json
+    bun gen/materialize.ts --repo <repo> --plan data/kuitti-2-short/plan.json
+
+Its planted lines are proven ones from the generator's log that sit in those stops. A short read never approves and never writes to GitHub.

@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { Tour } from '../shared/tour';
 import { createApp } from './app';
+import { createStore, type Store } from './store';
 
 const line = (n: number, text: string) => ({ n, kind: 'add' as const, tokens: [[text, '']] as [string, string][] });
 const tour: Tour = {
@@ -18,13 +19,13 @@ const tour: Tour = {
   madeBy: { model: 'm', costUsd: 0, at: 'now' },
 };
 
-function reader() {
-  const app = createApp({ tour, order: (n) => Array.from({ length: n }, (_, i) => i) });
-  let cookie = '';
+function reader(store?: Store, test = false) {
+  const app = createApp({ tour, store, order: (n) => Array.from({ length: n }, (_, i) => i) });
+  let cookie = test ? 'rb_test=1' : '';
   const call = async (path: string, body?: unknown) => {
     const r = await app.request(path, { method: body === undefined ? 'GET' : 'POST', headers: { cookie, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
     const set = r.headers.get('set-cookie');
-    if (set) cookie = set.split(';')[0]!;
+    if (set) cookie = [set.split(';')[0]!, ...(test ? ['rb_test=1'] : [])].join('; ');
     return { status: r.status, json: (await r.json()) as any };
   };
   return call;
@@ -77,4 +78,29 @@ test('a line that is not on the tour cannot be flagged', async () => {
   await call('/api/tour');
   expect((await call('/api/flag', { file: 'a.ts', line: 9, note: '' })).status).toBe(400);
   expect((await call('/api/flag', { file: 'b.ts', line: 1, note: '' })).status).toBe(400);
+});
+
+test('every hand-in is counted, and our own test reads are left out', async () => {
+  const store = createStore(null);
+  const read = async (lines: number[], test = false) => {
+    const call = reader(store, test);
+    await call('/api/start', {});
+    await call('/api/answer', { id: 'q1', choice: 0 });
+    await call('/api/answer', { id: 'q1', choice: 1 });
+    for (const line of lines) {
+      await call('/api/flag', { file: 'a.ts', line, note: '' });
+      const { json } = await call('/api/handin', {});
+      if (json.ok) await call('/api/sign', { name: 'A Reader' });
+    }
+    return call;
+  };
+  await read([2]); // caught on the first read
+  await read([1, 3]); // missed, then caught the second plant
+  await read([1]); // missed and left
+  await read([2], true); // ours
+  const call = await read([]); // started, never handed in
+  const { json } = await call('/api/stats');
+  expect(json.all).toMatchObject({ started: 4, reads: 3, caughtFirstRead: 1, missedFirstRead: 2, caughtLater: 1, signed: 2, handIns: 4, medianWrongAnswers: 1 });
+  expect(json.testReadersLeftOut).toBe(1);
+  expect(JSON.stringify(json)).not.toContain('A Reader');
 });

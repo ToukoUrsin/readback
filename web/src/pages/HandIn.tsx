@@ -93,7 +93,7 @@ function RevealCard({ r, stopTitle, tone }: { r: Reveal; stopTitle: string; tone
 }
 
 export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, readAgain, reset }: Props) {
-  const { state } = tour;
+  const { state, short, other } = tour;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [name, setName] = useState('');
@@ -158,15 +158,15 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, r
     return (
       <div className="rise mx-auto max-w-[720px] px-6 pt-14 pb-24">
         <span className="chip border-ok/30! bg-ok-soft! text-ok!">
-          <Check size={12} /> Read and approved
+          <Check size={12} /> {short ? 'Short read done' : 'Read and approved'}
         </span>
-        <h1 className="mt-4 text-[32px] leading-[1.12] font-[590] tracking-[-0.022em]">{s.name} read this change.</h1>
+        <h1 className="mt-4 text-[32px] leading-[1.12] font-[590] tracking-[-0.022em]">{short ? `${s.name} read ${short.stops} of ${short.of} stops.` : `${s.name} read this change.`}</h1>
         <p className="mt-3 text-[15px] text-fg3">
           {new Date(s.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} · commit <span className="font-mono text-[13px]">{s.headSha.slice(0, 7)}</span>
         </p>
         <div className="card mt-7 grid grid-cols-2 divide-x divide-y divide-line overflow-hidden sm:grid-cols-4 sm:divide-y-0">
           {[
-            ['Stops read', `${tour.stops.length} of ${tour.stops.length}`],
+            ['Stops read', `${tour.stops.length} of ${short ? short.of : tour.stops.length}`],
             ['Questions right', `${s.questions} of ${s.questions}`, s.misses ? `${s.misses} wrong ${s.misses === 1 ? 'try' : 'tries'} first` : 'no wrong tries'],
             ['Planted bug', s.reads === 1 ? 'Caught' : `Caught on read ${s.reads}`, s.reads === 1 ? 'first read' : `missed ${s.reads - 1} before`],
             ['Time', fmtTime(s.seconds)],
@@ -199,7 +199,16 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, r
           </div>
         )}
         <p className="mt-6 text-[13px] leading-[1.6] text-fg3">
-          {s.github ? (s.github.ok ? `On GitHub, the commit status readback/read is now green for ${s.headSha.slice(0, 7)}. A new commit needs a new read.` : `GitHub did not take the status: ${s.github.note}`) : 'On this public copy nothing is written to GitHub. On a real repository the signature sets the commit status readback/read, and the merge stays locked without it.'}
+          {short ? (
+            <>
+              A short read does not approve the change: {short.of - short.stops} stops are unread.{' '}
+              {other && (
+                <a className="text-accent-hi underline-offset-2 hover:underline" href={other.href}>
+                  Take the full read
+                </a>
+              )}
+            </>
+          ) : s.github ? (s.github.ok ? `On GitHub, the commit status readback/read is now green for ${s.headSha.slice(0, 7)}. A new commit needs a new read.` : `GitHub did not take the status: ${s.github.note}`) : 'On this public copy nothing is written to GitHub. On a real repository the signature sets the commit status readback/read, and the merge stays locked without it.'}
         </p>
         <button className="btn mt-6" onClick={reset}>
           Start over as a new reader
@@ -234,11 +243,11 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, r
           <label className="text-[13px] font-[590] text-fg" htmlFor="name">
             Sign the read
           </label>
-          <p className="mt-0.5 text-[13px] text-fg3">Your name goes on this commit: you read it and you understood it.</p>
+          <p className="mt-0.5 text-[13px] text-fg3">{short ? `Your name goes on this short read. It does not approve the change.` : 'Your name goes on this commit: you read it and you understood it.'}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <input id="name" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" maxLength={80} className="h-[38px] min-w-0 flex-1 rounded-lg border border-line-strong bg-raised px-3 text-[14px] placeholder:text-fg4 focus:border-accent" />
             <button className="btn btn-primary btn-lg" disabled={!name.trim() || busy}>
-              Sign and approve
+              {short ? 'Sign' : 'Sign and approve'}
             </button>
           </div>
           {err && <p className="mt-2 text-[13px] text-bad">{err}</p>}

@@ -7,7 +7,11 @@ primary_region = "arn"
 [env]
   PORT = "8080"
   HOST = "0.0.0.0"
-  RB_KEEP = "0"
+  RB_DATA = "/data"
+
+[mounts]
+  source = "readback_data"
+  destination = "/data"
 
 [[vm]]
   memory = "512mb"
