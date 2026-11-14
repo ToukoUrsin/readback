@@ -124,9 +124,9 @@ export function Sidebar({ tour, at, done, go, jump, unflag }: Props) {
         {item('handin', signed ? 'Signed' : state.caught ? 'Sign' : 'Hand in', signed ? <StatusDone /> : at === 'handin' ? <StatusNow /> : <StatusTodo />)}
 
         <p className="flex items-center gap-2 px-2 pt-5 pb-1.5 text-[11.5px] font-[510] text-fg4">
-          Flagged lines
-          <span className={state.flags.length > tour.maxFlags ? 'text-bad' : ''}>
-            {state.flags.length} of {tour.maxFlags}
+          Lines you flagged
+          <span className={state.flags.length > tour.maxFlags ? 'text-bad' : ''} title={`One line was changed on purpose. You may flag up to ${tour.maxFlags} lines.`}>
+            {state.flags.length} (up to {tour.maxFlags})
           </span>
         </p>
         {state.flags.length === 0 ? (

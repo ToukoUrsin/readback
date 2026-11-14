@@ -1,8 +1,9 @@
 /**
  * GET /api/numbers: what this copy has measured, for the page at /numbers. Counts only, no names.
  *
- * People and agents are counted the same way and kept apart: `people` are browsers that are not ours,
- * `agents` are our own agents' browsers, our test browsers and scripts. Only `people` may be quoted as results.
+ * Three groups are counted the same way and kept apart: `people` are browsers that are not ours, `judges` came in with the
+ * judge link (invited by the team; a judge can be a person or an AI, whatever browser it uses), `agents` are our own agents'
+ * browsers, our test browsers and scripts. Only `people` may be quoted as results of people.
  */
 import type { Evidence, Tour } from '../shared/tour';
 import { closeLines } from './close';
@@ -23,6 +24,10 @@ export interface Group {
   pace: Band[];
   /** cold tests by how long the decision took */
   coldPace: Band[];
+  /** hand-ins of a review that approves, by the kind of planted bug: one the project's tests notice, or one no test notices */
+  planted: { tested: { met: number; caught: number }; untested: { met: number; caught: number } };
+  /** reasons for a ruling that were refused because they would fit any line */
+  refused: number;
 }
 
 /** One band of time or pace: how many met the planted bug there, and how many caught it. */
@@ -48,6 +53,8 @@ export interface ReaderRow {
 export interface Numbers {
   at: string;
   people: Group;
+  /** came in with the judge link */
+  judges: Group;
   agents: Group;
   /** per reader and area, people only; empty until people have reviewed */
   readers: ReaderRow[];
@@ -63,8 +70,8 @@ export interface Numbers {
     unnoticed: number;
   } | null;
   /** each thing the AI did not decide, and what reviewers ruled */
-  points: { id: string; kind: string; stopId: string; file: string; from: number; to: number; found: string; question: string; people: { accepted: number; sentBack: number }; agents: { accepted: number; sentBack: number } }[];
-  planted: { total: number; byKind: Record<string, number> };
+  points: { id: string; kind: string; stopId: string; file: string; from: number; to: number; found: string; question: string; people: { accepted: number; sentBack: number }; judges: { accepted: number; sentBack: number }; agents: { accepted: number; sentBack: number } }[];
+  planted: { total: number; byKind: Record<string, number>; untested: number };
   /** the rule a signature has to meet; `paceLimit` is in lines to read closely a minute */
   rule: { maxWrong: number; maxReads: number; fastLinesPerMinute: number; paceLimit: number; lockSeconds: number; maxFlags: number };
   /** the sample change and its requirement */
@@ -96,6 +103,7 @@ function group(events: ReadEvent[]): Group {
   const last = new Map<string, string>();
   for (const e of events) if (e.type === 'rule') last.set(`${e.rid}:${e.point}`, String(e.decision));
   const decisions = [...last.values()];
+  const hand = events.filter((e) => e.type === 'handin' && e.tour !== 'short');
   return {
     goes: new Set(events.map((e) => e.rid)).size, cold: countCold(events), reviews, rulings: { accepted: decisions.filter((x) => x === 'accept').length, sentBack: decisions.filter((x) => x === 'back').length }, asked: events.filter((e) => e.type === 'ask').length,
     pace: bands(
@@ -106,13 +114,21 @@ function group(events: ReadEvent[]): Group {
       events.filter((e) => e.type === 'cold' && e.action !== 'skip' && typeof e.seconds === 'number').map((e) => ({ v: Number(e.seconds), hit: !!e.caught })),
       [['under 30 seconds', 30], ['30 seconds to 2 minutes', 120], ['over 2 minutes', Infinity]],
     ),
+    planted: {
+      tested: { met: hand.filter((e) => !e.untested).length, caught: hand.filter((e) => !e.untested && e.caught).length },
+      untested: { met: hand.filter((e) => e.untested).length, caught: hand.filter((e) => e.untested && e.caught).length },
+    },
+    refused: events.filter((e) => e.type === 'rule-refused').length,
   };
 }
 
 export function numbers(events: ReadEvent[], d: { tour: Tour; evidence?: Evidence }): Numbers {
   const ours = oursOf(events);
-  const people = events.filter((e) => !ours.has(e.rid));
-  const agents = events.filter((e) => ours.has(e.rid));
+  // a go that came in with the judge link is a judge's, whatever browser it used
+  const invited = new Set(events.filter((e) => e.via === 'invite').map((e) => e.rid));
+  const people = events.filter((e) => !ours.has(e.rid) && !invited.has(e.rid));
+  const judges = events.filter((e) => invited.has(e.rid));
+  const agents = events.filter((e) => ours.has(e.rid) && !invited.has(e.rid));
 
   // readers: a person is the `by` of their rows (rows from before it was written fall back to the go)
   const person = (e: ReadEvent) => String(e.by ?? e.rid);
@@ -154,6 +170,7 @@ export function numbers(events: ReadEvent[], d: { tour: Tour; evidence?: Evidenc
   return {
     at: new Date().toISOString(),
     people: group(people),
+    judges: group(judges),
     agents: group(agents),
     readers,
     route: ev
@@ -168,8 +185,8 @@ export function numbers(events: ReadEvent[], d: { tour: Tour; evidence?: Evidenc
           unnoticed: stops.reduce((a, s) => a + s.unnoticed, 0),
         }
       : null,
-    points: (ev?.rulings ?? []).map((r) => ({ id: r.id, kind: r.kind, stopId: r.stopId, file: r.file, from: r.from, to: r.to, found: r.found, question: r.question, people: rulingCount(people, r.id), agents: rulingCount(agents, r.id) })),
-    planted: { total: d.tour.plants.length, byKind },
+    points: (ev?.rulings ?? []).map((r) => ({ id: r.id, kind: r.kind, stopId: r.stopId, file: r.file, from: r.from, to: r.to, found: r.found, question: r.question, people: rulingCount(people, r.id), judges: rulingCount(judges, r.id), agents: rulingCount(agents, r.id) })),
+    planted: { total: d.tour.plants.length, byKind, untested: d.tour.plants.filter((p) => p.untested).length },
     rule: { maxWrong: RULE.maxWrong, maxReads: RULE.maxReads, fastLinesPerMinute: RULE.fastLinesPerMinute, paceLimit: ev ? RULE.closeLinesPerMinute : RULE.fastLinesPerMinute, lockSeconds: RULE.lockSeconds, maxFlags: 3 },
     pr: { repo: d.tour.pr.repo, number: d.tour.pr.number, title: d.tour.pr.title, url: d.tour.pr.url, headSha: d.tour.pr.headSha, additions: d.tour.pr.additions, deletions: d.tour.pr.deletions, files: d.tour.pr.files, ...(d.tour.pr.issue ? { issue: { number: d.tour.pr.issue.number, title: d.tour.pr.issue.title } } : {}) },
     criteria: ev?.criteria ?? [],

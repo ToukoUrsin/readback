@@ -9,12 +9,12 @@ import { createHash } from 'node:crypto';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { getCookie, setCookie } from 'hono/cookie';
-import type { Block, ColdResult, CommitState, Entire, Evidence, Flag, GateCheck, PublicTour, Question, ReaderState, Reveal, Ruling, Signature, Stop, Tour, TourPlant } from '../shared/tour';
+import type { Block, CodeBlock, ColdResult, CommitState, Entire, Evidence, Flag, Followup, GateCheck, PublicTour, Question, ReaderState, Reveal, Ruling, Signature, Stop, StopEvidence, Tour, TourPlant } from '../shared/tour';
 import { ask, type AskDeps } from './ask';
 import type { Me } from './auth';
 import { closeLines } from './close';
 import { gate, outcomeOf, RULE, statusFor } from './gate';
-import type { Grade } from './grade';
+import type { Grade, GradeRuling } from './grade';
 import type { ReadEvent, Store } from './store';
 
 export const MAX_FLAGS = 3;
@@ -43,6 +43,7 @@ export interface Deps {
   /** keeps what readers did, and the open reads */
   store?: Store;
   other?: PublicTour['other'];
+  after?: PublicTour['after'];
   /** a watcher outside this server turns signatures into the GitHub status (deploy/watch-github.ts) */
   githubSoon?: boolean;
   /** with this key a test reader can have the questions answered ahead, for a recording (POST /api/prep) */
@@ -53,6 +54,10 @@ export interface Deps {
   evidence?: Evidence;
   /** checks the reviewer's note on the planted line; without it a note is only required, not checked */
   grade?: Grade;
+  /** checks that the reason of a ruling is about the lines it rules on; without it a reason is only required */
+  gradeRuling?: GradeRuling;
+  /** ids of the planted lines of the cold test (the short read's): a line changed the same way is planted last, so the cold test does not teach what to look for */
+  coldPlants?: string[];
   /** the signed-in reviewer of a request (server/auth.ts) */
   me?: (c: Context) => Me | null;
   /** GitHub sign-in is set up */
@@ -73,6 +78,8 @@ export interface Deps {
   carryKey?: string;
   /** ids of the planted lines that are also planted where nobody signs in (the short read). With it, a signed-in reviewer only ever gets the others */
   openPlants?: string[];
+  /** this is a follow-up review (gen/followup.ts): only what one more commit changed is read, the rest stands on the review of the commit before it */
+  followup?: Followup;
 }
 
 export interface Shown {
@@ -149,7 +156,8 @@ export function createApp(d: Deps) {
   const { tour } = d;
   const key = d.key ?? 'full';
   const cookie = d.cookie ?? 'rb';
-  const stamp = `${tour.pr.headSha}:${tour.madeBy.at}:${tour.plants.map((p) => p.id).join(',')}`;
+  // planted lines no test notices were added to a tour that had reviews open: they are left out of the stamp, so those reviews stay
+  const stamp = `${tour.pr.headSha}:${tour.madeBy.at}:${tour.plants.filter((p) => !p.untested).map((p) => p.id).join(',')}`;
   const saved = d.store?.load<{ stamp: string; sessions: [string, Session][] }>(`sessions-${key}`);
   const sessions = new Map<string, Session>(saved?.stamp === stamp ? saved.sessions : []);
   const keep = () => d.store?.save(`sessions-${key}`, () => ({ stamp, sessions: [...sessions] }));
@@ -178,8 +186,11 @@ export function createApp(d: Deps) {
       const pool = poolOf(st);
       const begun = st.questions.some((q) => s.answers[q.id]);
       const plain = (q: Question) => ({ id: q.id, order: q.options.map((_, i) => i) });
-      dr = begun || pool === st.questions ? st.questions.map(plain) : s.test ? pool.slice(0, st.questions.length).map(plain) : shuffle(pool.length).slice(0, st.questions.length).map((i) => ({ id: pool[i]!.id, order: shuffle(pool[i]!.options.length) }));
+      // a question this person was asked in another review on this host (the short one, with its explanation) comes last in the draw
+      const met = (i: number) => (d.shown?.has(s.who, `q:${pool[i]!.id}`) ? 1 : 0);
+      dr = begun || pool === st.questions ? st.questions.map(plain) : s.test ? pool.slice(0, st.questions.length).map(plain) : shuffle(pool.length).sort((a, b) => met(a) - met(b)).slice(0, st.questions.length).map((i) => ({ id: pool[i]!.id, order: shuffle(pool[i]!.options.length) }));
       s.draw[st.id] = dr;
+      if (pool !== st.questions && !s.test) for (const x of dr) d.shown?.add(s.who, `q:${x.id}`);
     }
     return dr.map((x) => ({ q: byId.get(x.id)!, order: x.order }));
   };
@@ -195,6 +206,8 @@ export function createApp(d: Deps) {
   /** lines whose real text the evidence shows beside them (a tried bug the tests did not notice): never planted, the two would not match */
   const quoted = new Set(Object.values(ev?.stops ?? {}).flatMap((x) => x.changes.survived.map((v) => `${v.file}:${v.line}`)));
   const onTour = (file: string, line: number) => !quoted.has(`${file}:${line}`) && !!close.get(stopOf(file, line))?.has(`${file}:${line}`);
+  /** a planted line no test notices sits on a line whose tried bug the evidence quotes: that one note is left out for the reviewer who has it (see `view`) */
+  const plantable = (p: TourPlant) => (p.untested ? !!close.get(stopOf(p.file, p.line))?.has(`${p.file}:${p.line}`) : onTour(p.file, p.line));
   const shownAnywhere = (file: string, line: number) => stopOf(file, line) !== '';
   const inCold = (file: string, line: number) => !!tour.cold?.blocks.some((b) => b.file === file && b.from <= line && line <= b.to);
 
@@ -204,7 +217,7 @@ export function createApp(d: Deps) {
   const speed = (secs: number) => (secs > 0 ? Math.round((lines / secs) * 60) : 0);
   /** the person across goes, without their name: readers are counted by this */
   const by = (s: Session) => createHash('sha256').update(s.who).digest('hex').slice(0, 10);
-  const record = (s: Session, type: ReadEvent['type'], more: Record<string, unknown> = {}) => d.store?.record({ type, at: new Date().toISOString(), rid: s.rid, tour: key, headSha: tour.pr.headSha, test: s.test, by: by(s), ...(s.ours ? { ours: true } : {}), ...(s.login ? { verified: true } : {}), ...more });
+  const record = (s: Session, type: ReadEvent['type'], more: Record<string, unknown> = {}) => d.store?.record({ type, at: new Date().toISOString(), rid: s.rid, tour: key, headSha: tour.pr.headSha, test: s.test, by: by(s), ...(s.ours ? { ours: true } : {}), ...(s.login ? { verified: true } : {}), ...(s.via ? { via: s.via } : {}), ...more });
 
   /** how long a stop was open: counted from one "opened" to the next, a single stay capped at 15 minutes */
   const touch = (s: Session, stop: string | null) => {
@@ -214,14 +227,36 @@ export function createApp(d: Deps) {
     s.at = stop ? { stop, since: now } : null;
   };
   /** stops to read that were open for less time than it takes to scroll them: 4 lines a second, at most a minute */
-  const skimmed = (s: Session) => mustRead.filter((st) => (s.dwell?.[st.id] ?? 0) < Math.min(60, linesOf(st) / 4)).length;
+  const brief = (s: Session) =>
+    mustRead
+      .map((st) => ({ id: st.id, title: st.title, seconds: Math.floor((s.dwell?.[st.id] ?? 0) + (s.at?.stop === st.id ? Math.min(clock() - s.at.since, 15 * 60_000) / 1000 : 0)), needs: Math.ceil(Math.min(60, linesOf(st) / 4)) }))
+      .filter((x) => x.seconds < x.needs);
+  const skimmed = (s: Session) => brief(s).length;
+  /** the same, named: the reviewer has to be able to see which stop it was */
+  const skimmedNames = (s: Session) => brief(s).map((x) => `“${x.title.length > 48 ? `${x.title.slice(0, 46)}…` : x.title}” (open ${x.seconds} s, scrolling it takes ${x.needs} s)`).join(', ');
   const isFast = (lpm: number) => lpm >= fastAt;
   const ruled = (s: Session) => {
     const r = s.rulings ?? {};
     return { total: rulingItems.length, open: rulingItems.filter((x) => !r[x.id]).length, back: rulingItems.filter((x) => r[x.id]?.decision === 'back').length };
   };
-  const checksOf = (s: Session): GateCheck[] =>
-    gate({ login: s.login, via: s.via, ...(d.reviewers && s.login ? { listed: d.reviewers.includes(s.login.toLowerCase()) } : {}), test: s.test && !!s.prepared, prepared: !!s.prepared, questions: asks, wrong: wrong(s), reads: s.read, linesPerMinute: speed(s.caughtSeconds ?? seconds(s)), fastAt, skimmed: s.prepared ? 0 : skimmed(s), rulings: ruled(s) });
+  /** on a follow-up review: what the rest of the change stands on, as one line of the rule */
+  const fu = d.followup?.headSha === tour.pr.headSha ? d.followup : undefined;
+  const earlier = fu ? `The rest of the change stands on the review of ${fu.earlier.headSha.slice(0, 7)} by ${fu.earlier.who}: ${fu.untouched.stops} of its ${fu.untouched.of} stops are untouched by this commit` : undefined;
+  const hhmm = (ms: number) => `${new Date(ms).toISOString().slice(11, 16)} UTC`;
+  /** another reviewer's send-back that stands: no later review approves over it. Only a new commit from the author answers it */
+  const standing = (s: Session): GateCheck[] => {
+    if (ruled(s).back > 0) return []; // a second send-back counts too: its points go to the author as well
+    const other = [...sessions.values()].filter((x) => x !== s && x.signature?.outcome === 'sent-back' && !lapsed(x.signature)).sort((a, b) => (a.signature!.at < b.signature!.at ? 1 : -1))[0];
+    if (!other) return [];
+    const g = other.signature!;
+    const points = Object.values(g.rulings ?? {}).filter((r) => r.decision === 'back').length;
+    const until = g.via === 'invite' && d.demoMinutes ? ` On this demo copy an invited judge's send-back stands for ${d.demoMinutes} minutes, until ${hhmm(Date.parse(g.at) + d.demoMinutes * 60_000)}` : '';
+    return [{ id: 'standing', ok: false, text: `Sent back by ${whoOf(g)} at ${hhmm(Date.parse(g.at))} with ${points} ${points === 1 ? 'point' : 'points'} for the author. A send-back stands until the author pushes a new commit: no other review approves over it.${until}` }];
+  };
+  const checksOf = (s: Session): GateCheck[] => [
+    ...gate({ login: s.login, via: s.via, ...(d.reviewers && s.login ? { listed: d.reviewers.includes(s.login.toLowerCase()) } : {}), test: s.test && !!s.prepared, prepared: !!s.prepared, questions: asks, wrong: wrong(s), reads: s.read, untested: !!s.caught?.untested, linesPerMinute: speed(s.caughtSeconds ?? seconds(s)), fastAt, skimmed: s.prepared ? 0 : skimmed(s), skimmedNames: s.prepared ? '' : skimmedNames(s), rulings: ruled(s), ...(earlier ? { earlier } : {}) }),
+    ...standing(s),
+  ];
   const whoOf = (sig: Signature) => (sig.via === 'invite' ? `${sig.name} (invited judge)` : sig.login ? `@${sig.login}` : `${sig.name} (test read)`);
   /** on a demo copy an invited judge's signature decides for a while only: the record stays, the commit is blocked again for the next judge */
   const lapsed = (g: Signature) => g.via === 'invite' && !!d.demoMinutes && clock() - Date.parse(g.at) > d.demoMinutes * 60_000;
@@ -234,6 +269,8 @@ export function createApp(d: Deps) {
       if (g.outcome === 'approved' && (!out.approvedBy || g.at > out.approvedBy.at)) out.approvedBy = { who: whoOf(g), at: g.at, rulings: g.rulings ?? s.rulings ?? {} };
       if (g.outcome === 'sent-back' && (!out.sentBackBy || g.at > out.sentBackBy.at)) out.sentBackBy = { who: whoOf(g), at: g.at, points: Object.values(s.rulings ?? {}).filter((r) => r.decision === 'back').length, rulings: g.rulings ?? s.rulings ?? {} };
     }
+    // a send-back blocks the commit whatever was approved before it
+    if (out.sentBackBy && out.approvedBy && out.approvedBy.at <= out.sentBackBy.at) delete out.approvedBy;
     return out;
   };
 
@@ -248,7 +285,22 @@ export function createApp(d: Deps) {
   };
   const inFocus = (p: TourPlant) => tour.stops.some((st) => st.blocks.some((b) => b.type === 'code' && b.file === p.file && (b.focus ?? []).some((f) => f.from <= p.line && p.line <= f.to)));
 
-  const byKind = (n: number) => shuffle(n).sort((a, b) => (KIND_RANK[tour.plants[a]!.kind ?? ''] ?? 4) - (KIND_RANK[tour.plants[b]!.kind ?? ''] ?? 4));
+  /** what one planted line changes, without the text around it: "=" -> ">=" */
+  const edit = (p: TourPlant) => {
+    const a = p.original.trim();
+    const b = p.planted.trim();
+    let i = 0;
+    while (i < a.length && i < b.length && a[i] === b[i]) i++;
+    let j = 0;
+    while (j < a.length - i && j < b.length - i && a[a.length - 1 - j] === b[b.length - 1 - j]) j++;
+    return `${a.slice(i, a.length - j)}→${b.slice(i, b.length - j)}`;
+  };
+  const coldEdits = new Set(tour.plants.filter((p) => (d.coldPlants ?? tour.cold?.plants ?? []).includes(p.id)).map(edit));
+  /** a line changed the way the cold test's line was comes last: the cold test must not teach what to look for */
+  const twin = (i: number) => (coldEdits.has(edit(tour.plants[i]!)) && !(d.coldPlants ?? tour.cold?.plants ?? []).includes(tour.plants[i]!.id) ? 1 : 0);
+  // every reviewer gets their own order: two reviewers of one commit seldom look for the same line
+  const byKind = (n: number) => shuffle(n).sort((a, b) => twin(a) - twin(b));
+  void KIND_RANK;
 
   const fresh = (test: boolean, who: string): Session => {
     const order = (d.order ?? (test ? inOrder : byKind))(tour.plants.length);
@@ -262,8 +314,9 @@ export function createApp(d: Deps) {
    * Two pools of planted lines on the read that approves. A browser nobody vouches for can hand in junk and be shown planted lines
    * with their explanations; those lines are never the planted line of a signed-in reviewer, so a catalogue collected that way is worth nothing.
    */
-  const signedPool = new Set(d.openPlants ? tour.plants.filter((p) => onTour(p.file, p.line) && !d.openPlants!.includes(p.id)).map((p) => p.id) : []);
-  const inPool = (s: Session, p: TourPlant) => !signedPool.size || signedPool.has(p.id) === !!s.login;
+  const signedPool = new Set(d.openPlants ? tour.plants.filter((p) => plantable(p) && !d.openPlants!.includes(p.id)).map((p) => p.id) : []);
+  // a bug no test notices is only ever planted for a reviewer who is signed in: its line would be given away to anyone otherwise
+  const inPool = (s: Session, p: TourPlant) => (p.untested && !s.login ? false : !signedPool.size || signedPool.has(p.id) === !!s.login);
 
   /** the planted line of this read: the first in this reader's order they have not been shown. null once caught, or when none is left */
   const plantOf = (s: Session): TourPlant | null => {
@@ -271,21 +324,28 @@ export function createApp(d: Deps) {
     for (const i of s.order) {
       const p = tour.plants[i]!;
       // a planted line of the cold test that is not in a stop cannot be flagged in the read, so it is never the read's line
-      if (!seenBefore(s, p) && p.id !== s.coldPlant && onTour(p.file, p.line) && inPool(s, p)) return p;
+      if (!seenBefore(s, p) && p.id !== s.coldPlant && plantable(p) && inPool(s, p)) return p;
     }
     return null;
   };
-  const exhausted = (s: Session) => !s.caught && tour.plants.some((p) => onTour(p.file, p.line) && inPool(s, p)) && !plantOf(s);
+  const exhausted = (s: Session) => !s.caught && tour.plants.some((p) => plantable(p) && inPool(s, p)) && !plantOf(s);
 
   // in the cold test nothing was said about the line, so its reveal carries no `stated`
   const coldReveal = (p: TourPlant): Reveal => {
     const { stated: _, ...r } = reveal(p);
     return r;
   };
-  const reveal = (p: TourPlant): Reveal => ({ file: p.file, line: p.line, stopId: stopOf(p.file, p.line), original: p.originalTokens, planted: p.tokens, what: p.what, failedTests: p.failedTests, ...(p.kind ? { kind: p.kind } : {}), ...(p.headline ? { headline: p.headline } : {}), ...(p.stated ? { stated: p.stated } : {}), ...(p.failures ? { failures: p.failures } : {}) });
+  const reveal = (p: TourPlant): Reveal => ({ file: p.file, line: p.line, stopId: stopOf(p.file, p.line), original: p.originalTokens, planted: p.tokens, what: p.what, failedTests: p.failedTests, ...(p.kind ? { kind: p.kind } : {}), ...(p.headline ? { headline: p.headline } : {}), ...(p.stated ? { stated: p.stated } : {}), ...(p.failures ? { failures: p.failures } : {}), ...(p.untested ? { untested: true, ...(ev ? { tests: ev.tests.passed } : {}) } : {}) });
 
   const withPlant = <B extends Block>(blocks: B[], p: TourPlant | null | undefined): B[] =>
     !p ? blocks : blocks.map((b) => (b.type === 'code' && b.file === p.file && b.from <= p.line && p.line <= b.to ? { ...b, lines: b.lines.map((l) => (l.n === p.line ? { ...l, tokens: p.tokens } : l)) } : b));
+
+  /** the evidence of a stop as one reviewer sees it: the tried bug that is this reviewer's planted line is not quoted beside it */
+  const evidenceOf = (st: Stop, p: TourPlant | null): StopEvidence | undefined => {
+    const e = ev?.stops[st.id];
+    if (!e || !p?.untested || !e.changes.survived.some((x) => x.file === p.file && x.line === p.line)) return e;
+    return { ...e, changes: { ...e.changes, tried: e.changes.tried - 1, survived: e.changes.survived.filter((x) => !(x.file === p.file && x.line === p.line)) } };
+  };
 
   const state = (s: Session): ReaderState => ({ read: s.read, answers: s.answers, flags: s.flags, startedAt: s.startedAt, missed: s.missed, caught: s.caught, signature: s.signature, cold: s.cold, exhausted: exhausted(s), rulings: s.rulings ?? {}, ...(s.caught && !tour.short ? { checks: s.signature?.checks ?? checksOf(s) } : {}) });
 
@@ -297,7 +357,7 @@ export function createApp(d: Deps) {
       pr: tour.pr,
       intro: tour.intro,
       // while the cold test is open the reader gets only its lines: two copies of the same code with different planted lines would give both away
-      stops: cold ? [] : tour.stops.map((st) => ({ id: st.id, title: st.title, why: st.why, blocks: withPlant(st.blocks, p), questions: drawOf(s, st).map(({ q, order }) => ({ id: q.id, prompt: q.prompt, options: order.map((i) => q.options[i]!) })), required: required(st.id), closely: close.get(st.id)!.size, ...(ev?.stops[st.id] ? { evidence: ev.stops[st.id] } : {}) })),
+      stops: cold ? [] : tour.stops.map((st) => ({ id: st.id, title: st.title, why: st.why, blocks: withPlant(st.blocks, p), questions: drawOf(s, st).map(({ q, order }) => ({ id: q.id, prompt: q.prompt, options: order.map((i) => q.options[i]!) })), required: required(st.id), closely: close.get(st.id)!.size, ...(ev?.stops[st.id] ? { evidence: evidenceOf(st, p)! } : {}) })),
       coverage: tour.coverage,
       madeBy: tour.madeBy,
       maxFlags: MAX_FLAGS,
@@ -309,6 +369,7 @@ export function createApp(d: Deps) {
       ...(d.githubSoon ? { githubSoon: true } : {}),
       ...(cold ? { cold: { blocks: withPlant(tour.cold!.blocks, tour.plants.find((x) => x.id === s.coldPlant)) } } : {}),
       ...(d.other ? { other: d.other } : {}),
+      ...(d.after ? { after: d.after } : {}),
       ...(ev ? { evidence: { criteria: ev.criteria, tests: ev.tests, rulings: rulingItems, madeBy: ev.madeBy } } : {}),
       lines: { required: lines, all: allLines },
       rule: { maxWrong: RULE.maxWrong, maxReads: RULE.maxReads, fastLinesPerMinute: fastAt, lockSeconds },
@@ -318,6 +379,7 @@ export function createApp(d: Deps) {
       ...(d.entire && d.entire.headSha === tour.pr.headSha ? { entire: d.entire } : {}),
       ...(s.via ? { via: s.via } : {}),
       ...(d.demoMinutes && !tour.short ? { demoMinutes: d.demoMinutes } : {}),
+      ...(fu ? { followup: fu } : {}),
     };
   };
 
@@ -455,7 +517,7 @@ export function createApp(d: Deps) {
     }
     // the open points of the stop that is left are ruled on in front of the camera
     s.rulings ??= {};
-    for (const r of rulingItems) if (r.stopId !== leave) s.rulings[r.id] ??= { decision: 'accept', note: r.kind === 'untested' ? 'Ruled on before the recording.' : '' };
+    for (const r of rulingItems) if (r.stopId !== leave) s.rulings[r.id] ??= { decision: 'accept', note: 'Ruled on before the recording.' };
     s.prepared = true;
     record(s, 'prep', { answered, leave: leave ?? '' });
     return c.json(view(s));
@@ -470,6 +532,13 @@ export function createApp(d: Deps) {
       record(s, 'stop', { stop, read: s.read, seconds: seconds(s) });
     }
     return c.json({ ok: true });
+  });
+
+  /** the part of the rule that is about time, as it stands now: asked before the hand-in, while it can still be mended */
+  app.get('/api/pace', (c) => {
+    const s = c.get('s');
+    if (tour.short || s.prepared) return c.json({ brief: [], linesPerMinute: 0, under: fastAt, lines });
+    return c.json({ brief: s.caught ? [] : brief(s), linesPerMinute: speed(s.caughtSeconds ?? seconds(s)), under: fastAt, lines });
   });
 
   app.post('/api/answer', async (c) => {
@@ -522,11 +591,21 @@ export function createApp(d: Deps) {
     if (b.decision !== 'accept' && b.decision !== 'back') return c.json({ error: 'Accept it, or send it back.' }, 400);
     const note = String(b.note ?? '').trim().slice(0, 400);
     if (b.decision === 'back' && note.length < MIN_NOTE) return c.json({ error: 'Say what the author has to change.' }, 400);
-    // nothing but this signature stands behind a line no test checks: the record has to say why that is enough
-    if (b.decision === 'accept' && item.kind === 'untested' && note.length < MIN_NOTE) return c.json({ error: 'No test checks this. Say why you accept it without one.' }, 400);
+    // a ruling is a named person's decision on something the AI left open: the record has to say why
+    if (b.decision === 'accept' && note.length < MIN_NOTE) return c.json({ error: item.kind === 'untested' ? 'No test checks this. Say why you accept it without one.' : 'Say why it is fine as it is.' }, 400);
+    // and the reason has to be about these lines: one that would fit any line is not a ruling
+    let checked: boolean | null = null;
+    if (d.gradeRuling) {
+      const code = tour.stops.flatMap((st) => (st.blocks.filter((x) => x.type === 'code') as CodeBlock[]).filter((x) => x.file === item.file)).flatMap((x) => x.lines.filter((l) => l.n !== null && l.n >= item.from && l.n <= item.to).map((l) => l.tokens.map((t) => t[0]).join('')));
+      checked = await d.gradeRuling({ note, decision: b.decision, item, code: [...new Set(code)].slice(0, 40).join('\n') });
+      if (checked === false) {
+        record(s, 'rule-refused', { point: item.id, kind: item.kind, stop: item.stopId, decision: b.decision, note, read: s.read, seconds: seconds(s) });
+        return c.json({ error: b.decision === 'accept' ? 'That reason would fit any line. Say what about these lines makes them fine as they are, or send the point back.' : 'That would fit any line. Say what the author has to change here.' }, 400);
+      }
+    }
     s.rulings ??= {};
-    s.rulings[item.id] = { decision: b.decision, note } satisfies Ruling;
-    record(s, 'rule', { point: item.id, kind: item.kind, stop: item.stopId, decision: b.decision, note, read: s.read, seconds: seconds(s) });
+    s.rulings[item.id] = { decision: b.decision, note, checked } satisfies Ruling;
+    record(s, 'rule', { point: item.id, kind: item.kind, stop: item.stopId, decision: b.decision, note, checked, read: s.read, seconds: seconds(s) });
     return c.json({ rulings: s.rulings });
   });
 
@@ -564,7 +643,7 @@ export function createApp(d: Deps) {
     touch(s, null);
     const r: Reveal = { ...reveal(p), ...(mine && !caught ? { noteFailed: mine.note } : {}) };
     const secs = seconds(s);
-    record(s, 'handin', { read: s.read, caught, plant: `${p.file}:${p.line}`, kind: p.kind ?? '', flags: s.flags, ...(mine ? { note: mine.note, noteOk } : {}), wrongAnswers: wrong(s), seconds: secs, lines, linesPerMinute: speed(secs), plantInFocus: inFocus(p), afterCold: s.cold?.action ?? '', skimmed: skimmed(s), dwell: s.dwell });
+    record(s, 'handin', { read: s.read, caught, plant: `${p.file}:${p.line}`, kind: p.kind ?? '', ...(p.untested ? { untested: true } : {}), flags: s.flags, ...(mine ? { note: mine.note, noteOk } : {}), wrongAnswers: wrong(s), seconds: secs, lines, linesPerMinute: speed(secs), plantInFocus: inFocus(p), afterCold: s.cold?.action ?? '', skimmed: skimmed(s), dwell: s.dwell });
     markShown(s, p);
     if (caught) {
       s.caught = r;
@@ -607,7 +686,7 @@ export function createApp(d: Deps) {
       ...(checks ? { checks, outcome: outcomeOf(checks, back) } : {}),
       ...(rulingItems.length ? { rulings: { ...(s.rulings ?? {}) } } : {}),
     };
-    const status = sig.outcome ? statusFor({ outcome: sig.outcome, who: whoOf(sig), questions: sig.questions, wrong: sig.misses, reads: sig.reads, linesPerMinute: sig.linesPerMinute, back }) : null;
+    const status = sig.outcome ? statusFor({ outcome: sig.outcome, who: whoOf(sig), questions: sig.questions, wrong: sig.misses, reads: sig.reads, linesPerMinute: sig.linesPerMinute, back, ...(fu ? { earlier: fu.earlier.headSha.slice(0, 7) } : {}) }) : null;
     if (d.setStatus && status) {
       try {
         await d.setStatus({ repo: tour.pr.repo, sha: tour.pr.headSha, description: status.description, state: status.state, targetUrl: d.publicUrl ?? tour.pr.url });

@@ -1,0 +1,142 @@
+{
+ "schema": 1,
+ "headSha": "48471fe4a8497a7b4a3cde4b690668d4ce4aa5fc",
+ "criteria": [
+  {
+   "n": 1,
+   "text": "`src/lib/invoices.ts:229`: Cutting a note without a word loses what the user typed. Refuse a note over 2000 characters and say so on the page."
+  },
+  {
+   "n": 2,
+   "text": "`src/routes/invoices.ts:145`: No test keeps the CSV files of two workspaces apart. Add one: a user of another workspace must never get this file."
+  }
+ ],
+ "tests": {
+  "passed": 76,
+  "failed": 0,
+  "at": "2026-11-14T20:44:14.039Z"
+ },
+ "stops": {
+  "long-note-refused": {
+   "criteria": [
+    1
+   ],
+   "tests": [
+    "notes > a note over 2000 characters is refused with a message, never cut"
+   ],
+   "changes": {
+    "tried": 1,
+    "caught": 1,
+    "survived": []
+   },
+   "risk": [
+    "access",
+    "data"
+   ],
+   "riskWhy": "The note a user typed can be changed or lost before it is stored if `v.replace(/\\r\\n?/g, \"\\n\").trim()` or the length rule is wrong, and the client check in the same function decides whether an invoice may use a client of another workspace.",
+   "route": "read",
+   "routeWhy": [
+    "These are the tests everything else rests on",
+    "Stores the note and checks the client's workspace"
+   ]
+  },
+  "csv-workspaces-apart": {
+   "criteria": [
+    2
+   ],
+   "tests": [],
+   "changes": {
+    "tried": 0,
+    "caught": 0,
+    "survived": []
+   },
+   "risk": [
+    "access",
+    "money"
+   ],
+   "riskWhy": "A user can get a stored CSV file with the invoices of another workspace if the workspace is missing from the key in `JSON.stringify([workspaceId, status, q, now])`, and the same function turns cents into the exported total.",
+   "route": "read",
+   "routeWhy": [
+    "These are the tests everything else rests on",
+    "Keeps workspace CSV files apart and prints totals"
+   ]
+  }
+ },
+ "rulings": [
+  {
+   "id": "note-still-trimmed",
+   "kind": "open",
+   "stopId": "long-note-refused",
+   "file": "src/lib/invoices.ts",
+   "from": 229,
+   "to": 229,
+   "found": "The issue says that cutting a note without a word loses what the user typed. The code no longer cuts the note at 2000 characters, but it still removes spaces and empty lines at the start and end of the note and rewrites its line endings, and it shows no message about that.",
+   "question": "Do you accept that spaces and empty lines at the start and end of a note are still removed without a message?"
+  },
+  {
+   "id": "how-length-counted",
+   "kind": "open",
+   "stopId": "long-note-refused",
+   "file": "src/lib/invoices.ts",
+   "from": 281,
+   "to": 281,
+   "found": "The issue says 2000 characters and does not say how to count them. The code counts with the JavaScript string length, after the spaces at the ends are removed, so an emoji counts as two characters and a note of 1000 emoji is the longest that passes.",
+   "question": "Do you accept a count in which an emoji and some other signs take two of the 2000 characters?"
+  },
+  {
+   "id": "refusal-message-text",
+   "kind": "open",
+   "stopId": "long-note-refused",
+   "file": "src/lib/invoices.ts",
+   "from": 282,
+   "to": 282,
+   "found": "The issue says to say so on the page and gives no wording. The code adds the sentence Notes can be at most 2000 characters (yours has N), with the counted length as N, to the list of form errors at the top of the form.",
+   "question": "Do you accept this wording and this place for the message?"
+  },
+  {
+   "id": "whole-invoice-not-saved",
+   "kind": "open",
+   "stopId": "long-note-refused",
+   "file": "src/routes/invoices.ts",
+   "from": 285,
+   "to": 289,
+   "found": "The issue says to refuse a note over 2000 characters and does not say what happens to the rest of the invoice. The code saves nothing of the invoice, answers with status 422, and shows the form again with the full long note in the notes field.",
+   "question": "Do you accept that a note that is too long stops the whole invoice from being saved until the user shortens it?"
+  },
+  {
+   "id": "api-refuses-too",
+   "kind": "open",
+   "stopId": "long-note-refused",
+   "file": "test/features.test.ts",
+   "from": 206,
+   "to": 215,
+   "found": "The issue speaks only of the page. The length rule is in the check that the JSON API also uses, so an API request with a note over 2000 characters now gets status 422 and the message, where before the note was cut and stored.",
+   "question": "Do you accept that the JSON API now refuses a long note as well, and no longer stores a cut one?"
+  },
+  {
+   "id": "test-writes-counter",
+   "kind": "open",
+   "stopId": "csv-workspaces-apart",
+   "file": "test/features.test.ts",
+   "from": 358,
+   "to": 359,
+   "found": "The issue asks for a test that keeps the CSV files of two workspaces apart and does not say how. The test writes the value 7 straight into the change counter table for every workspace, so that only the workspace in the key can keep the stored files apart.",
+   "question": "Do you accept a test that sets the change counters by writing to the database table directly?"
+  },
+  {
+   "id": "files-told-by-prefix",
+   "kind": "open",
+   "stopId": "csv-workspaces-apart",
+   "file": "test/features.test.ts",
+   "from": 360,
+   "to": 370,
+   "found": "The issue says a user of another workspace must never get this file. The test makes four downloads with two filters and tells the files apart only by the start of each invoice number, NS- or HC-, and for two of the four downloads it does not check that the file has any invoice rows.",
+   "question": "Do you accept a test that checks only the start of the invoice numbers, and for two of its four downloads would also pass on a file with no invoices?"
+  }
+ ],
+ "madeBy": {
+  "model": "claude-opus-5-5, claude-fable-5-2",
+  "costUsd": 0.8918,
+  "at": "2026-11-14T20:45:57.271Z"
+ }
+}

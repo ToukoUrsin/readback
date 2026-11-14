@@ -7,7 +7,9 @@ import { inline } from './Prose';
 export const lineId = (file: string, n: number) => `L:${file}:${n}`;
 /** a flag needs this many characters of reason before the review can be handed in (server/app.ts MIN_NOTE) */
 export const MIN_NOTE = 8;
-export const POINT_KIND: Record<RulingItem['kind'], string> = { unasked: 'Nobody asked for this', open: 'The issue leaves this open', untested: 'No test checks this', answer: 'The author answered this' };
+/** a ruling on an open point needs this many characters of reason, to accept as much as to send back */
+export const MIN_RULING = 12;
+export const POINT_KIND: Record<RulingItem['kind'], string> = { unasked: 'Nobody asked for this', open: 'The issue leaves this open', untested: 'No test checks this', answer: 'A reviewer sent this back' };
 
 export function Tokens({ tokens }: { tokens: Token[] }) {
   return (
@@ -107,84 +109,74 @@ interface Props {
 const under = 'flex font-sans';
 
 function Point({ p, ruling, locked, onRule, entire }: { p: RulingItem; ruling?: Ruling; locked: boolean; onRule?: Props['onRule']; entire?: Entire }) {
-  // 'accept' asks for a reason too: a point no test checks is accepted in the reviewer's own words or not at all
-  const [mode, setMode] = useState<Ruling['decision'] | null>(null);
-  const back = mode !== null;
-  const setBack = (_: false) => setMode(null);
-  const needsWhy = p.kind === 'untested';
+  // one step: the reason first, then one of two buttons. Accepting needs a reason as much as sending back does
   const [note, setNote] = useState(ruling?.note ?? '');
   const [edit, setEdit] = useState(false);
   const [err, setErr] = useState('');
-  /** the reason is needed and not there yet */
-  const short = (mode === 'back' || needsWhy) && note.trim().length < MIN_NOTE;
+  const [busy, setBusy] = useState(false);
+  /** the reason is not there yet */
+  const short = note.trim().length < MIN_RULING;
   const send = async (decision: Ruling['decision']) => {
+    if (short || busy) return;
+    setBusy(true);
     const e = await onRule?.(p.id, decision, note);
+    setBusy(false);
     setErr(e ?? '');
-    if (!e) {
-      setBack(false);
-      setEdit(false);
-    }
+    if (!e) setEdit(false);
+  };
+  const cancel = () => {
+    setNote(ruling?.note ?? '');
+    setErr('');
+    setEdit(false);
   };
   const open = !ruling || edit;
   return (
     <div id={`P:${p.id}`} className={`${under} px-[14px] py-2`}>
       <div className={`w-full rounded-lg border px-3.5 py-3 whitespace-normal ${ruling && !edit ? (ruling.decision === 'accept' ? 'border-ok/30 bg-ok-soft' : 'border-flag/35 bg-flag-soft') : 'border-accent/45 bg-accent-soft'}`}>
         <p className="flex flex-wrap items-center gap-x-2 text-[11.5px] font-[590] text-accent-hi">
-          <span>The AI does not decide this</span>
+          <span>{p.kind === 'answer' ? 'The author answered a point sent back' : 'The AI does not decide this'}</span>
           <span className="font-[510] text-fg3">
-            {POINT_KIND[p.kind]} · {p.to > p.from ? `lines ${p.from}–${p.to}` : `line ${p.from}`}
+            {p.kind === 'answer' ? 'You decide if it is answered' : POINT_KIND[p.kind]} · {p.to > p.from ? `lines ${p.from}–${p.to}` : `line ${p.from}`}
           </span>
         </p>
         <p className="mt-1.5 text-[13px] leading-[1.5] text-fg2">{inline(p.found)}</p>
         <p className="mt-1.5 text-[13.5px] leading-[1.45] font-[590] text-fg">{p.question}</p>
         {open ? (
           <div className="mt-2.5">
-            {back ? (
-              <form
-                className="flex flex-wrap items-center gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void send(mode!);
-                }}
-              >
-                {/* a reason is a sentence or two: it gets room to be read back whole, on a phone too */}
-                <Grow
-                  autoFocus
-                  rows={2}
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      if (!short) void send(mode!);
-                    } else if (e.key === 'Escape') setBack(false);
-                  }}
-                  maxLength={400}
-                  aria-label={mode === 'back' ? 'What the author has to change' : 'Why you accept it'}
-                  placeholder={mode === 'back' ? 'What does the author have to change?' : needsWhy ? 'Why do you accept it without a test?' : 'Why is it fine as it is? (optional)'}
-                  className={`min-h-[54px] w-full basis-full rounded-md border border-line-strong bg-bg px-2.5 py-1.5 text-[13px] leading-[1.5] transition-colors placeholder:text-fg4 ${mode === 'back' ? 'focus:border-flag' : 'focus:border-ok'}`}
-                />
-                <button className="btn" disabled={short}>
-                  {mode === 'back' ? <X size={12} className={short ? '' : 'text-flag'} /> : <Check size={13} className={short ? '' : 'text-ok'} />}
-                  {mode === 'back' ? 'Send back' : 'Accept'}
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={() => setBack(false)}>
+            {/* a reason is a sentence or two: it gets room to be read back whole, on a phone too */}
+            <Grow
+              autoFocus={edit}
+              rows={2}
+              value={note}
+              disabled={locked}
+              onChange={(e) => setNote(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape' && edit) cancel();
+              }}
+              maxLength={400}
+              aria-label="Your reason"
+              placeholder="Why is it fine as it is, or what must the author change? Say something that is true of these lines."
+              className="min-h-[54px] w-full rounded-md border border-line-strong bg-bg px-2.5 py-1.5 text-[13px] leading-[1.5] transition-colors placeholder:text-fg4 focus:border-accent"
+            />
+            {err && (
+              <p className="mt-1.5 text-[12.5px] leading-[1.45] text-bad" role="alert">
+                {err}
+              </p>
+            )}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button type="button" className="btn" disabled={locked || short || busy} onClick={() => void send('accept')}>
+                <Check size={13} className={short ? '' : 'text-ok'} /> {p.kind === 'answer' ? 'It is answered' : 'Accept as it is'}
+              </button>
+              <button type="button" className="btn" disabled={locked || short || busy} onClick={() => void send('back')}>
+                <X size={12} className={short ? '' : 'text-flag'} /> {p.kind === 'answer' ? 'Send back again' : 'Send back to the author'}
+              </button>
+              {edit && (
+                <button type="button" className="btn btn-ghost" onClick={cancel}>
                   Cancel
                 </button>
-                {short && <span className="text-[12px] text-fg4">{mode === 'back' ? 'Say what has to change.' : 'Say why, in your own words.'}</span>}
-              </form>
-            ) : (
-              <div className="flex flex-wrap items-center gap-2">
-                <button className="btn" disabled={locked} onClick={() => setMode('accept')}>
-                  <Check size={13} className="text-ok" /> Accept as it is
-                </button>
-                <button className="btn" disabled={locked} onClick={() => setMode('back')}>
-                  <X size={12} className="text-flag" /> Send back to the author
-                </button>
-                <span className="text-[12px] text-fg4">Your ruling and your reason go on the record under your name.</span>
-              </div>
-            )}
-            {err && <p className="mt-1.5 text-[12.5px] text-bad">{err}</p>}
+              )}
+              <span className="text-[12px] text-fg4">{short ? `Write your reason first, at least ${MIN_RULING} characters.` : 'Your ruling and your reason go on the record under your name.'}</span>
+            </div>
           </div>
         ) : (
           <p className="mt-2.5 flex flex-wrap items-center gap-x-2 text-[13px]">

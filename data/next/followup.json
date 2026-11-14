@@ -1,0 +1,92 @@
+{
+ "schema": 1,
+ "headSha": "48471fe4a8497a7b4a3cde4b690668d4ce4aa5fc",
+ "earlier": {
+  "pr": 2,
+  "url": "https://github.com/ToukoUrsin/junction26-kuitti/pull/2",
+  "headSha": "55559f75e42757817126fb003058b7ae404ac72b",
+  "who": "Readback team test (script) (invited judge)",
+  "at": "2026-11-14T20:25:51.136Z",
+  "seconds": 451,
+  "questions": 16,
+  "reads": 1,
+  "stops": 10,
+  "lines": 1372,
+  "closely": 103,
+  "ours": true,
+  "href": "/full"
+ },
+ "issue": {
+  "number": 3,
+  "url": "https://github.com/ToukoUrsin/junction26-kuitti/issues/3"
+ },
+ "points": [
+  {
+   "id": "notes-length-limit",
+   "n": 1,
+   "file": "src/lib/invoices.ts",
+   "from": 229,
+   "to": 229,
+   "note": "Cutting a note without a word loses what the user typed. Refuse a note over 2000 characters and say so on the page.",
+   "found": "The issue says an invoice has a free-text notes field and gives no limit. The code cuts notes to 2000 characters before they are stored, and it shows no message when it cuts."
+  },
+  {
+   "id": "export-key-workspace",
+   "n": 2,
+   "file": "src/routes/invoices.ts",
+   "from": 145,
+   "to": 145,
+   "note": "No test keeps the CSV files of two workspaces apart. Add one: a user of another workspace must never get this file.",
+   "found": "This line makes the workspace part of the key under which a built CSV file is kept. When the workspace was taken out of the key, a user could download a file that holds the invoices of another workspace, and every test still passed."
+  }
+ ],
+ "accepted": 5,
+ "answer": {
+  "commit": "48471fe4a8497a7b4a3cde4b690668d4ce4aa5fc",
+  "at": "2026-11-14T20:29:57+00:00",
+  "session": "e8de9fa1-3400-49b9-b7a7-0e0afcd8bb07",
+  "model": "claude-opus-5-5",
+  "turns": 27,
+  "seconds": 236,
+  "tokens": 818311,
+  "minutesAfter": 4.1,
+  "recalled": 7,
+  "tests": {
+   "before": 74,
+   "after": 76
+  },
+  "added": 53,
+  "removed": 2
+ },
+ "untouched": {
+  "stops": 7,
+  "of": 10,
+  "lines": 788
+ },
+ "touched": [
+  {
+   "id": "notes",
+   "title": "Notes are cleaned and cut to 2000 characters before they are stored"
+  },
+  {
+   "id": "tests",
+   "title": "Tests cover each feature through HTTP, but not the export cache"
+  },
+  {
+   "id": "rest",
+   "title": "The rest of the change"
+  }
+ ],
+ "retried": [
+  {
+   "file": "src/routes/invoices.ts",
+   "line": 145,
+   "changed": "const key = JSON.stringify([status, q, now]);",
+   "before": "unnoticed",
+   "now": "noticed",
+   "failed": [
+    "CSV export > a CSV file built for one workspace is never given to another"
+   ]
+  }
+ ]
+}

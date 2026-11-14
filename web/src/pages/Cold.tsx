@@ -141,6 +141,9 @@ export function ColdOutcome({ tour, result, onStart }: { tour: PublicTour; resul
   const lines = tour.stops.reduce((a, s) => a + s.blocks.reduce((b, x) => b + (x.type === 'code' ? x.to - x.from + 1 : 0), 0), 0);
   const minutes = Math.max(3, Math.round(lines / 45 + questions * 0.5));
   const decided = stats ? stats.approved + stats.flaggedPlanted + stats.flaggedOther : 0;
+  // one-line bugs tried on the stops of this review that every test let through (the evidence of each stop)
+  const unnoticed = tour.stops.reduce((a, s) => a + (s.evidence?.changes.survived.length ?? 0), 0);
+  const elsewhere = unnoticed ? ` We tried other one-line bugs ${tour.short ? 'in the part you review next' : 'in this change'}, and ${unnoticed} of them passed every test. On ${unnoticed === 1 ? 'that line' : 'those lines'} your approval is the only check.` : '';
   const good = result.caught;
   const headline = good ? 'You caught it, with nothing to help you.' : result.action === 'approve' ? (r.headline ?? 'You approved a bug.') : `You asked for a change on line ${result.flagged!.line}. The bug is on line ${r.line}.`;
 
@@ -163,7 +166,7 @@ export function ColdOutcome({ tour, result, onStart }: { tour: PublicTour; resul
             {good
               ? 'Readback changed this one line before you saw it. The agent never wrote it. It is a real bug: the project’s own tests fail with it.'
               : result.action === 'approve'
-                ? 'Readback changed one line before you saw it. The agent never wrote it. It is a real bug: the project’s own tests fail with it. In a real review this approval would have merged it.'
+                ? `Readback changed one line before you saw it. The agent never wrote it. It is a real bug: the project’s own tests fail with it, so here the tests would have stopped it.${elsewhere}`
                 : `${r.headline ? `${r.headline} ` : ''}Readback changed one line before you saw it, and it is still there after your review. The project’s own tests fail with it.`}
           </p>
           <RevealCard r={r} shownAs={good ? 'What you were shown, and sent back' : 'What you were shown'} />

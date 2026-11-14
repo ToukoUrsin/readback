@@ -9,6 +9,7 @@ import { Bar, type Band, type Counts, fmtSeconds, type Group, LoadError, N, type
 const SECTIONS: SectionRef[] = [
   { id: 'share', label: 'Share routed to a person' },
   { id: 'findings', label: 'AI findings' },
+  { id: 'loop', label: 'After a send-back' },
   { id: 'pace', label: 'Does faster miss more?' },
   { id: 'time', label: 'Time to a decision' },
   { id: 'readers', label: 'Readers' },
@@ -16,8 +17,26 @@ const SECTIONS: SectionRef[] = [
   { id: 'rule', label: 'The rule' },
 ];
 
-type Who = 'people' | 'agents';
-const WHO: Record<Who, string> = { people: 'People', agents: 'Our agents and test browsers' };
+type Who = 'people' | 'judges' | 'agents';
+const WHO: Record<Who, string> = { people: 'People', judges: 'Invited judges', agents: 'Our agents and test browsers' };
+/** what the server counts since the judge link, the planted bugs no test notices and the follow-up review */
+type Kinds = { tested: { met: number; caught: number }; untested: { met: number; caught: number } };
+type G = Group & { planted?: Kinds; refused?: number };
+interface Loop {
+  earlier: { who: string; at: string; headSha: string; seconds: number; ours: boolean };
+  points: number;
+  accepted: number;
+  issue: { number: number; url: string };
+  answer: { commit: string; at: string; model: string; turns: number; seconds: number; tokens: number; minutesAfter: number; recalled: number; tests: { before: number; after: number }; added: number; removed: number };
+  pr: { number: number; url: string };
+  untouched: { stops: number; of: number; lines: number };
+  first: { stops: number; lines: number; closely: number; questions: number };
+  again: { stops: number; lines: number; closely: number; questions: number };
+  retried: { file: string; line: number; changed: string; now: 'noticed' | 'unnoticed'; failed?: string[] }[];
+}
+type More = Data & { judges?: G; loop?: Loop; planted: Data['planted'] & { untested?: number } };
+/** the sentence that stands where a group has nothing to show yet */
+const nobody = (who: Who, did: string) => (who === 'people' ? `No person has ${did} on this copy yet.` : who === 'judges' ? `No invited judge has ${did} yet.` : `No agent run has ${did} yet.`);
 
 const ZERO: Counts = { started: 0, reads: 0, caughtFirstRead: 0, missedFirstRead: 0, caughtLater: 0, signed: 0, handIns: 0, medianSeconds: null, medianSecondsToSignature: null, medianWrongAnswers: null, failed: 0, fastSignatures: 0, approved: 0, sentBack: 0, notCounted: 0, noteFailed: 0 };
 const review = (g: Group, k: 'full' | 'short') => g.reviews?.[k] ?? ZERO;
@@ -40,7 +59,7 @@ export default function Numbers() {
               Updated <time dateTime={n.at}>{new Date(n.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time>.{' '}
             </>
           )}
-          People are browsers that are not ours. Runs by our own agents and test browsers are counted the same way, shown apart, and are not results.
+          People are browsers that are not ours. Invited judges came in with the judge link the team gave out and typed their own name: a judge can be a person or an AI. Runs by our own agents and test browsers are counted the same way. The three are shown apart and never added, and only the people column is a result about people.
         </p>
 
         {error && <div className="mt-5">{<LoadError error={error} stale={!!n} />}</div>}
@@ -55,11 +74,12 @@ export default function Numbers() {
         {n && (
           <>
             <p className="mt-3 text-[13px] leading-[1.6] text-fg3">
-              Goes at the cold test or a review so far: <b className="font-[590] text-fg">{n.people.goes}</b> by people, <b className="font-[590] text-fg2">{n.agents.goes}</b> by our agents and test browsers.
+              Goes at the cold test or a review so far: <b className="font-[590] text-fg">{n.people.goes}</b> by people, <b className="font-[590] text-fg">{(n as More).judges?.goes ?? 0}</b> by invited judges, <b className="font-[590] text-fg2">{n.agents.goes}</b> by our agents and test browsers.
             </p>
             <Measures n={n} />
             <Share n={n} />
             <Findings n={n} />
+            <AfterSendBack n={n} />
             <Pace n={n} />
             <Time n={n} />
             <Readers n={n} />
@@ -200,6 +220,9 @@ function Measures({ n }: { n: Data }) {
   const met = p.pace.reduce((k, b) => k + b.met, 0);
   const missed = p.pace.reduce((k, b) => k + b.missed, 0);
   const ruled = p.rulings.accepted + p.rulings.sentBack;
+  const j = (n as More).judges;
+  const jmet = j?.pace.reduce((k, b) => k + b.met, 0) ?? 0;
+  const jmissed = j?.pace.reduce((k, b) => k + b.missed, 0) ?? 0;
   const none = <span className="text-fg3">no person yet</span>;
   const quiet = (text: string) => <span className="text-fg3">{text}</span>;
   const rows: { measure: string; now: ReactNode; live: string; alarm: string; to: string }[] = [
@@ -215,6 +238,12 @@ function Measures({ n }: { n: Data }) {
           ) : (
             quiet('No person has met one on this copy yet.')
           )}
+          {jmet ? (
+            <>
+              {' '}
+              Invited judges (a person or an AI): missed <b className="font-[590] text-fg">{jmissed} of {jmet}</b>.
+            </>
+          ) : null}
         </>
       ),
       live: 'Reverts and incident tickets of merged changes, set against the minutes and pace on the signature of each.',
@@ -307,19 +336,24 @@ function Measures({ n }: { n: Data }) {
 
 /* ---- people and agents, side by side, never added ---- */
 
-function Split({ n, children }: { n: Data; children: (g: Group, who: Who) => ReactNode }) {
+function Split({ n, children }: { n: Data; children: (g: G, who: Who) => ReactNode }) {
   return (
-    <div className="mt-3 grid items-start gap-3 md:grid-cols-2">
-      {(['people', 'agents'] as const).map((who) => (
-        <div key={who} className={who === 'people' ? 'card px-4 pt-3 pb-3.5' : 'rounded-[10px] border border-dashed border-line-strong px-4 pt-3 pb-3.5'}>
-          <p className={`mb-2 flex items-center gap-[6px] text-[12.5px] font-[590] ${who === 'people' ? 'text-fg' : 'text-fg3'}`}>
-            {who === 'agents' && <Bot size={13} />}
-            {WHO[who]}
-            {who === 'agents' && <span className="ml-auto font-[450]">not results</span>}
-          </p>
-          {children(n[who], who)}
-        </div>
-      ))}
+    <div className={`mt-3 grid items-start gap-3 md:grid-cols-2 ${(n as More).judges ? 'xl:grid-cols-3' : ''}`}>
+      {(['people', 'judges', 'agents'] as const).map((who) => {
+        const g = who === 'judges' ? (n as More).judges : n[who];
+        if (!g) return null;
+        return (
+          <div key={who} className={who === 'agents' ? 'rounded-[10px] border border-dashed border-line-strong px-4 pt-3 pb-3.5' : 'card px-4 pt-3 pb-3.5'}>
+            <p className={`mb-2 flex items-center gap-[6px] text-[12.5px] font-[590] ${who === 'agents' ? 'text-fg3' : 'text-fg'}`}>
+              {who === 'agents' && <Bot size={13} />}
+              {WHO[who]}
+              {who === 'agents' && <span className="ml-auto font-[450]">not results</span>}
+              {who === 'judges' && <span className="ml-auto font-[450] text-fg3">a person or an AI</span>}
+            </p>
+            {children(g, who)}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -529,10 +563,11 @@ function Findings({ n }: { n: Data }) {
               rows={[
                 ['Points accepted', g.rulings.accepted],
                 ['Points sent back to the author', g.rulings.sentBack],
+                ['Reasons refused because they would fit any line', g.refused ?? 0],
               ]}
             />
           ) : (
-            <None>{who === 'people' ? 'No person has ruled on a point on this copy yet.' : 'No agent run has ruled on a point yet.'}</None>
+            <None>{nobody(who, 'ruled on a point')}</None>
           )
         }
       </Split>
@@ -549,14 +584,18 @@ function Findings({ n }: { n: Data }) {
 
 function PointRow({ p }: { p: Point }) {
   const [label, tone] = KIND[p.kind] ?? [p.kind, 'text-fg2'];
-  const ruling = (who: Who) => (
-    <p className={`flex gap-x-[6px] ${who === 'people' ? 'text-fg2' : 'text-fg3'}`}>
-      <span className="w-[76px] flex-none text-fg3">{who === 'people' ? 'People' : 'Our agents'}</span>
-      <span className="whitespace-nowrap">
-        accepted <b className={`font-[590] ${who === 'people' ? 'text-fg' : 'text-fg2'}`}>{p[who].accepted}</b> · sent back <b className={`font-[590] ${who === 'people' ? 'text-fg' : 'text-fg2'}`}>{p[who].sentBack}</b>
-      </span>
-    </p>
-  );
+  const ruling = (who: Who) => {
+    const c = (p as Point & { judges?: { accepted: number; sentBack: number } })[who];
+    if (!c) return null;
+    return (
+      <p className={`flex gap-x-[6px] ${who === 'agents' ? 'text-fg3' : 'text-fg2'}`}>
+        <span className="w-[76px] flex-none text-fg3">{who === 'people' ? 'People' : who === 'judges' ? 'Judges' : 'Our agents'}</span>
+        <span className="whitespace-nowrap">
+          accepted <b className={`font-[590] ${who === 'agents' ? 'text-fg2' : 'text-fg'}`}>{c.accepted}</b> · sent back <b className={`font-[590] ${who === 'agents' ? 'text-fg2' : 'text-fg'}`}>{c.sentBack}</b>
+        </span>
+      </p>
+    );
+  };
   return (
     <div className="px-4 py-3.5 lg:grid lg:grid-cols-[196px_minmax(0,1fr)_236px] lg:gap-x-6">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 lg:block">
@@ -572,6 +611,7 @@ function PointRow({ p }: { p: Point }) {
       </div>
       <div className="mt-2.5 space-y-0.5 text-[12.5px] leading-[1.5] tabular-nums lg:mt-0">
         {ruling('people')}
+        {ruling('judges')}
         {ruling('agents')}
       </div>
     </div>
@@ -584,7 +624,7 @@ function Pace({ n }: { n: Data }) {
   const kinds = Object.entries(n.planted.byKind).sort((a, b) => b[1] - a[1]);
   const reviewStats = (g: Group, who: Who, k: 'full' | 'short') => {
     const c = review(g, k);
-    if (!c.reads) return <None>{who === 'people' ? `No person has handed in a ${k} review on this copy yet.` : `No agent run has handed in a ${k} review yet.`}</None>;
+    if (!c.reads) return <None>{nobody(who, `handed in a ${k} review`)}</None>;
     return (
       <Stats
         who={who}
@@ -603,11 +643,11 @@ function Pace({ n }: { n: Data }) {
       <p className={STATEMENT}>Reverts and incidents need months of real use before they can be counted. So every review carries one known bug, and the record keeps whether it was caught and how fast the reviewer read.</p>
 
       <h3 className={SUB}>Full review, by reading pace</h3>
-      <p className={NOTE}>Hand-ins of the review that approves, by lines to read closely a minute. Met is how many met the planted bug at that pace. Our agents read faster than a person can and still catch the bug, so their column says nothing about the pace limit for people. The limit is a first guess until the people column has numbers.</p>
+      <p className={NOTE}>Hand-ins of the review that approves, by lines to read closely a minute. Met is how many met the planted bug at that pace. Our agents read faster than a person can and still catch the bug: their column shows no link between pace and misses, and says nothing about the pace limit for people. The limit is a first guess until the people column has numbers.</p>
       <Split n={n}>
         {(g, who) => (
           <>
-            <Bands bands={g.pace} head="Pace" none={who === 'people' ? 'No person has handed in a full review on this copy yet.' : 'No agent run has handed in a full review yet.'} />
+            <Bands bands={g.pace} head="Pace" none={nobody(who, 'handed in a full review')} />
             {review(g, 'full').reads > 0 && <div className="mt-2 border-t border-line pt-1">{reviewStats(g, who, 'full')}</div>}
           </>
         )}
@@ -631,11 +671,11 @@ function Pace({ n }: { n: Data }) {
                 ]}
               />
               <div className="mt-2 border-t border-line pt-2">
-                <Bands bands={g.coldPace} head="Time to decide" none={who === 'people' ? 'No person has decided a timed cold test yet.' : 'No agent run has decided a timed cold test yet.'} />
+                <Bands bands={g.coldPace} head="Time to decide" none={who === 'people' ? 'No person has decided a timed cold test yet.' : who === 'judges' ? 'No invited judge has decided a timed cold test yet.' : 'No agent run has decided a timed cold test yet.'} />
               </div>
             </>
           ) : (
-            <None>{who === 'people' ? 'No person has been shown the cold test on this copy yet.' : 'No agent run has been shown the cold test yet.'}</None>
+            <None>{nobody(who, 'been shown the cold test')}</None>
           )
         }
       </Split>
@@ -647,7 +687,13 @@ function Pace({ n }: { n: Data }) {
       <h3 className={SUB}>The bugs that are planted</h3>
       <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-2 text-[13.5px] leading-[1.5] text-fg2">
         <span>
-          <b className="font-[590] text-fg">{n.planted.total}</b> prepared for this change, each proven by a failing test. One is shown per read.
+<b className="font-[590] text-fg">{n.planted.total}</b> prepared for this change. <b className="font-[590] text-fg">{n.planted.total - ((n as More).planted.untested ?? 0)}</b> are proven by a failing test.{' '}
+          {(n as More).planted.untested ? (
+            <>
+              <b className="font-[590] text-fg">{(n as More).planted.untested}</b> are bugs no test notices: the project’s tests were run with each and all passed, so only a reader stops them. Those are planted for signed-in reviewers and invited judges only.{' '}
+            </>
+          ) : null}
+          One is shown per read.
         </span>
         {kinds.map(([k, c]) => (
           <span key={k} className="chip">
@@ -655,6 +701,95 @@ function Pace({ n }: { n: Data }) {
           </span>
         ))}
       </p>
+      <p className={NOTE}>Hand-ins of a review that approves, by which kind of planted bug the reviewer had. A bug no test notices is the case the review exists for.</p>
+      <Split n={n}>
+        {(g, who) =>
+          g.planted && g.planted.tested.met + g.planted.untested.met > 0 ? (
+            <Stats
+              who={who}
+              rows={[
+                ['Had a bug the tests notice: caught', `${g.planted.tested.caught} of ${g.planted.tested.met}`],
+                ['Had a bug no test notices: caught', g.planted.untested.met ? `${g.planted.untested.caught} of ${g.planted.untested.met}` : 'none met yet'],
+              ]}
+            />
+          ) : (
+            <None>{nobody(who, 'handed in a review that approves')}</None>
+          )
+        }
+      </Split>
+    </Section>
+  );
+}
+
+/* ---- after a send-back ---- */
+
+function AfterSendBack({ n }: { n: Data }) {
+  const l = (n as More).loop;
+  if (!l) return null;
+  const day = new Date(l.earlier.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
+  const fixed = l.retried.filter((r) => r.now === 'noticed');
+  const next = (g: G) => g.reviews?.next;
+  const rows: [ReactNode, ReactNode][] = [
+    [`Review of ${l.earlier.headSha} sent back, ${day} UTC`, `${l.points} points sent back, ${l.accepted} accepted`],
+    [
+      <>
+        The points became{' '}
+        <a href={l.issue.url} className="underline decoration-line-strong underline-offset-2 hover:text-fg">
+          issue #{l.issue.number}
+        </a>
+        , in the reviewer’s words
+      </>,
+      `${l.points} acceptance criteria`,
+    ],
+    ['Rulings the author agent read back from Entire Brain before it wrote anything', l.answer.recalled],
+    [
+      <>
+        The agent’s answer:{' '}
+        <a href={l.pr.url} className="underline decoration-line-strong underline-offset-2 hover:text-fg">
+          pull request #{l.pr.number}
+        </a>
+        , commit {l.answer.commit}
+      </>,
+      `+${l.answer.added} −${l.answer.removed} lines`,
+    ],
+    ['From the signature to the commit', `${l.answer.minutesAfter} minutes`],
+    ['What the answer cost', `${l.answer.turns} steps, ${big(l.answer.tokens)} tokens`],
+    ['Tests that pass', `${l.answer.tests.before} before, ${l.answer.tests.after} after`],
+    ...(fixed.length ? ([[`A one-line bug on a line that was sent back, which no test noticed before, tried again`, `${fixed.length} of ${l.retried.length} now ${fixed.length === 1 ? 'fails' : 'fail'} a test`]] as [ReactNode, ReactNode][]) : []),
+    [`Stops of the first review the answer does not touch`, `${l.untouched.stops} of ${l.untouched.of} (${big(l.untouched.lines)} lines)`],
+    ['The first review', `${l.first.questions} questions, ${l.first.closely} of ${big(l.first.lines)} lines closely`],
+    ['The follow-up review', `${l.again.questions} questions, ${l.again.closely} of ${big(l.again.lines)} lines closely`],
+  ];
+  return (
+    <Section id="loop" title="After a send-back: the author answers, and only the answer is read again">
+      <p className={STATEMENT}>
+        A review that sends points back does not end in a comment. The points become an issue, the author agent answers with one more commit, and the reviewer reads that commit only. The rest of the change stands on the first review. This ran once on this copy, and every value below is read from that run.
+      </p>
+      <div className="card mt-3 max-w-[760px] px-4 pt-1.5 pb-2">
+        <Stats who="people" rows={rows} />
+      </div>
+      <p className={NOTE}>
+        {l.earlier.ours ? 'The review that was sent back was signed by our own script through the judge link, so that a sent-back review existed to answer. ' : ''}
+        The author’s session, its commit and the test runs are real runs, kept by Entire with the commit. One run is one data point, not a rate.
+      </p>
+      <h3 className={SUB}>Follow-up reviews signed</h3>
+      <Split n={n}>
+        {(g, who) =>
+          next(g)?.signed ? (
+            <Stats
+              who={who}
+              rows={[
+                ['Signed', next(g)!.signed],
+                ['Approved the answer', next(g)!.approved],
+                ['Sent it back again', next(g)!.sentBack],
+                ['Start to signature, median', next(g)!.medianSecondsToSignature === null ? 'none yet' : fmtSeconds(next(g)!.medianSecondsToSignature!)],
+              ]}
+            />
+          ) : (
+            <None>{nobody(who, 'signed a follow-up review')}</None>
+          )
+        }
+      </Split>
     </Section>
   );
 }
@@ -670,7 +805,7 @@ function Time({ n }: { n: Data }) {
           const f = review(g, 'full');
           const s = review(g, 'short');
           const nothing = !f.started && !s.started && !g.cold.shown;
-          if (nothing) return <None>{who === 'people' ? 'No person has started a review on this copy yet.' : 'No agent run has started a review yet.'}</None>;
+          if (nothing) return <None>{nobody(who, 'started a review')}</None>;
           return (
             <>
               <Stats

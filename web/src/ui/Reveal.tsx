@@ -1,5 +1,5 @@
 import type { Reveal, Token } from '../../../shared/tour';
-import { X } from './icons';
+import { Warn, X } from './icons';
 import { inline } from './Prose';
 
 /** The two lines without their shared indent, and where they differ (character offsets into each). */
@@ -73,6 +73,14 @@ export function RevealCard({ r, where, shownAs = 'What you were shown' }: { r: R
           </p>
         )}
       </div>
+      {r.untested && (
+        <div className="flex items-start gap-2.5 border-t border-line px-4 py-3 text-[13px] leading-[1.55]">
+          <Warn size={14} className="mt-[3px] flex-none text-warn" />
+          <p className="min-w-0 text-fg2">
+            <span className="font-[590] text-fg">No test of the project notices this bug.</span> {r.tests ? `All ${r.tests} tests pass with it.` : 'Every test passes with it.'} On this line a reviewer is the only check.
+          </p>
+        </div>
+      )}
       {fails.length > 0 && (
         <div className="border-t border-line">
           <div className="flex items-center gap-2 px-4 py-2 text-[12px]">

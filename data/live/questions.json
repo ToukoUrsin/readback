@@ -325,9 +325,9 @@
     "id": "list-page-v4",
     "prompt": "A row has `number` `\"INV-7\"` and `line_count` `0`. What does the small screen line under the client name show?",
     "options": [
-     "INV-7 · 0 item",
-     "INV-7 · no items",
-     "INV-7 · 0 items",
+     "INV-7 \u00b7 0 item",
+     "INV-7 \u00b7 no items",
+     "INV-7 \u00b7 0 items",
      "INV-7"
     ],
     "answer": 2,
@@ -427,23 +427,6 @@
    }
   ],
   "share-token": [
-   {
-    "id": "share-token-q1",
-    "prompt": "An invoice already has a share link, and the owner posts to `/invoices/:id/share` again. Which token does the invoice have afterwards?",
-    "options": [
-     "A new token, and the old link stops working",
-     "The same token as before",
-     "Two tokens, and both links work",
-     "No token, the second call turns sharing off"
-    ],
-    "answer": 1,
-    "explain": "The update on line 375 has `AND share_token IS NULL`, so it changes nothing when a token exists. Line 376 then reads back the stored token.",
-    "reread": {
-     "file": "src/lib/invoices.ts",
-     "from": 371,
-     "to": 377
-    }
-   },
    {
     "id": "share-token-q2",
     "prompt": "A signed-in user from another workspace posts to `/invoices/:id/share/revoke`. What happens?",
@@ -1083,7 +1066,8 @@
    "source": "tour",
    "withCode": true,
    "withoutCode": false,
-   "kept": true
+   "kept": false,
+   "reason": "answered by the text of an open point shown on the same stop (found by a judge in round 3, dropped by hand)"
   },
   {
    "id": "share-token-q2",
@@ -1350,9 +1334,10 @@
  "counts": {
   "tour": 18,
   "written": 52,
-  "kept": 43,
+  "kept": 42,
   "wrongKey": 0,
   "answerableWithoutCode": 19,
-  "tourKept": 8
+  "tourKept": 7,
+  "droppedByHand": 1
  }
 }

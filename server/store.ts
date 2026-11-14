@@ -6,7 +6,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeF
 import { resolve } from 'node:path';
 
 export interface ReadEvent {
-  type: 'start' | 'answer' | 'handin' | 'sign' | 'ask' | 'reset' | 'cold-shown' | 'cold' | 'stop' | 'failed' | 'unsign' | 'prep' | 'mark' | 'rule' | 'signin';
+  type: 'start' | 'answer' | 'handin' | 'sign' | 'ask' | 'reset' | 'cold-shown' | 'cold' | 'stop' | 'failed' | 'unsign' | 'prep' | 'mark' | 'rule' | 'rule-refused' | 'signin';
   at: string;
   /** one reader's one go at a tour; a new one after "Start over" */
   rid: string;
@@ -67,7 +67,7 @@ export interface Store {
   /** every row, oldest first */
   events(): ReadEvent[];
   /** `all`, `tours`, `cold`: people. `agents`: our own agents, test browsers and scripts, counted the same way and kept apart */
-  stats(): { at: string; first: string | null; all: Counts; tours: Record<string, Counts>; cold: ColdCounts; agents: { all: Counts; cold: ColdCounts }; testReadersLeftOut: number };
+  stats(): { at: string; first: string | null; all: Counts; tours: Record<string, Counts>; cold: ColdCounts; agents: { all: Counts; cold: ColdCounts }; /** goes that came in with the judge link: invited by the team, a person or an AI */ judges: { all: Counts; cold: ColdCounts }; testReadersLeftOut: number };
   load<T>(name: string): T | null;
   /** written a moment later, once per burst */
   save(name: string, value: () => unknown): void;
@@ -184,11 +184,13 @@ export function createStore(dir: string | null): Store {
     events: () => events,
     stats() {
       const ours = oursOf(events);
-      const real = events.filter((e) => !ours.has(e.rid));
-      const rest = events.filter((e) => ours.has(e.rid));
+      const invited = new Set(events.filter((e) => e.via === 'invite').map((e) => e.rid));
+      const real = events.filter((e) => !ours.has(e.rid) && !invited.has(e.rid));
+      const rest = events.filter((e) => ours.has(e.rid) && !invited.has(e.rid));
+      const judges = events.filter((e) => invited.has(e.rid));
       const tours: Record<string, Counts> = {};
       for (const t of new Set(real.map((e) => e.tour))) tours[t] = count(real.filter((e) => e.tour === t));
-      return { at: new Date().toISOString(), first: real[0]?.at ?? null, all: count(real), tours, cold: countCold(real), agents: { all: count(rest), cold: countCold(rest) }, testReadersLeftOut: ours.size };
+      return { at: new Date().toISOString(), first: real[0]?.at ?? null, all: count(real), tours, cold: countCold(real), agents: { all: count(rest), cold: countCold(rest) }, judges: { all: count(judges), cold: countCold(judges) }, testReadersLeftOut: ours.size };
     },
     load<T>(name: string): T | null {
       if (!dir) return null;

@@ -15,16 +15,41 @@ const fromHash = (): At => decodeURIComponent(location.hash.replace(/^#\/?/, '')
 const NONE: Record<string, Ruling> = {};
 const typing = (e: KeyboardEvent) => /^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement).tagName);
 
-function Clock({ from, until }: { from: string; until?: string }) {
-  const [, tick] = useState(0);
+/**
+ * The time the review takes. It counts from the start to the hand-in that caught the planted bug and stands still from then on:
+ * a signed review shows the seconds its signature carries.
+ */
+function Clock({ from, caught, took }: { from: string; caught: boolean; took?: number }) {
+  const running = !caught && took === undefined;
+  const key = `rb_took:${location.pathname}:${from}`;
+  // handed in before this page was loaded: the time is known only if this browser kept it
+  const [now, setNow] = useState<number | null>(() => {
+    if (running) return Date.now();
+    try {
+      const kept = Number(sessionStorage.getItem(key));
+      return kept > 0 ? kept : null;
+    } catch {
+      return null;
+    }
+  });
   useEffect(() => {
-    if (until) return;
-    const t = setInterval(() => tick((n) => n + 1), 1000);
+    if (!running) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [until]);
-  const s = Math.max(0, Math.round(((until ? Date.parse(until) : Date.now()) - Date.parse(from)) / 1000));
+  }, [running]);
+  useEffect(() => {
+    if (running || now === null) return;
+    try {
+      sessionStorage.setItem(key, String(now));
+    } catch {
+      /* no storage: the time stands still until the page is loaded again */
+    }
+  }, [running, now, key]);
+  if (took === undefined && now === null) return null;
+  const s = took ?? Math.max(0, Math.round((now! - Date.parse(from)) / 1000));
   return (
-    <span className="chip hidden sm:inline-flex" title="Time since you started reading">
+    <span className="chip hidden sm:inline-flex" title={running ? 'Time since you started reading' : 'The time this review took, up to the hand-in'}>
       {Math.floor(s / 60)}:{String(s % 60).padStart(2, '0')}
     </span>
   );
@@ -211,7 +236,7 @@ export default function App() {
           </div>
           <div className="ml-auto flex flex-none items-center gap-2">
             {state.read > 1 && !state.signature && <span className="chip border-flag/30! text-flag!">Read {state.read}</span>}
-            {state.startedAt && <Clock from={state.startedAt} until={state.signature?.at} />}
+            {state.startedAt && <Clock key={state.startedAt} from={state.startedAt} caught={!!state.caught} took={state.signature?.seconds} />}
             {state.startedAt && !state.caught && (
               <span className={`chip ${state.flags.length > tour.maxFlags ? 'border-bad/40! text-bad!' : ''}`} title="Lines you flagged as wrong">
                 <FlagFill size={11} className={state.flags.length ? 'text-flag' : 'text-fg4'} />

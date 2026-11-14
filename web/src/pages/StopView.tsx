@@ -49,7 +49,7 @@ function Evidence({ stop, evidence, lines, issue }: { stop: PublicStop; evidence
         {e.criteria.length ? (
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {e.criteria.map((n) => (
-              <span key={n} className="cursor-help rounded-md border border-line-strong px-1.5 py-px font-mono text-[11.5px] text-fg2" title={evidence.criteria.find((c) => c.n === n)?.text}>
+              <span key={n} className="cursor-help rounded-md border border-line-strong px-1.5 py-px font-mono text-[11.5px] text-fg2" title={evidence.criteria.find((c) => c.n === n)?.text.replace(/`/g, '')}>
                 #{issue ?? 1}.{n}
               </span>
             ))}
@@ -57,7 +57,7 @@ function Evidence({ stop, evidence, lines, issue }: { stop: PublicStop; evidence
         ) : (
           <p className="mt-1 font-[510] text-flag">No acceptance criterion</p>
         )}
-        <p className="mt-1.5 text-[12px] leading-[1.45] text-fg3">{e.criteria.length ? (e.criteria.length === 1 ? evidence.criteria.find((c) => c.n === e.criteria[0])?.text : 'Acceptance criteria of the issue. Hover a number for its text.') : 'Nothing in the issue asks for this code.'}</p>
+        <p className="mt-1.5 text-[12px] leading-[1.45] text-fg3">{e.criteria.length ? (e.criteria.length === 1 ? inline(evidence.criteria.find((c) => c.n === e.criteria[0])?.text ?? '') : 'Acceptance criteria of the issue. Hover a number for its text.') : 'Nothing in the issue asks for this code.'}</p>
       </div>
       <div className="px-4 py-3">
         <p className="text-[11.5px] font-[510] text-fg4">How sure the tests are</p>

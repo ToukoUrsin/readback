@@ -76,6 +76,16 @@ function askedOf(prompt: string): { asked: string; detail: string } {
   return { asked: ls[h]!.replace(/^#+ /, '').trim(), detail: detail.trim().slice(0, 400) };
 }
 
+/** the agent's report, at most `max` characters: cut after the last sentence or line that ends before the limit, never inside a word */
+function cutReport(text: string, max = 4000): string {
+  if (text.length <= max) return text;
+  const head = text.slice(0, max);
+  const stop = head.lastIndexOf('. ');
+  const line = head.lastIndexOf('\n');
+  const at = Math.max(stop + 1, line, 0) || head.lastIndexOf(' ');
+  return `${head.slice(0, at > 0 ? at : max).trimEnd()} …`;
+}
+
 interface Edit {
   file: string;
   text: string;
@@ -113,7 +123,7 @@ for (const [id, l] of first) {
     subject: await git(['log', '-1', '--format=%s', l.commit_sha]),
     checkpoint: l.checkpoint_id!,
     ...askedOf(l.prompt ?? ''),
-    report: report.slice(0, 4000),
+    report: cutReport(report),
     transcript: steps > 0,
     tokens: { total: t.tokens.total, input: t.tokens.input, cacheRead: t.tokens.cache_read, cacheWrite: t.tokens.cache_write, output: t.tokens.output, ...(steps > 0 ? { apiCalls: t.tokens.api_calls } : {}) },
   });

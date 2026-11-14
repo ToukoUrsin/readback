@@ -8,8 +8,8 @@ export interface ColdStats {
   skipped: number;
 }
 
-/** "/" and "/short" are the short read, "/full" the read that approves: the same page with another server behind it */
-export const BASE = /^\/(short|full)(\/|$)/.exec(location.pathname)?.[0].replace(/\/$/, '') ?? '';
+/** "/" and "/short" are the short read, "/full" the read that approves, "/next" the follow-up review of the author's answer: the same page with another server behind it */
+export const BASE = /^\/(short|full|next)(\/|$)/.exec(location.pathname)?.[0].replace(/\/$/, '') ?? '';
 
 // our own test reads carry a mark, so they stay out of the counts
 try {
@@ -35,6 +35,7 @@ export const api = {
   answer: (id: string, choice: number) => call<{ answer: AnswerState; reread?: { file: string; from: number; to: number } }>('/api/answer', { id, choice }),
   flag: (f: Flag & { on?: boolean }) => call<{ flags: Flag[] }>('/api/flag', f),
   rule: (id: string, decision: Ruling['decision'], note: string) => call<{ rulings: Record<string, Ruling> }>('/api/rule', { id, decision, note }),
+  pace: () => call<{ brief: { id: string; title: string; seconds: number; needs: number }[]; linesPerMinute: number; under: number; lines: number }>('/api/pace'),
   handin: () => call<{ ok: boolean; tour: PublicTour }>('/api/handin', {}),
   sign: (name: string) => call<ReaderState>('/api/sign', { name }),
   reset: () => call<PublicTour>('/api/reset', {}),

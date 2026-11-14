@@ -1,0 +1,235 @@
+{
+ "schema": 1,
+ "headSha": "48471fe4a8497a7b4a3cde4b690668d4ce4aa5fc",
+ "at": "2026-11-14T20:47:51.787Z",
+ "versions": {
+  "cli": "0.13.4",
+  "graph": "v0.6.0"
+ },
+ "sessions": [
+  {
+   "id": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3",
+   "agent": "Claude Code",
+   "model": "claude-opus-5-5",
+   "commit": "8b1f563384e52b3fec9a501da741798b6d57398d",
+   "subject": "Invoice search, line counts, notes, share links and CSV export (#1)",
+   "checkpoint": "01M7DQEPQDRX14FYVZ0FK3QGZV",
+   "asked": "Issue #1: Invoice search, share link, notes and CSV export",
+   "detail": "As someone who sends a lot of invoices, I want to find invoices quickly, share one with a client without making them sign up, keep a note on an invoice, and take my list into a spreadsheet, so I spend less time hunting through pages and answering \"can you send that again?\" emails.",
+   "report": "I've implemented issue #1 and committed it on `agent/issue-1` as `8b1f563`. All 74 tests pass (the 53 existing ones plus 21 new) and the typecheck is clean. I haven't pushed or opened the PR. The description is below.\n\nAt first every test failed because the dependencies weren't installed. After `bun install --frozen-lockfile` the original suite passed before I changed anything.\n\n---\n\n## Invoice search, share links, notes and CSV export\n\nCloses #1.\n\n### What changed\n\n**1. Search** (`/invoices?q=…`)\n- A search box on the invoice list finds invoices by client name or invoice number. It matches anywhere in the text and ignores case.\n- It works together with the status tabs. The tabs, Previous/Next links and Export link all keep both the search and the filter.\n- The tab counts change to show how many results each status has.\n- `%` and `_` are searched for as ordinary characters, not wildcards. The search term is escaped in the HTML.\n- `GET /api/invoices` also accepts `q`.\n\n**2. Line item count**\n- The list has a new \"Items\" column. On phones it shows as \"· N items\" under the client name.\n- The API list also returns `line_items`.\n\n**3. Notes**\n- Invoices have a `notes` field (up to 2,000 characters), set in the new/edit form. Notes show on the invoice page and on the share page.\n- The form label says notes are visible to the client, because they appear on the share link.\n- If an API `PUT` leaves out `notes`, the stored notes stay as they are, so existing API clients don't wipe them.\n\n**4. Share links**\n- On the invoice page you can **Create share link** and then **Copy** or **Revoke link**.\n- `GET /share/<token>` works without signing in. It shows a read-only copy of the invoice: sender, client, line items, total and notes. The page has no CSRF token, no action buttons and no session data, and sends `X-Robots-Tag: noindex`.\n- Tokens are 32 random bytes (43 characters, base64url) with a unique index. Anything not in that format is rejected before the database is queried.\n- Revoked, unknown, malformed and deleted links all show the \"not found\" page (404).\n- Clicking create twice keeps the same link, so a double-click doesn't break a link you already sent. Revoking and then creating gives a new link.\n- Creating and revoking need a session and the CSRF token, and are blocked (403) for invoices in another workspace.\n\n**5. CSV export** (`/invoices/export.csv?q=…&status=…`)\n- Exports every invoice that matches the current search and filter, across all pages.\n- Columns: Number, Client, Status, Issue date, Due date, Paid date, Reference, Line items, Total (EUR), Notes.\n- Follows the standard CSV format (RFC 4180), with a UTF-8 marker so characters like ä open correctly in spreadsheets.\n- **Formula protection:** text starting with `= + - @`, a tab or a carriage return gets a leading `'`. This stops a client name like `=HYPERLINK(…)` from running as a formula when the file is opened.\n\n**6. Existing features still work**\n- `openDb` adds the new `notes` and `share_token` columns with `ALTER TABLE` when they're missing, so databases created earlier upgrade on start. Running it again does nothing.\n- The invoice document is moved into `src/views/invoice.ts` and shared by the invoice page and the share page. The output is the same as before, plus the notes section.\n\n### Tests\n- New `test/features.test.ts` covers search (combined with filters, paging, wildcards, escaping, other workspaces), line counts compared with the database, notes (form, escaping, API keep/replace), the share link lifecycle including CSRF and other-workspace checks, the CSV export (content, totals, formula protection, other workspaces, sign-in required) and the schema upgrade.\n- On an in-memory copy of the large seed (2,000 invoices in one workspace), a search page takes about 1 ms and a full export about 5 ms.\n\n### Worth reviewing\n- **Share tokens are stored in plain text**, so the link can be shown again later. If the database leaked, the active links would leak with it. …",
+   "transcript": true,
+   "tokens": {
+    "total": 2487719,
+    "input": 66,
+    "cacheRead": 2344460,
+    "cacheWrite": 101058,
+    "output": 42135,
+    "apiCalls": 33
+   }
+  },
+  {
+   "id": "14be01c8-4014-4d2d-89b1-d37c67c31ffd",
+   "agent": "Claude Code",
+   "model": "claude-opus-5-5",
+   "commit": "430b92a2629120481db167ccb72458ea9f1ba29e",
+   "subject": "Make the invoice CSV export fast under load",
+   "checkpoint": "01M7DQKBQNZV0WHCJKFRVKACKW",
+   "asked": "A new page is too slow: Invoice CSV export (GET /invoices/export.csv)",
+   "detail": "The slowest requests took 2339 ms with 200 people using it at once (allowed: 500 ms).",
+   "report": "The CSV export is fast enough now. With Alice's 2,000 invoices and 200 users at once, the slowest 5% of requests took about 145 ms on my machine, down from 2339 ms. The limit is 500 ms. I committed this on `agent/issue-1` as `430b92a`.\n\n**Why it was slow:** every download ran the full query again and rebuilt the whole CSV, which took about 16 ms each time. Bun handles one request at a time, so with 200 people waiting those 16 ms added up to seconds.\n\n**What I changed:**\n- **Saved files** (`src/routes/invoices.ts`): each finished export is kept in memory, one per workspace, filter, search and day. Later downloads get the saved copy as long as the workspace's data hasn't changed. At most 200 are kept, and the oldest is dropped first.\n- **Change counter** (`src/db.ts`): a new `workspace_versions` table keeps a number per workspace. Database triggers raise it on any insert, update or delete of that workspace's invoices, line items or clients. A saved file is only used if the number hasn't moved, so nobody gets an out-of-date CSV. Because the triggers are in the database, this also covers writes that don't go through the app. Opening a database or resetting its schema clears the saved files.\n- **Faster query** (`src/lib/invoices.ts`): totals and line counts now come from one grouped join instead of two lookups per invoice. On the big dataset it takes about 4 ms and returns exactly the same rows as the old query.\n\n**Checks:**\n- The repository's tests pass: 74 pass, 0 fail.\n- I seeded the large dataset and ran a quick load script of my own, not the one you supplied (that copy was cut off). Each load ran for 8 seconds with no errors:\n\n  | Users at once | Slowest 5% |\n  |---|---|\n  | 10 | 12 ms |\n  | 50 | 41 ms |\n  | 200 | 143 ms |\n\n- I renamed a client directly in the database file from a separate process. The trigger raised the counter, and the next export from the running app showed the new name.\n\nThe search, status filter, formula protection and file name all work as before. No test scripts were added to the repository.",
+   "transcript": false,
+   "tokens": {
+    "total": 272850,
+    "input": 24,
+    "cacheRead": 232988,
+    "cacheWrite": 30565,
+    "output": 9273
+   }
+  },
+  {
+   "id": "e8de9fa1-3400-49b9-b7a7-0e0afcd8bb07",
+   "agent": "Claude Code",
+   "model": "claude-opus-5-5",
+   "commit": "48471fe4a8497a7b4a3cde4b690668d4ce4aa5fc",
+   "subject": "Address review: refuse long notes, test CSV cache workspace isolation",
+   "checkpoint": "01M7DW18NKNW4R4RHDQ92QJ7FH",
+   "asked": "A reviewer sent this pull request back",
+   "detail": "A person reviewed pull request #2 (branch `agent/issue-1`, commit 55559f7) in Readback and sent it back to you, the author. What they ruled on each open point is kept in this repository's Entire Brain, and as replies on the pull request's trail on Entire. Do what the reviewer asked on the points they sent back, and nothing else.",
+   "report": "The reviewer sent back two points, and I've dealt with both. All 76 tests pass with `test.sh`. Everything is in one commit, `48471fe`, on `agent/issue-1-review`, and I haven't pushed it. I didn't touch the five points the reviewer accepted as they are.\n\n**1. Notes over 2000 characters were cut without a message (`src/lib/invoices.ts:229`)**\n- **Reviewer said:** cutting a note without a word loses what the user typed. Refuse a note over 2000 characters and say so on the page.\n- **Changed:**\n  - `src/lib/invoices.ts:229`: `readNotes` no longer cuts the text. It still normalises line endings and trims spaces.\n  - `src/lib/invoices.ts:281-282`: `validateInvoice` now refuses notes over 2000 characters with the error \"Notes can be at most 2000 characters (yours has N).\"\n  - On the new and edit invoice pages, the form comes back with that error and status 422, and what the user typed stays in the box. The JSON API returns 422 with the same message. Nothing is saved.\n- **Test:** `test/features.test.ts:190`, \"a note over 2000 characters is refused with a message, never cut\". It covers the create page, the edit page and the API. It checks that the message appears, the text is kept, and nothing is stored. It also checks that a note of exactly 2000 characters is still saved whole.\n\n**2. No test kept two workspaces' CSV files apart (`src/routes/invoices.ts:145`)**\n- **Reviewer said:** no test keeps the CSV files of two workspaces apart. Add one: a user of another workspace must never get this file.\n- **Changed:** only the test; no app code. It sets both workspaces' change counters to the same value, so the workspace in the cache key is the only thing keeping their files apart. Then Alice and Bob each export with the same filters, in both orders, and each must get only their own invoices (`NS-` for Alice, `HC-` for Bob).\n- **Test:** `test/features.test.ts:357`, \"a CSV file built for one workspace is never given to another\". To confirm the test does its job, I took the workspace out of the cache key for one run: this test failed and the other 75 passed. I then put the key back and the full run passed again.",
+   "transcript": true,
+   "tokens": {
+    "total": 818311,
+    "input": 38,
+    "cacheRead": 759435,
+    "cacheWrite": 52108,
+    "output": 6730,
+    "apiCalls": 19
+   }
+  }
+ ],
+ "lines": [
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 227,
+   "to": 227,
+   "session": "e8de9fa1-3400-49b9-b7a7-0e0afcd8bb07",
+   "said": "Now the edits."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 228,
+   "to": 228,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3"
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 229,
+   "to": 229,
+   "session": "e8de9fa1-3400-49b9-b7a7-0e0afcd8bb07",
+   "said": "Now the edits."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 230,
+   "to": 230,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3"
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 281,
+   "to": 283,
+   "session": "e8de9fa1-3400-49b9-b7a7-0e0afcd8bb07",
+   "said": "Now the edits."
+  },
+  {
+   "file": "src/lib/invoices.ts",
+   "from": 299,
+   "to": 306,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 144,
+   "to": 154,
+   "session": "14be01c8-4014-4d2d-89b1-d37c67c31ffd"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 155,
+   "to": 169,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3"
+  },
+  {
+   "file": "src/routes/invoices.ts",
+   "from": 170,
+   "to": 175,
+   "session": "14be01c8-4014-4d2d-89b1-d37c67c31ffd"
+  },
+  {
+   "file": "test/features.test.ts",
+   "from": 187,
+   "to": 188,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3"
+  },
+  {
+   "file": "test/features.test.ts",
+   "from": 189,
+   "to": 189,
+   "session": "e8de9fa1-3400-49b9-b7a7-0e0afcd8bb07"
+  },
+  {
+   "file": "test/features.test.ts",
+   "from": 190,
+   "to": 220,
+   "session": "e8de9fa1-3400-49b9-b7a7-0e0afcd8bb07",
+   "said": "Now the tests."
+  },
+  {
+   "file": "test/features.test.ts",
+   "from": 354,
+   "to": 355,
+   "session": "c212b2cf-1ad1-46bb-9480-bb6191d5b4f3"
+  },
+  {
+   "file": "test/features.test.ts",
+   "from": 356,
+   "to": 356,
+   "session": "e8de9fa1-3400-49b9-b7a7-0e0afcd8bb07"
+  },
+  {
+   "file": "test/features.test.ts",
+   "from": 357,
+   "to": 371,
+   "session": "e8de9fa1-3400-49b9-b7a7-0e0afcd8bb07",
+   "said": "Now the tests."
+  }
+ ],
+ "reach": [
+  {
+   "name": "readNotes",
+   "file": "src/lib/invoices.ts",
+   "from": 228,
+   "to": 230,
+   "change": "changed",
+   "callers": [
+    {
+     "name": "readInvoiceForm",
+     "file": "src/lib/invoices.ts",
+     "line": 262
+    },
+    {
+     "name": "src/routes/api.ts",
+     "file": "src/routes/api.ts",
+     "via": "readInvoiceForm"
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts",
+     "via": "readInvoiceForm"
+    }
+   ],
+   "testCallers": 0
+  },
+  {
+   "name": "validateInvoice",
+   "file": "src/lib/invoices.ts",
+   "from": 268,
+   "to": 308,
+   "change": "changed",
+   "callers": [
+    {
+     "name": "src/routes/api.ts",
+     "file": "src/routes/api.ts"
+    },
+    {
+     "name": "src/routes/invoices.ts",
+     "file": "src/routes/invoices.ts"
+    }
+   ],
+   "testCallers": 0
+  }
+ ],
+ "graph": {
+  "files": 30,
+  "symbols": 487,
+  "relations": 1281,
+  "functions": 2,
+  "msPerQuery": 191
+ },
+ "trail": {
+  "number": 2,
+  "url": "https://entire.com/et/readback-kuitti/-/trails/2",
+  "repo": "readback-kuitti/kuitti",
+  "findings": {
+   "note-still-trimmed": "01M7DX1HBATJ5X8G27EKS4H9QX",
+   "how-length-counted": "01M7DX1JPKRFEH3W6CW3PTA4Y7",
+   "refusal-message-text": "01M7DX1KY6ZSHPW2343FKTCNJW",
+   "whole-invoice-not-saved": "01M7DX1N988YYGW6EM0CJW45TP",
+   "api-refuses-too": "01M7DX1PG08F9G82SGC69ZQ5CS",
+   "test-writes-counter": "01M7DX1QV8Z43JR342MK1BV862",
+   "files-told-by-prefix": "01M7DX1S1ZWVD408E9EHW940A2",
+   "answer-notes-length-limit": "01M7DX1T9WT993SGM7NVP1SYEG",
+   "answer-export-key-workspace": "01M7DX1VDGCAM7DWTTHJAX39FZ"
+  }
+ }
+}

@@ -31,12 +31,18 @@ export interface GateInput {
   questions: number;
   wrong: number;
   reads: number;
+  /** the planted bug that was caught is one no test notices */
+  untested?: boolean;
   linesPerMinute: number;
   /** the pace from which this read is too fast */
   fastAt: number;
   /** stops to read that were open for less time than it takes to scroll them */
   skimmed: number;
+  /** those stops by name, with the time each was open and the time it takes */
+  skimmedNames?: string;
   rulings: { total: number; open: number; back: number };
+  /** a follow-up review: what the rest of the change stands on */
+  earlier?: string;
 }
 
 const n = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
@@ -55,12 +61,12 @@ export function gate(x: GateInput): GateCheck[] {
           : { id: 'who', ok: false, text: 'The name is typed, not verified. Only a GitHub sign-in can approve' },
   );
   checks.push({ id: 'questions', ok: x.wrong <= RULE.maxWrong, text: `${x.questions} of ${x.questions} questions right, ${n(x.wrong, 'wrong try', 'wrong tries')} (at most ${RULE.maxWrong})` });
-  checks.push({ id: 'planted', ok: x.reads <= RULE.maxReads, text: x.reads === 1 ? 'Planted bug caught on the first read, with the reason' : `Planted bug caught on read ${x.reads} (at most read ${RULE.maxReads})` });
+  checks.push({ id: 'planted', ok: x.reads <= RULE.maxReads, text: `${x.reads === 1 ? 'Planted bug caught on the first read, with the reason' : `Planted bug caught on read ${x.reads} (at most read ${RULE.maxReads})`}${x.untested ? '. No test of the project notices that bug' : ''}` });
   checks.push(
     x.prepared
       ? { id: 'pace', ok: x.test, text: 'Questions answered ahead for a recording: no pace is claimed' }
       : x.skimmed > 0
-        ? { id: 'pace', ok: false, text: `${n(x.skimmed, 'stop')} to read ${x.skimmed === 1 ? 'was' : 'were'} open for less time than it takes to scroll ${x.skimmed === 1 ? 'it' : 'them'}` }
+        ? { id: 'pace', ok: false, text: `${n(x.skimmed, 'stop')} to read ${x.skimmed === 1 ? 'was' : 'were'} open for less time than it takes to scroll ${x.skimmed === 1 ? 'it' : 'them'}${x.skimmedNames ? `: ${x.skimmedNames}` : ''}` }
         : { id: 'pace', ok: x.linesPerMinute < x.fastAt, text: `${x.linesPerMinute} of the lines to read closely a minute (under ${x.fastAt})` },
   );
   if (x.rulings.total)
@@ -71,6 +77,7 @@ export function gate(x: GateInput): GateCheck[] {
           ? { id: 'rulings', ok: false, text: `${n(x.rulings.back, 'open point')} sent back to the author` }
           : { id: 'rulings', ok: true, text: `${n(x.rulings.total, 'open point')} ruled on, none sent back` },
     );
+  if (x.earlier) checks.push({ id: 'earlier', ok: true, text: x.earlier });
   return checks;
 }
 
@@ -82,7 +89,10 @@ export function outcomeOf(checks: GateCheck[], back: number): NonNullable<Signat
 }
 
 /** What a signature writes to GitHub as the commit status readback/read. null: nothing; a read that does not count changes nothing there. */
-export function statusFor(x: { outcome: NonNullable<Signature['outcome']>; who: string; questions: number; wrong: number; reads: number; linesPerMinute?: number; back: number }): { state: 'success' | 'failure'; description: string } | null {
+export function statusFor(x: { outcome: NonNullable<Signature['outcome']>; who: string; questions: number; wrong: number; reads: number; linesPerMinute?: number; back: number; earlier?: string }): { state: 'success' | 'failure'; description: string } | null {
+  // a follow-up review: this commit was read, and the rest of the change stands on the review of the commit before it
+  if (x.earlier && x.outcome === 'approved') return { state: 'success', description: `Follow-up read by ${x.who}: ${x.questions}/${x.questions} questions, ${n(x.wrong, 'wrong try', 'wrong tries')}, bug caught on read ${x.reads}. The rest was read at ${x.earlier}` };
+  if (x.earlier && x.outcome === 'sent-back') return { state: 'failure', description: `Sent back again by ${x.who} after a follow-up read: ${n(x.back, 'point')} for the author` };
   if (x.outcome === 'approved') return { state: 'success', description: `Read by ${x.who}: ${x.questions}/${x.questions} questions, ${n(x.wrong, 'wrong try', 'wrong tries')}, planted bug caught on read ${x.reads}${x.linesPerMinute ? `, ${x.linesPerMinute} lines/min` : ''}` };
   if (x.outcome === 'sent-back') return { state: 'failure', description: `Sent back by ${x.who} after a full read: ${n(x.back, 'point')} for the author` };
   return null;

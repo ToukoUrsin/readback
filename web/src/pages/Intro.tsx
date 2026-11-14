@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useRef } from 'react';
 import type { PublicTour } from '../../../shared/tour';
+import { BASE } from '../api';
 import { ArrowRight, Bot, Check, Eye, FlagFill, Lock, Pull, Warn, X } from '../ui/icons';
 import { tokens } from '../ui/Entire';
 import { inline } from '../ui/Prose';
@@ -23,7 +24,7 @@ function Rows({ rows }: { rows: { mark: ReactNode; title: ReactNode; body: React
 }
 
 export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void }) {
-  const { pr, state, short, other, evidence, rule, commit, entire } = tour;
+  const { pr, state, short, other, evidence, rule, commit, entire, followup: fu, after } = tour;
   const todo = tour.stops.filter((s) => s.required);
   const questions = todo.reduce((a, s) => a + s.questions.length, 0);
   const points = evidence?.rulings ?? [];
@@ -32,6 +33,7 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
   const unnoticed = tour.stops.reduce((a, s) => a + (s.evidence?.changes.survived.length ?? 0), 0);
   const minutes = Math.max(3, Math.round(tour.lines.required / 10 + questions * 0.5 + points.length * 0.5));
   const kinds = (['unasked', 'open', 'untested'] as const).map((k) => points.filter((p) => p.kind === k).length);
+  const answers = points.filter((p) => p.kind === 'answer').length;
   const num = (n: number | string) => <span className="text-[12px] font-[590] text-fg2">{n}</span>;
   const here = short ? 'on these stops' : 'in this change';
 
@@ -40,8 +42,8 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
         { mark: num(evidence.criteria.length), title: `${evidence.criteria.length} acceptance criteria, from issue #${pr.issue?.number ?? ''}`, body: 'Every stop names the criteria its code serves. Code that serves none is listed as an open point.' },
         { mark: <Check size={13} className="text-ok" />, title: `${evidence.tests.passed} tests pass${evidence.tests.failed ? `, ${evidence.tests.failed} fail` : ''}`, body: 'The project’s own tests, run offline on this commit.' },
         ...(tried ? [{ mark: <Warn size={13} className="text-warn" />, title: `${tried} one-line bugs tried ${here}: the tests noticed ${caught}`, body: `${unnoticed} went unnoticed: every test still passed. Those lines are marked, with the change that was tried.` }] : []),
-        ...(points.length ? [{ mark: <span className="text-[12px] font-[590] text-accent-hi">{points.length}</span>, title: `${points.length} ${points.length === 1 ? 'point' : 'points'} the AI does not decide`, body: [kinds[0] ? `${kinds[0]} nobody asked for` : '', kinds[1] ? `${kinds[1]} the issue leaves open` : '', kinds[2] ? `${kinds[2]} no test checks` : ''].filter(Boolean).join(', ') + '. A person rules on each.' }] : []),
-        ...(entire
+        ...(points.length ? [{ mark: <span className="text-[12px] font-[590] text-accent-hi">{points.length}</span>, title: `${points.length} ${points.length === 1 ? 'point' : 'points'} the AI does not decide`, body: [kinds[0] ? `${kinds[0]} nobody asked for` : '', kinds[1] ? `${kinds[1]} the issue leaves open` : '', kinds[2] ? `${kinds[2]} no test checks` : '', answers ? `${answers} sent back by the first reviewer and answered by the author` : ''].filter(Boolean).join(', ') + '. A person rules on each.' }] : []),
+        ...(entire && !fu
           ? [
               {
                 mark: num(entire.sessions.length),
@@ -73,9 +75,11 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
     tour.via === 'invite' ? 'You came in with the judge link this repository’s team gave out, and you sign with your name. Without the link or a GitHub sign-in, a typed name is recorded and never approves.' : 'You are signed in with GitHub. A typed name is recorded and never approves.',
     `Every question is right, with at most ${rule.maxWrong} wrong tries.`,
     `You flagged the planted bug by read ${rule.maxReads} at the latest, with the reason.`,
-    `You read under ${rule.fastLinesPerMinute} of the lines to read closely a minute, and opened every stop that has some.`,
+    `You read under ${rule.fastLinesPerMinute} of the lines to read closely a minute, and kept every stop that has some open at least as long as it takes to scroll it. The hand-in page shows both before you hand in.`,
     ...(points.length ? ['You ruled on every open point and sent none back. Send one back and the status turns red for the author.'] : []),
+    ...(fu ? [`The rest of the change stands on the review of ${fu.earlier.headSha.slice(0, 7)} by ${fu.earlier.who}: ${fu.untouched.stops} of its ${fu.untouched.of} stops are untouched by this commit.`] : []),
   ];
+  const noticed = fu?.retried?.filter((r) => r.now === 'noticed') ?? [];
 
   return (
     <div className="rise mx-auto max-w-[720px] px-4 pt-10 pb-24 sm:px-6 sm:pt-16">
@@ -97,21 +101,105 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
           <span className="text-ok">+{pr.additions}</span> <span className="text-bad">−{pr.deletions}</span> <span className="text-fg4">in</span> {pr.files} files
         </span>
         {short && <span className="ml-1 rounded bg-flag/15 px-1.5 py-px text-[11.5px] font-[590] text-flag">Short review</span>}
+        {fu && <span className="ml-1 rounded bg-accent-soft px-1.5 py-px text-[11.5px] font-[590] text-accent-hi">Follow-up review</span>}
       </div>
       <h1 className="mt-4 text-[28px] leading-[1.12] font-[590] tracking-[-0.024em] text-fg sm:text-[36px]">{pr.title}</h1>
       <p className="mt-5 text-[16px] leading-[1.6] text-fg2">{inline(tour.intro)}</p>
 
+      {fu && (
+        <>
+          <h2 className="mt-9 mb-2.5 text-[13px] font-[590] text-fg">What happened before this commit</h2>
+          <Rows
+            rows={[
+              {
+                mark: <X size={12} className="text-flag" />,
+                title: (
+                  <>
+                    {fu.earlier.who} sent pull request #{fu.earlier.pr} back with {fu.points.length} {fu.points.length === 1 ? 'point' : 'points'}
+                  </>
+                ),
+                body: (
+                  <>
+                    On {when(fu.earlier.at)}, after a review of all {fu.earlier.stops} stops of commit <span className="font-mono text-[12px]">{fu.earlier.headSha.slice(0, 7)}</span>: {fu.earlier.questions} questions right, the planted bug caught on read {fu.earlier.reads}, {Math.round(fu.earlier.seconds / 60)} minutes. {fu.accepted} open points were accepted as they are.
+                    {fu.earlier.ours ? ' That first review was our own script, run at a person’s pace, so that this demo has a review to answer. ' : ' '}
+                    <a className="text-accent-hi underline-offset-2 hover:underline" href={fu.earlier.href}>
+                      Do that review yourself
+                    </a>
+                  </>
+                ),
+              },
+              ...fu.points.map((p) => ({
+                mark: num(p.n),
+                title: <>“{p.note}”</>,
+                body: (
+                  <>
+                    <span className="font-mono text-[12px] text-fg2">
+                      {p.file}:{p.from}
+                    </span>{' '}
+                    · What the AI had left open there: {p.found}
+                  </>
+                ),
+              })),
+              {
+                mark: <Bot size={13} className="text-accent-hi" />,
+                title: (
+                  <>
+                    The author agent answered {fu.answer.minutesAfter < 10 ? fu.answer.minutesAfter.toFixed(1).replace(/\.0$/, '') : Math.round(fu.answer.minutesAfter)} minutes later: one commit, <span className="text-ok">+{fu.answer.added}</span> <span className="text-bad">−{fu.answer.removed}</span>
+                  </>
+                ),
+                body: (
+                  <>
+                    {fu.answer.recalled > 0 ? `It was given the ${fu.answer.recalled} rulings of that review by Entire Brain, changed the code and ran the tests` : 'It changed the code and ran the tests'}: {fu.answer.tests.before} passed before, {fu.answer.tests.after} pass now. One session of {fu.answer.model}, {fu.answer.turns} steps, {tokens(fu.answer.tokens)} tokens, kept by Entire. Issue{' '}
+                    <a className="text-accent-hi underline-offset-2 hover:underline" href={fu.issue.url} target="_blank" rel="noreferrer">
+                      #{fu.issue.number}
+                    </a>{' '}
+                    holds the reviewer’s words as acceptance criteria.
+                  </>
+                ),
+              },
+              ...(fu.retried?.length
+                ? [
+                    {
+                      mark: noticed.length === fu.retried.length ? <Check size={13} className="text-ok" /> : <Warn size={13} className="text-warn" />,
+                      title: `${fu.retried.length === 1 ? 'The one-line bug' : `${fu.retried.length} one-line bugs`} the tests missed on these lines, tried again: ${noticed.length === fu.retried.length ? (fu.retried.length === 1 ? 'a test fails now' : 'tests fail on all of them now') : `${noticed.length} of ${fu.retried.length} fail a test now`}`,
+                      body: (
+                        <>
+                          {fu.retried.map((r) => (
+                            <span key={`${r.file}:${r.line}`} className="block">
+                              <span className="font-mono text-[12px] text-fg2">
+                                {r.file}:{r.line}
+                              </span>{' '}
+                              {r.now === 'noticed' ? `fails “${r.failed?.[0] ?? ''}”${(r.failed?.length ?? 0) > 1 ? ` and ${r.failed!.length - 1} more` : ''}.` : 'still passes every test.'}
+                            </span>
+                          ))}
+                          Run offline on this commit, with the same changed line as before.
+                        </>
+                      ),
+                    },
+                  ]
+                : []),
+              {
+                mark: <Lock size={13} className="text-fg3" />,
+                title: `${fu.untouched.stops} of the ${fu.untouched.of} stops of the first review are untouched: ${fu.untouched.lines.toLocaleString('en-US')} lines stand on it`,
+                body: `This commit changes lines of ${fu.touched.length} ${fu.touched.length === 1 ? 'stop' : 'stops'} of that review. You review what it changed: ${tour.lines.all} lines, ${tour.lines.required} of them closely.`,
+              },
+            ]}
+          />
+        </>
+      )}
+
       {!short && commit && (
-        <p className={`mt-6 flex items-start gap-2.5 rounded-lg border px-3.5 py-2.5 text-[13.5px] leading-[1.5] ${commit.approvedBy ? 'border-ok/30 bg-ok-soft text-fg' : commit.sentBackBy ? 'border-flag/35 bg-flag-soft text-fg' : 'border-line bg-panel text-fg2'}`}>
-          {commit.approvedBy ? <Check size={14} className="mt-[3px] flex-none text-ok" /> : commit.sentBackBy ? <X size={13} className="mt-[3px] flex-none text-flag" /> : <Lock size={14} className="mt-[3px] flex-none text-fg3" />}
+        <p className={`mt-6 flex items-start gap-2.5 rounded-lg border px-3.5 py-2.5 text-[13.5px] leading-[1.5] ${commit.sentBackBy ? 'border-flag/35 bg-flag-soft text-fg' : commit.approvedBy ? 'border-ok/30 bg-ok-soft text-fg' : 'border-line bg-panel text-fg2'}`}>
+          {commit.sentBackBy ? <X size={13} className="mt-[3px] flex-none text-flag" /> : commit.approvedBy ? <Check size={14} className="mt-[3px] flex-none text-ok" /> : <Lock size={14} className="mt-[3px] flex-none text-fg3" />}
           <span>
-            {commit.approvedBy ? (
+            {commit.sentBackBy ? (
+              <>
+                Commit <span className="font-mono text-[12.5px]">{pr.headSha.slice(0, 7)}</span> was sent back by <b className="font-[590]">{commit.sentBackBy.who}</b> on {when(commit.sentBackBy.at)}, with {commit.sentBackBy.points} {commit.sentBackBy.points === 1 ? 'point' : 'points'} for the author. A send-back stands until the author pushes a new commit: a review you sign now is recorded, and it does not approve over it.
+                {tour.demoMinutes && commit.sentBackBy.who.endsWith('(invited judge)') ? ` On this demo copy an invited judge’s send-back stands for ${tour.demoMinutes} minutes.` : ''}
+              </>
+            ) : commit.approvedBy ? (
               <>
                 Commit <span className="font-mono text-[12.5px]">{pr.headSha.slice(0, 7)}</span> was approved by <b className="font-[590]">{commit.approvedBy.who}</b> on {when(commit.approvedBy.at)}. You can still review it; a second review is recorded too.
-              </>
-            ) : commit.sentBackBy ? (
-              <>
-                Commit <span className="font-mono text-[12.5px]">{pr.headSha.slice(0, 7)}</span> was sent back by <b className="font-[590]">{commit.sentBackBy.who}</b> on {when(commit.sentBackBy.at)}, with {commit.sentBackBy.points} {commit.sentBackBy.points === 1 ? 'point' : 'points'} for the author.
               </>
             ) : (
               <>
@@ -119,6 +207,15 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
               </>
             )}
           </span>
+        </p>
+      )}
+
+      {!short && after && (
+        <p className="mt-3 rounded-lg border border-line bg-panel px-3.5 py-2.5 text-[13.5px] leading-[1.55] text-fg2">
+          An earlier review of this commit was sent back by <b className="font-[590] text-fg">{after.who}</b> on {when(after.at)} with {after.points} {after.points === 1 ? 'point' : 'points'}. The author agent answered {after.minutesAfter} minutes later with one more commit. Reviewing that commit is {after.questions} questions on {after.closely} of {after.lines} lines, not this whole change again.{' '}
+          <a className="text-accent-hi underline-offset-2 hover:underline" href={after.href}>
+            Open the follow-up review
+          </a>
         </p>
       )}
 
@@ -163,7 +260,7 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
       <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-3">
         {!short && tour.signIn && !tour.me && !state.startedAt ? (
           <>
-            <a className="btn btn-primary btn-lg" href="/auth/github?to=/full">
+            <a className="btn btn-primary btn-lg" href={`/auth/github?to=${BASE || '/full'}`}>
               Sign in with GitHub and start <ArrowRight size={15} />
             </a>
             <button className="btn btn-lg" onClick={onStart}>
@@ -186,7 +283,7 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
           ) : tour.me ? (
             <>
               Signed in as <span className="font-[510] text-fg2">@{tour.me.login}</span>. You have one review of this commit, from whatever browser.{' '}
-              <a className="text-accent-hi underline-offset-2 hover:underline" href="/auth/out?to=/full">
+              <a className="text-accent-hi underline-offset-2 hover:underline" href={`/auth/out?to=${BASE || '/full'}`}>
                 Sign out
               </a>
             </>

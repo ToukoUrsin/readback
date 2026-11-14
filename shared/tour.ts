@@ -120,6 +120,8 @@ export interface Plant {
   stated?: string;
   /** the failing tests with what the test run printed for each, when it printed something short */
   failures?: { test: string; message?: string }[];
+  /** no test notices this bug: the project's tests were run with this line and all of them passed (gen/untested-plants.ts). Only a reader stops it */
+  untested?: boolean;
 }
 
 /* ---------- Tour: what the server holds ---------- */
@@ -227,6 +229,9 @@ export interface Reveal {
   failures?: Plant['failures'];
   /** the reviewer flagged this line, but their note did not say what it does wrong: the flag did not count */
   noteFailed?: string;
+  /** no test notices this bug; `tests` is how many of the project's tests passed with it */
+  untested?: boolean;
+  tests?: number;
 }
 
 /** What the reader did with the cold test: the plain diff before any guided read. */
@@ -271,7 +276,7 @@ export interface Signature {
 
 /** One line of the rule a signature has to meet before the commit status turns green. */
 export interface GateCheck {
-  id: 'who' | 'questions' | 'planted' | 'pace' | 'rulings';
+  id: 'who' | 'questions' | 'planted' | 'pace' | 'rulings' | 'earlier' | 'standing';
   ok: boolean;
   text: string;
 }
@@ -279,8 +284,10 @@ export interface GateCheck {
 /** The reviewer's ruling on one thing the AI did not decide. */
 export interface Ruling {
   decision: 'accept' | 'back';
-  /** required when sent back (what the author has to do) and when a point no test checks is accepted (why it is accepted without one) */
+  /** the reviewer's reason: what the author has to do, or why the code is fine as it is */
   note: string;
+  /** the reason was checked by a model to be about these lines (true), or only required (null: the model did not answer) */
+  checked?: boolean | null;
 }
 
 /** What has been decided about this commit so far, by reviews that counted. */
@@ -332,6 +339,8 @@ export interface PublicTour {
   cold?: { blocks: Block[] };
   /** the other read of the same change: the short one from the full tour, the full one from the short */
   other?: { kind: 'short' | 'full'; href: string; stops: number };
+  /** on the review of a commit that was once sent back: where the author's answer is reviewed (the follow-up review of the next commit) */
+  after?: { href: string; pr: number; url: string; who: string; at: string; points: number; minutesAfter: number; stops: number; questions: number; closely: number; lines: number };
   /** the change's own evidence; each stop carries its part */
   evidence?: Pick<Evidence, 'criteria' | 'tests' | 'rulings' | 'madeBy'>;
   /** lines of code a person has to read closely, and all lines shown */
@@ -350,6 +359,8 @@ export interface PublicTour {
   via?: 'gist' | 'invite';
   /** on a demo copy: minutes after which an invited judge's approval is taken back, so the next judge finds the commit blocked */
   demoMinutes?: number;
+  /** set on a follow-up review: the review that was sent back, the author's answer, and what this commit leaves untouched */
+  followup?: Followup;
 }
 
 /* ---------- Evidence: what the change can show for itself, made by gen/evidence.ts ---------- */
@@ -395,10 +406,10 @@ export interface StopEvidence {
   routeWhy: string[];
 }
 
-/** One thing the AI found and does not decide. `unasked`: code no acceptance criterion asks for. `open`: a choice the issue leaves open. `untested`: behaviour no test checks. */
+/** One thing the AI found and does not decide. `unasked`: code no acceptance criterion asks for. `open`: a choice the issue leaves open. `untested`: behaviour no test checks. `answer`: the author's answer to a point a reviewer sent back (a follow-up review). */
 export interface RulingItem {
   id: string;
-  kind: 'unasked' | 'open' | 'untested';
+  kind: 'unasked' | 'open' | 'untested' | 'answer';
   stopId: string;
   file: string;
   from: number;
@@ -407,6 +418,49 @@ export interface RulingItem {
   found: string;
   /** the question the person answers, one sentence ending in a question mark */
   question: string;
+}
+
+/* ---------- Follow-up: the author's answer to a review that was sent back, made by gen/followup.ts ---------- */
+
+/**
+ * A review was sent back, the author made one more commit, and only what that commit changed is reviewed again.
+ * Every field is read from a record: the signature of the earlier review, git, the agent's session on Entire, a test run.
+ */
+export interface Followup {
+  schema: 1;
+  /** the commit under review now */
+  headSha: string;
+  /** the review that was sent back, as its signature recorded it */
+  earlier: { pr: number; url: string; headSha: string; who: string; at: string; seconds: number; questions: number; reads: number; stops: number; lines: number; closely: number; ours: boolean; href: string };
+  /** the issue Readback wrote from the points sent back: its acceptance criteria are the reviewer's words */
+  issue: { number: number; url: string };
+  /** the points sent back; `n` is the number of the acceptance criterion made from it */
+  points: { id: string; n: number; file: string; from: number; to: number; note: string; found: string }[];
+  /** open points the earlier reviewer accepted as they are */
+  accepted: number;
+  /** the author's answer: one agent session, kept by Entire, and the commit it made */
+  answer: {
+    commit: string;
+    at: string;
+    session: string;
+    model: string;
+    turns: number;
+    seconds: number;
+    tokens: number;
+    /** minutes from the signature that sent the change back to the commit */
+    minutesAfter: number;
+    /** review rulings the agent was given by `entire brain recall` in that session */
+    recalled: number;
+    tests: { before: number; after: number };
+    added: number;
+    removed: number;
+  };
+  /** stops of the earlier review whose lines this commit does not change: they stand on that review */
+  untouched: { stops: number; of: number; lines: number };
+  /** stops of the earlier review whose lines this commit changes */
+  touched: { id: string; title: string }[];
+  /** one-line changes the tests did not notice at the earlier commit, on the lines sent back, tried again at this commit */
+  retried?: { file: string; line: number; changed: string; before: 'unnoticed'; now: 'noticed' | 'unnoticed'; failed?: string[] }[];
 }
 
 /* ---------- Entire: what the history of the change shows, made by gen/entire.ts ---------- */

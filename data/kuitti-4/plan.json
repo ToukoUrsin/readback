@@ -1,0 +1,389 @@
+{
+ "schema": 1,
+ "pr": {
+  "repo": "ToukoUrsin/junction26-kuitti",
+  "number": 4,
+  "title": "Answer the review of #2: refuse long notes, test that CSV files stay in their workspace",
+  "url": "https://github.com/ToukoUrsin/junction26-kuitti/pull/4",
+  "author": "Crashtest author agent",
+  "authorIsAgent": true,
+  "baseSha": "55559f75e42757817126fb003058b7ae404ac72b",
+  "headSha": "48471fe4a8497a7b4a3cde4b690668d4ce4aa5fc",
+  "additions": 53,
+  "deletions": 2,
+  "files": 2,
+  "issue": {
+   "number": 3,
+   "title": "Review of #2 sent back: 2 points for the author",
+   "url": "https://github.com/ToukoUrsin/junction26-kuitti/issues/3",
+   "body": "Readback wrote this issue from a review of #2 that was sent back.\n\nReviewer: Readback team test (script) (invited judge), 2026-11-14 20:25 UTC, commit 55559f7.\n- Invited with the judge link this repository's team gave out. The name is typed by the judge\n- 16 of 16 questions right, 0 wrong tries (at most 3)\n- Planted bug caught on the first read, with the reason\n- 14 of the lines to read closely a minute (under 15)\n\n## Acceptance criteria\n1. `src/lib/invoices.ts:229`: Cutting a note without a word loses what the user typed. Refuse a note over 2000 characters and say so on the page.\n2. `src/routes/invoices.ts:145`: No test keeps the CSV files of two workspaces apart. Add one: a user of another workspace must never get this file.\n\n## What the AI had left open at these lines\n1. The issue says an invoice has a free-text notes field and gives no limit. The code cuts notes to 2000 characters before they are stored, and it shows no message when it cuts.\n2. This line makes the workspace part of the key under which a built CSV file is kept. When the workspace was taken out of the key, a user could download a file that holds the invoices of another workspace, and every test still passed.\n\n## Accepted as they are (5)\n- `src/db.ts:160-187`: The slow-export session added it to get under 500 ms; fine for now, but it needs its own issue.\n- `src/db.ts:151-152`: It is what made the search fast again in session 3, and an index does not change what users see.\n- `src/lib/invoices.ts:372-377`: Owners can revoke the link, and clients need it to keep working after the first open.\n- `src/lib/invoices.ts:385`: The token is 32 random hex characters and the lookup is an exact match on it.\n- `src/routes/share.ts:25`: It is the same total function the signed-in invoice page uses, which has tests.\n\nThe same rulings are in Entire Brain and on the trail of the pull request, where the author agent reads them."
+  }
+ },
+ "intro": "A reviewer sent back two points on the invoice work. This change stops cutting long notes without a word: a note over 2000 characters is now refused with a message, and the typed text stays on the page. It also adds a test that checks a CSV file built for one workspace is never given to a user of another workspace.",
+ "stops": [
+  {
+   "id": "long-note-refused",
+   "title": "A note over 2000 characters is refused with a message, not cut",
+   "why": "Before, the note was cut to 2000 characters before it was stored and the user was not told. The reviewer asked to refuse such a note and say so on the page, so the length is now checked together with the other form rules.",
+   "blocks": [
+    {
+     "type": "prose",
+     "text": "Notes enter through `readNotes`. It used to end with `.slice(0, MAX_NOTES)`. Look at what it **still does** to the text before it returns it."
+    },
+    {
+     "type": "code",
+     "file": "src/lib/invoices.ts",
+     "from": 227,
+     "to": 230,
+     "notes": [
+      {
+       "line": 229,
+       "text": "The cut at the end of this line is gone. The rest of the line is as before."
+      }
+     ],
+     "focus": [
+      {
+       "from": 229,
+       "to": 229,
+       "why": "Changes the note text before it is stored; must not cut it"
+      }
+     ]
+    },
+    {
+     "type": "diagram",
+     "title": "Path of a note from the form to the database",
+     "nodes": [
+      {
+       "id": "a",
+       "label": "POST /invoices",
+       "sub": "form or JSON body",
+       "role": "existing"
+      },
+      {
+       "id": "b",
+       "label": "readInvoiceForm",
+       "sub": "one shape for all bodies",
+       "role": "existing"
+      },
+      {
+       "id": "c",
+       "label": "readNotes",
+       "sub": "no longer cuts",
+       "role": "changed"
+      },
+      {
+       "id": "d",
+       "label": "validateInvoice",
+       "sub": "length check added",
+       "role": "changed"
+      },
+      {
+       "id": "e",
+       "label": "422 with form",
+       "sub": "errors listed",
+       "role": "existing"
+      },
+      {
+       "id": "f",
+       "label": "createInvoice",
+       "sub": "note stored",
+       "role": "existing"
+      }
+     ],
+     "edges": [
+      {
+       "from": "a",
+       "to": "b"
+      },
+      {
+       "from": "b",
+       "to": "c",
+       "label": "notes field"
+      },
+      {
+       "from": "c",
+       "to": "d"
+      },
+      {
+       "from": "d",
+       "to": "e",
+       "label": "not ok"
+      },
+      {
+       "from": "d",
+       "to": "f",
+       "label": "ok"
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "The length rule now lives in `validateInvoice`, next to the rules for client, dates and line items. Follow the `errors` list from the new lines to the end of the function."
+    },
+    {
+     "type": "code",
+     "file": "src/lib/invoices.ts",
+     "from": 268,
+     "to": 308,
+     "notes": [
+      {
+       "line": 281,
+       "text": "`notes` is null when the request had no notes field. Then there is nothing to check."
+      },
+      {
+       "line": 304,
+       "text": "A note that passed is handed on as it is."
+      }
+     ],
+     "focus": [
+      {
+       "from": 275,
+       "to": 275,
+       "why": "Keeps an invoice from using a client of another workspace"
+      },
+      {
+       "from": 281,
+       "to": 281,
+       "why": "Decides when a note is too long and must be refused"
+      },
+      {
+       "from": 293,
+       "to": 294,
+       "why": "Decides which unit prices and quantities enter the invoice total"
+      },
+      {
+       "from": 296,
+       "to": 296,
+       "why": "Stops a form with any error from reaching the database"
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "The route that creates an invoice did not change. It shows how a failed check reaches the user. The edit route and the JSON API call `validateInvoice` in the same way and also answer with 422."
+    },
+    {
+     "type": "code",
+     "file": "src/routes/invoices.ts",
+     "from": 280,
+     "to": 293,
+     "notes": [
+      {
+       "line": 287,
+       "text": "The same `form` that failed is put back into the page, so the textarea still holds the long note."
+      }
+     ],
+     "focus": [
+      {
+       "from": 284,
+       "to": 285,
+       "why": "Checks the form against the workspace of the signed-in user"
+      },
+      {
+       "from": 291,
+       "to": 291,
+       "why": "Writes the new invoice and decides if it is sent or draft"
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "The new test sends a note of 2001 characters three ways: the create form, the edit form and the JSON API. It ends with a note of exactly 2000 characters."
+    },
+    {
+     "type": "code",
+     "file": "test/features.test.ts",
+     "from": 190,
+     "to": 220,
+     "notes": [
+      {
+       "line": 197,
+       "text": "The full typed text must be inside the textarea of the returned page."
+      },
+      {
+       "line": 198,
+       "text": "The number of invoices is the same as before the request."
+      },
+      {
+       "line": 204,
+       "text": "The note stored before the refused edit is still there."
+      }
+     ]
+    }
+   ],
+   "questions": [
+    {
+     "id": "long-note-refused-q1",
+     "prompt": "A user sends a note of 1990 letters followed by 20 spaces. Everything else in the form is valid. What happens?",
+     "options": [
+      "Refused, the count is 2010",
+      "Accepted, cut to 2000 characters",
+      "Accepted, 1990 characters are stored",
+      "Accepted, 2010 characters are stored"
+     ],
+     "answer": 2,
+     "explain": "Line 229 trims the text, so the spaces at the end are removed before the check on line 281 runs. The check sees 1990 characters and the trimmed note is stored.",
+     "reread": {
+      "file": "src/lib/invoices.ts",
+      "from": 227,
+      "to": 230
+     }
+    },
+    {
+     "id": "long-note-refused-q2",
+     "prompt": "A form has a valid client and valid dates, a note of 2001 characters and no line items. What does `validateInvoice` return?",
+     "options": [
+      "`ok: false` with the notes error and the line item error",
+      "`ok: false` with only the notes error",
+      "`ok: false` with only the line item error",
+      "`ok: true`, and the note is dropped"
+     ],
+     "answer": 0,
+     "explain": "Line 282 and line 285 each push a message onto `errors`. The function returns only on line 296, with the whole list.",
+     "reread": {
+      "file": "src/lib/invoices.ts",
+      "from": 282,
+      "to": 296
+     }
+    }
+   ]
+  },
+  {
+   "id": "csv-workspaces-apart",
+   "title": "A new test fails if one workspace gets the CSV file of another",
+   "why": "The reviewer saw that the workspace could be taken out of the key for stored CSV files and every test still passed. This change adds only a test for that. The export code itself is not changed.",
+   "blocks": [
+    {
+     "type": "prose",
+     "text": "First read the code the test protects. `exportCsv` keeps built files in a map. Look at what the **key** is made of, and at what else is compared before a stored file is returned."
+    },
+    {
+     "type": "code",
+     "file": "src/routes/invoices.ts",
+     "from": 144,
+     "to": 175,
+     "notes": [
+      {
+       "line": 145,
+       "text": "The workspace id is the first part of the key."
+      },
+      {
+       "line": 147,
+       "text": "`workspaceVersion` reads the change counter of this workspace from the `workspace_versions` table."
+      }
+     ],
+     "focus": [
+      {
+       "from": 145,
+       "to": 145,
+       "why": "Without the workspace in the key, one workspace gets another's file"
+      },
+      {
+       "from": 149,
+       "to": 149,
+       "why": "Decides if a stored file is still fresh enough to return"
+      },
+      {
+       "from": 154,
+       "to": 154,
+       "why": "Reads only the invoices of this workspace for the file"
+      },
+      {
+       "from": 166,
+       "to": 166,
+       "why": "Turns cents into euros in the exported total"
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "The test writes the same counter value for every workspace. Then alice and bob download with the same filter and the same search, and each file is checked by the prefix of its invoice numbers: `NS-` for alice, `HC-` for bob."
+    },
+    {
+     "type": "code",
+     "file": "test/features.test.ts",
+     "from": 357,
+     "to": 371,
+     "notes": [
+      {
+       "line": 359,
+       "text": "The triggers that raise the counter watch invoices, clients and line items, not this table. So both workspaces stay at 7."
+      },
+      {
+       "line": 366,
+       "text": "This time bob downloads first, so the order is the other way round."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "The test looks only at the prefix of the invoice numbers in each file. It does not check that a second download by the same user is served from the stored file."
+    }
+   ],
+   "questions": [
+    {
+     "id": "csv-workspaces-apart-q1",
+     "prompt": "`exportCsv` finds an entry under the key, but the version of the workspace has changed since the entry was stored. What happens?",
+     "options": [
+      "It returns the stored file anyway",
+      "It runs the query and builds a new file",
+      "It returns a file with only the header",
+      "It throws an error about a stale file"
+     ],
+     "answer": 1,
+     "explain": "Line 149 returns the stored file only when generation and version both match. If not, the code goes on to line 154 and builds the file again.",
+     "reread": {
+      "file": "src/routes/invoices.ts",
+      "from": 146,
+      "to": 154
+     }
+    },
+    {
+     "id": "csv-workspaces-apart-q2",
+     "prompt": "Bob's rows are checked with `every(...)` for the `HC-` prefix. What does the extra check that `other.length` is greater than 1 add?",
+     "options": [
+      "It proves bob has exactly one invoice",
+      "It proves the file came from the cache",
+      "It skips the header row of the file",
+      "It rules out a file with no data rows"
+     ],
+     "answer": 3,
+     "explain": "`every` is true for an empty list, so a file with only the header would pass line 364. Line 363 requires at least one data row.",
+     "reread": {
+      "file": "test/features.test.ts",
+      "from": 362,
+      "to": 364
+     }
+    }
+   ]
+  }
+ ],
+ "plants": [
+  {
+   "id": "plant-invoices-281",
+   "file": "src/lib/invoices.ts",
+   "line": 281,
+   "original": "  if (form.notes !== null && form.notes.length > MAX_NOTES) {",
+   "planted": "  if (form.notes !== null && form.notes.length >= MAX_NOTES) {",
+   "what": "The check now also refuses a note of exactly 2000 characters. A user who types a note of the full allowed length gets an error and the invoice is not saved.",
+   "failedTests": [
+    "notes > a note over 2000 characters is refused with a message, never cut"
+   ],
+   "kind": "logic",
+   "headline": "You would have approved a change that refuses notes of the full allowed length, so customers cannot save invoices that should be accepted.",
+   "stated": "A note over 2000 characters is refused with a message, not cut",
+   "failures": [
+    {
+     "test": "notes > a note over 2000 characters is refused with a message, never cut",
+     "message": "TypeError: null is not an object (evaluating '/\\/invoices\\/(\\d+)/.exec(res2.headers.get(\"location\"))[1]')"
+    }
+   ]
+  }
+ ],
+ "madeBy": {
+  "model": "claude-fable-5-2",
+  "costUsd": 1.356,
+  "at": "2026-11-14T20:43:27.859Z",
+  "plantModel": "claude-opus-5-5"
+ }
+}

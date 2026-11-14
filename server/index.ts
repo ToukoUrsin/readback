@@ -18,14 +18,17 @@
  *   RB_DEMO_MINUTES    an invited judge's approval is taken back after this many minutes (the watcher resets GitHub and Entire)
  *   RB_ENTIRE          default data/live/entire.json (gen/entire.ts): the agent sessions, the callers and the trail of the change
  *   RB_QUESTIONS       default data/live/questions.json (gen/questions.ts): checked questions per stop; each reviewer is asked a draw of them
+ *   RB_NEXT            default data/next: a follow-up review (tour.json, evidence.json, entire.json, questions.json, followup.json),
+ *                      served at /next when the folder holds a tour and a followup.json for it
  *   RB_CARRY_KEY       with it the watcher reports what it carried to GitHub and Entire, and the signed page shows it
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { Entire, Evidence, Question, Tour } from '../shared/tour';
+import type { Entire, Evidence, Followup, Question, Tour } from '../shared/tour';
 import { createApp, createShown } from './app';
 import { createAuth } from './auth';
-import { createGrade } from './grade';
+import { createGrade, createGradeRuling } from './grade';
+import { closeLines } from './close';
 import { numbers } from './numbers';
 import { setStatus } from './github';
 import { createStore } from './store';
@@ -47,6 +50,7 @@ const ask = key ? { key, model: process.env.RB_ASK_MODEL || 'gemini-4-hydrogen',
 const evidencePath = resolve(ROOT, process.env.RB_EVIDENCE ?? 'data/live/evidence.json');
 const evidence = existsSync(evidencePath) ? (JSON.parse(readFileSync(evidencePath, 'utf8')) as Evidence) : undefined;
 const grade = key ? createGrade({ key, model: process.env.RB_ASK_MODEL || 'gemini-4-hydrogen' }) : undefined;
+const gradeRuling = key ? createGradeRuling({ key, model: process.env.RB_ASK_MODEL || 'gemini-4-hydrogen' }) : undefined;
 const publicUrl = process.env.RB_PUBLIC_URL ?? `http://localhost:${port}`;
 const authSecret = process.env.RB_AUTH_SECRET || process.env.RB_GITHUB_CLIENT_SECRET;
 // with an OAuth app: GitHub's sign-in page. Without one: the reviewer proves the account with a gist. Either way GitHub says who it is
@@ -93,9 +97,46 @@ const more = {
 };
 
 const shown = createShown(store);
-const full = createApp({ tour, key: 'full', store, shown, distDir, ask, evidence, grade, entire, pool, demoMinutes, openPlants: shortTour?.plants.map((p) => p.id), carryKey: process.env.RB_CARRY_KEY || undefined, me: auth?.me, signIn: !!auth, reviewers, githubSoon: process.env.RB_GITHUB_WATCH === '1', prepKey: process.env.RB_PREP_KEY || undefined, setStatus: github ? setStatus : undefined, publicUrl: process.env.RB_PUBLIC_URL, other: shortTour ? { kind: 'short', href: '/', stops: shortTour.stops.length } : undefined });
+// a follow-up review: the author answered a review that was sent back, and only what that commit changed is read again
+const nextDir = resolve(ROOT, process.env.RB_NEXT ?? 'data/next');
+const opt = <T>(f: string) => (existsSync(resolve(nextDir, f)) ? (JSON.parse(readFileSync(resolve(nextDir, f), 'utf8')) as T) : undefined);
+const nextTour = opt<Tour>('tour.json');
+const followup = opt<Followup>('followup.json');
+const nextEvidence = opt<Evidence>('evidence.json');
+const nextOn = !!nextTour && followup?.headSha === nextTour.pr.headSha && followup.earlier.headSha === tour.pr.headSha;
+const span = (t: Tour) => t.stops.reduce((a, s) => a + s.blocks.reduce((b, x) => b + (x.type === 'code' ? x.to - x.from + 1 : 0), 0), 0);
+const closely = (t: Tour, e?: Evidence) => [...closeLines(t, e && e.headSha === t.pr.headSha ? e : undefined).values()].reduce((a, s) => a + s.size, 0);
+// the questions a reviewer is asked: two per stop that has lines to read closely
+const asked = (t: Tour, e?: Evidence) => { const c = closeLines(t, e && e.headSha === t.pr.headSha ? e : undefined); return t.stops.reduce((a, s) => a + (c.get(s.id)?.size ? s.questions.length : 0), 0); };
+const after = nextOn ? { href: '/next', pr: nextTour!.pr.number, url: nextTour!.pr.url, who: followup!.earlier.who, at: followup!.earlier.at, points: followup!.points.length, minutesAfter: followup!.answer.minutesAfter, stops: nextTour!.stops.length, questions: asked(nextTour!, nextEvidence), closely: closely(nextTour!, nextEvidence), lines: span(nextTour!) } : undefined;
+const full = createApp({ tour, after, key: 'full', store, shown, distDir, ask, evidence, grade, gradeRuling, coldPlants: shortTour?.cold?.plants, entire, pool, demoMinutes, openPlants: shortTour?.plants.map((p) => p.id), carryKey: process.env.RB_CARRY_KEY || undefined, me: auth?.me, signIn: !!auth, reviewers, githubSoon: process.env.RB_GITHUB_WATCH === '1', prepKey: process.env.RB_PREP_KEY || undefined, setStatus: github ? setStatus : undefined, publicUrl: process.env.RB_PUBLIC_URL, other: shortTour ? { kind: 'short', href: '/', stops: shortTour.stops.length } : undefined });
 // the short read never writes to GitHub: it does not approve anything
-const short = shortTour ? createApp({ tour: shortTour, key: 'short', cookie: 'rb_short', store, shown, distDir, ask, evidence, grade, entire, pool, other: { kind: 'full', href: '/full', stops: tour.stops.length } }) : null;
+const short = shortTour ? createApp({ tour: shortTour, key: 'short', cookie: 'rb_short', store, shown, distDir, ask, evidence, grade, gradeRuling, entire, pool, other: { kind: 'full', href: '/full', stops: tour.stops.length } }) : null;
+
+const nextPool = opt<{ headSha: string; stops: Record<string, Question[]> }>('questions.json');
+const next =
+  nextOn && nextTour && followup
+    ? createApp({ tour: nextTour, key: 'next', cookie: 'rb_next', store, shown, distDir, ask, evidence: nextEvidence, grade, gradeRuling, entire: opt<Entire>('entire.json'), pool: nextPool?.headSha === nextTour.pr.headSha ? nextPool.stops : undefined, demoMinutes, followup, carryKey: process.env.RB_CARRY_KEY || undefined, me: auth?.me, signIn: !!auth, reviewers, githubSoon: process.env.RB_GITHUB_WATCH === '1', prepKey: process.env.RB_PREP_KEY || undefined, setStatus: github ? setStatus : undefined, publicUrl: process.env.RB_PUBLIC_URL })
+    : null;
+
+// what happened after a review was sent back, for the numbers page: every value is read from the follow-up's files
+const loop = (() => {
+  if (!next || !nextTour || !followup) return {};
+  return {
+    loop: {
+      earlier: { who: followup.earlier.who, at: followup.earlier.at, headSha: followup.earlier.headSha.slice(0, 7), seconds: followup.earlier.seconds, ours: followup.earlier.ours },
+      points: followup.points.length,
+      accepted: followup.accepted,
+      issue: followup.issue,
+      answer: { ...followup.answer, commit: followup.answer.commit.slice(0, 7) },
+      pr: { number: nextTour.pr.number, url: nextTour.pr.url },
+      untouched: followup.untouched,
+      first: { stops: tour.stops.length, lines: span(tour), closely: closely(tour, evidence), questions: asked(tour, evidence) },
+      again: { stops: nextTour.stops.length, lines: span(nextTour), closely: closely(nextTour, nextEvidence), questions: asked(nextTour, nextEvidence) },
+      retried: followup.retried ?? [],
+    },
+  };
+})();
 
 // "/" and "/short" are the short read (it opens with the cold test), "/full" is the read that approves
 Bun.serve({
@@ -111,8 +152,9 @@ Bun.serve({
     };
     if (auth && under('/auth')) return auth.app.fetch(req);
     // the numbers of this copy: what people did, what agents did, and what the evidence routes to a person
-    if (u.pathname === '/api/numbers') return Response.json({ ...numbers(store.events(), { tour, evidence }), ...more }, { headers: { 'cache-control': 'no-store' } });
+    if (u.pathname === '/api/numbers') return Response.json({ ...numbers(store.events(), { tour, evidence }), ...more, ...loop }, { headers: { 'cache-control': 'no-store' } });
     if (under('/full')) return strip('/full', full);
+    if (next && under('/next')) return strip('/next', next);
     if (short && under('/short')) return strip('/short', short);
     return (short ?? full).fetch(req);
   },

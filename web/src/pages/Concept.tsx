@@ -63,35 +63,14 @@ export default function Concept() {
         <Hero n={n} />
 
         <Section id="line-by-line" title="Is line-by-line review still the right way?">
-          <p className="mt-4 text-[17px] leading-[1.4] font-[590] text-fg">Not for the whole change.</p>
+          <p className="mt-4 text-[17px] leading-[1.4] font-[590] text-fg">For critical code, yes. For the whole change, no.</p>
           <p className={`${PROSE} mt-2`}>
-            Of <B v={r?.linesAll} /> lines shown in this pull request, <B v={r?.linesToRead} /> need a person:
+            A person has to read critical code. Reading every line with the same care is what produces the ten-second approve, so the policy says which lines are critical and holds the reviewer to those. In this pull request that is <B v={r?.linesToRead} /> of <B v={r?.linesAll} /> lines shown.
           </p>
-          {r && (
-            <div className="mt-4 max-w-[620px]">
-              <Bar part={r.linesToRead} whole={r.linesAll} className="h-[8px]" />
-              <p className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[12.5px] text-fg3">
-                <span className="inline-flex items-center gap-[6px]">
-                  <span className="size-[8px] rounded-[2px] bg-warn" aria-hidden />
-                  <span>
-                    <N v={r.linesToRead} /> to read closely ({pct(r.linesToRead, r.linesAll)})
-                  </span>
-                </span>
-                <span className="inline-flex items-center gap-[6px]">
-                  <span className="size-[8px] rounded-[2px] border border-line-strong bg-active" aria-hidden />
-                  <span>
-                    <N v={r.linesAll} /> lines shown
-                  </span>
-                </span>
-              </p>
-            </div>
-          )}
-          <ul className={`${PROSE} mt-4 list-disc space-y-1 pl-[18px] marker:text-fg4`}>
-            <li>lines that decide who sees what, move money or change stored data,</li>
-            <li>lines where a bug went unnoticed by every test,</li>
-            <li>the points the AI does not decide.</li>
-          </ul>
-          <p className={`${PROSE} mt-4`}>For those lines, yes: Tieto’s people told us on Saturday that for hospitals and banks a person has to read the code. Reading every line with the same care is what produces the ten-second approve.</p>
+          {r && <Tiers r={r} points={n?.points.length} />}
+          <p className={`${PROSE} mt-4`}>
+            Who sets the tier: the test runs decide “no test notices a bug here”, a model marks what a line can harm, and the reviewer can flag any line in any tier. A team’s own always-read paths (sign-in, payments, patient data) belong in a file in the repository that the tech lead owns. That file is not built yet: today the marks come from the model and the tests alone.
+          </p>
         </Section>
 
         <Section id="principles" title="Principles">
@@ -110,7 +89,7 @@ export default function Concept() {
           <p className={`${PROSE} mt-2`}>Their GitHub login is on the commit status with what they did.</p>
           <dl className="mt-4 divide-y divide-line border-y border-line">
             {[
-              ['The AI', 'Wrote the code, made the evidence, the questions and the planted bug. It never approves and cannot set the status green.'],
+              ['The AI', 'Wrote the code, made the evidence, the questions and the planted bug. Readback gives it no way to sign: a signature that counts needs a GitHub sign-in or, on this copy, the judge link. An AI that drives a browser under someone’s sign-in can pass the same checks a person can. The rule shows that the signer understood the lines, and the status carries the signer’s name, so a named person answers for it.'],
               ['The author', 'Gets the points that were sent back, each with the reviewer’s reason.'],
               ['A reviewer who misses the planted bug twice', 'Their review is recorded and does not approve; the change goes to another reviewer on the list. Nothing else follows from one failed review. Two misses in a row in the same area show on the numbers page, and that reviewer’s reviews there get a second reader until they catch one.'],
               ['Who may sign', (n?.demo?.reviewers ? `On this copy the ${n.demo.reviewers === 1 ? 'one account' : `${n.demo.reviewers} accounts`} on the repository’s list of reviewers, and GitHub says whose account it is:` : 'On this copy any GitHub account, and GitHub says whose it is:') + ' through its sign-in page, or through a gist only that account can make. A team gives the server its list of reviewers; an account that is not on it is recorded and never approves. A typed name never approves. For the jury only, this copy also has a judge link: who opens it is one invited judge with one review, signs with their own name, and the record and the status say “invited judge”.' + (n?.demo?.minutes ? ` That approval is taken back after ${n.demo.minutes} minutes, so the next judge finds the commit blocked.` : '')],
@@ -174,7 +153,7 @@ export default function Concept() {
                 head: 'A reviewer set on cheating can compare what they are shown with the raw diff to find the planted line.',
                 body: (
                   <>
-                    They still need the minutes, a reason that is true of that line only, and their verified name on a record that shows the pace. A second browser no longer helps: each reviewer is asked their own draw from <N v={n?.questionCheck?.kept} /> checked questions with the answers in their own order, and a signed review is planted from lines no unsigned visitor is ever shown. Skipping the read goes from one click with no trace to deliberate fraud with a trace.
+                    They still need the minutes, a reason that is true of that line only, and their verified name on a record that shows the pace. With a GitHub sign-in a reviewer has one review of a commit, whatever browser they use.{n?.demo?.judgeLink ? ' The judge link on this demo copy is weaker on purpose: every browser that opens it is a new judge with a new review.' : ''} Each reviewer is asked their own draw from <N v={n?.questionCheck?.kept} /> checked questions with the answers in their own order, and a signed review is planted from lines no unsigned visitor is ever shown. Skipping the read goes from one click with no trace to deliberate fraud with a trace.
                   </>
                 ),
               },
@@ -190,6 +169,8 @@ export default function Concept() {
                   </>
                 ),
               },
+              { head: 'Our own recording browser can sign without a GitHub sign-in.', body: 'Opened with a key only the server has, it signs with a typed name as “(test read)” and sets the status. The status text says so. A real installation has no such key.' },
+              { head: 'Every status is posted with the team’s GitHub token.', body: 'The reviewer’s name is in the status text, not in GitHub’s “creator” field. A GitHub App would fix that.' },
               { head: 'The numbers from people on this copy are small.', body: 'Runs by our own agents are shown apart and are not results.' },
             ]}
           />
@@ -297,7 +278,7 @@ function Hero({ n }: { n: Numbers | null }) {
         Check that the person did.
       </h1>
       <p className="mt-4 max-w-[680px] text-[15px] leading-[1.6] text-fg2 sm:mt-5 sm:text-[16px]">
-        An AI-written change should arrive with its own evidence, and the AI should say what it does not decide. A named person then reads closely only the lines the evidence cannot carry, and the merge gate follows the record of that read, not a click on Approve.
+        Tieto told us that in hospitals and banks a person has to read critical code. We keep that rule and make it checkable. An AI-written change arrives with its own evidence and says what it does not decide. A named person reads closely the lines that are critical, and the merge gate follows the record of that read, not a click on Approve.
       </p>
 
       <ol className="card mt-6 divide-y divide-line sm:mt-7">
@@ -334,6 +315,43 @@ function Hero({ n }: { n: Numbers | null }) {
         </p>
       )}
     </section>
+  );
+}
+
+/** The policy as three tiers, with this pull request's own line counts. */
+function Tiers({ r, points }: { r: NonNullable<Numbers['route']>; points: number | undefined }) {
+  const read = r.stops.filter((s) => s.closely > 0);
+  const inRead = read.reduce((a, s) => a + s.lines, 0);
+  const rows: [string, number, ReactNode, string][] = [
+    [
+      'A person reads closely, every time',
+      r.linesToRead,
+      <>
+        Lines that decide who sees what, move money or change stored data. Lines where a bug went unnoticed by every test. The <N v={points} /> points the AI does not decide.
+      </>,
+      'Questions on these lines, one of them carries a planted bug, every open point needs a ruling with a reason. The signature names the person.',
+    ],
+    ['Shown with its evidence', inRead - r.linesToRead, 'The other lines of the same parts: each tied to an acceptance criterion and to tests that fail when it breaks.', 'A failing test and a criterion carry them. The reviewer sees them and can flag any of them.'],
+    ['Shown, not signed for', r.linesAll - inRead, 'Test files, styles and the README.', 'Nothing here is planted and nothing is asked. They can still be flagged.'],
+  ];
+  return (
+    <div className="card mt-5 divide-y divide-line">
+      {rows.map(([name, lines, what, how], i) => (
+        <div key={name} className="px-4 py-3 sm:grid sm:grid-cols-[minmax(0,200px)_minmax(0,1fr)] sm:gap-x-6">
+          <div>
+            <p className="text-[14px] leading-[1.45] font-[590] text-fg">{name}</p>
+            <p className="mt-0.5 text-[13px] text-fg3">
+              <B v={lines} /> lines ({pct(lines, r.linesAll)})
+            </p>
+            <Bar part={lines} whole={r.linesAll} tone={i === 0 ? 'bg-warn' : 'bg-fg4'} className="mt-[7px] max-w-[160px]" />
+          </div>
+          <div className="mt-2 min-w-0 sm:mt-0">
+            <p className="text-[13.5px] leading-[1.55] text-fg2">{what}</p>
+            <p className="mt-1 text-[13px] leading-[1.55] text-fg3">{how}</p>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -415,7 +433,7 @@ function Principles({ tests }: { tests: number | undefined }) {
     },
     { name: 'Transparency', does: 'Every stop shows which criterion it serves, which tests cover it and how many tried bugs they noticed. Every step of a review is one line in the record. The status on GitHub says who read it and how.', costs: 'The reviewer’s wrong tries and pace are on the record under their name.' },
     { name: 'Confidence', does: 'A measured number, never the model’s feeling: “the tests noticed x of y bugs tried here”. Where it is low, a person reads those lines.', costs: 'It is only as good as the bugs that were tried.' },
-    { name: 'Quality', does: 'One rule decides the status (below). The AI cannot approve, and a person cannot approve by clicking.', costs: 'A careful reviewer who is slow at the questions can fail it and must review again.' },
+    { name: 'Quality', does: 'One rule decides the status (below). The AI that wrote the change has no way to sign, and a person cannot approve by clicking.', costs: 'A careful reviewer who is slow at the questions can fail it and must review again.' },
   ];
   const cols = 'md:grid md:grid-cols-[116px_minmax(0,1fr)_minmax(0,216px)] md:gap-x-6';
   return (

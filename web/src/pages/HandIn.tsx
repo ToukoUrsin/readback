@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Flag, GateCheck, PublicTour, Reveal } from '../../../shared/tour';
-import { api } from '../api';
+import { api, BASE } from '../api';
 import { Grow, hang, MIN_NOTE, POINT_KIND, Tokens } from '../ui/Code';
 import { ArrowRight, Check, FlagFill, Warn, X } from '../ui/icons';
 import { RevealCard } from '../ui/Reveal';
 import { Title } from '../ui/Title';
+import { Trace } from '../ui/Trace';
 
 interface Props {
   tour: PublicTour;
@@ -51,6 +52,27 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [name, setName] = useState('');
+  // the part of the rule that is about time, asked while it can still be mended: before the hand-in
+  const [pace, setPace] = useState<Awaited<ReturnType<typeof api.pace>> | null>(null);
+  const ready = !state.caught && !state.signature && !tour.short;
+  useEffect(() => {
+    if (!ready) return;
+    let on = true;
+    const ask = () => api.pace().then((p) => on && setPace(p), () => {});
+    ask();
+    const t = setInterval(ask, 5000);
+    return () => {
+      on = false;
+      clearInterval(t);
+    };
+  }, [ready, state.read]);
+  // a verdict opens at its headline, also on a reload: the name box is focused without scrolling the page down to it
+  const nameBox = useRef<HTMLInputElement>(null);
+  const stage = missedNow ? 'missed' : state.signature ? 'signed' : state.caught ? 'caught' : state.exhausted ? 'failed' : 'ready';
+  useLayoutEffect(() => {
+    toTop();
+    if (nameBox.current?.dataset.first) nameBox.current.focus({ preventScroll: true });
+  }, [stage]);
   const all = tour.stops.flatMap((s) => s.questions);
   const misses = Object.values(state.answers).reduce((a, x) => a + x.misses, 0);
   const points = tour.evidence?.rulings ?? [];
@@ -254,7 +276,26 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
                 <div key={k} className="flex items-start gap-3 px-4 py-2.5 text-[13px] leading-[1.45]">
                   {v ? v.ok ? <Check size={14} className="mt-[3px] flex-none text-ok" /> : <X size={13} className="mt-[3px] flex-none text-bad" /> : <span className="mt-[5px] size-[10px] flex-none animate-pulse rounded-full bg-fg4" />}
                   <span className="w-[52px] flex-none font-[590] text-fg">{k}</span>
-                  <span className={`min-w-0 [overflow-wrap:anywhere] ${v ? 'text-fg2' : 'text-fg4'}`}>{v ? v.note : `${wait}…`}</span>
+                  <span className={`min-w-0 [overflow-wrap:anywhere] ${v ? 'text-fg2' : 'text-fg4'}`}>
+                    {v ? v.note : `${wait}…`}
+                    {v?.ok && k === 'Entire' && tour.entire?.trail?.url && (
+                      <>
+                        {' '}
+                        <a href={tour.entire.trail.url} target="_blank" rel="noreferrer" className="whitespace-nowrap text-fg underline decoration-line-strong underline-offset-2 hover:decoration-fg3">
+                          Open trail #{tour.entire.trail.number}
+                        </a>{' '}
+                        <span className="text-fg4">(members of the Entire project)</span>
+                      </>
+                    )}
+                    {v?.ok && k === 'GitHub' && tour.pr.url && (
+                      <>
+                        {' '}
+                        <a href={`${tour.pr.url}/checks`} target="_blank" rel="noreferrer" className="whitespace-nowrap text-fg underline decoration-line-strong underline-offset-2 hover:decoration-fg3">
+                          Open the pull request
+                        </a>
+                      </>
+                    )}
+                  </span>
                 </div>
               ))}
             </div>
@@ -278,7 +319,8 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
             </span>
           </p>
         )}
-        {points.some((p) => rulings[p.id]) && (
+        {!short && <Trace tour={tour} name={s.name} />}
+        {(short || sentBack.length > 0 || !tour.stops.some((st) => st.evidence)) && points.some((p) => rulings[p.id]) && (
           <div className="mt-5">
             <p className="mb-2 text-[13px] font-[590] text-fg">{sentBack.length ? `${sentBack.length} ${sentBack.length === 1 ? 'point' : 'points'} for the author, ${accepted} accepted` : `What ${s.name} ruled on the open points`}</p>
             <ul className="card divide-y divide-line">
@@ -329,6 +371,14 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
                   Take the full review
                 </a>
               )}
+            </>
+          ) : o === 'not-counted' && tour.commit?.approvedBy ? (
+            <>
+              Nothing is written to GitHub: the commit status <span className="font-mono text-[12px]">readback/read</span> stays as it was. This review does not approve. The commit is approved by the review of <span className="font-[510] text-fg2">{tour.commit.approvedBy.who}</span> on {new Date(tour.commit.approvedBy.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}, as{' '}
+              <a className="text-accent-hi underline-offset-2 hover:underline" href={tour.pr.url} target="_blank" rel="noreferrer">
+                the pull request
+              </a>{' '}
+              shows. This one is kept in the record with everything above.
             </>
           ) : o === 'not-counted' ? (
             <>
@@ -436,7 +486,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
             <>
               {!short && tour.signIn && needsWho && (
                 <div className="mt-3 flex flex-wrap items-center gap-3">
-                  <a className="btn btn-primary btn-lg" href={`/auth/github?to=${encodeURIComponent('/full#/handin')}`}>
+                  <a className="btn btn-primary btn-lg" href={`/auth/github?to=${encodeURIComponent(`${BASE || '/full'}#/handin`)}`}>
                     Sign in with GitHub to sign
                   </a>
                   <span className="text-[13px] text-fg3">Your review is kept.</span>
@@ -445,7 +495,8 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
               <div className="mt-3 flex flex-wrap gap-2">
                 <input
                   id="name"
-                  autoFocus={!tour.signIn || !!short || !needsWho}
+                  ref={nameBox}
+                  data-first={!tour.signIn || !!short || !needsWho ? '1' : undefined}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder={!short && tour.signIn && needsWho ? 'Or type a name: recorded, does not approve' : 'Your name'}
@@ -465,6 +516,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
   }
 
   /* ---- ready to hand in ---- */
+  const fastNow = !!pace && pace.linesPerMinute >= pace.under;
   const tooMany = state.flags.length > tour.maxFlags;
   const open = tour.stops.map((st) => ({ st, n: st.questions.filter((q) => !state.answers[q.id]?.right).length })).filter((x) => x.n > 0);
   const openCount = open.reduce((a, x) => a + x.n, 0);
@@ -511,6 +563,32 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
                 </span>
               </button>
             ))}
+          </div>
+        )}
+        {pace && !short && (
+          <div className="px-4 py-3">
+            <div className="flex items-center gap-3">
+              {pace.brief.length || fastNow ? <Warn size={14} className="flex-none text-warn" /> : <Check size={14} className="flex-none text-ok" />}
+              <span className="text-[13.5px] text-fg">{pace.brief.length ? `${pace.brief.length} ${pace.brief.length === 1 ? 'stop was' : 'stops were'} open too briefly to have been read` : fastNow ? 'Too fast to count as a close read' : 'Every stop to read was open long enough'}</span>
+              <span className={`ml-auto text-[12.5px] ${fastNow ? 'text-warn' : 'text-fg4'}`}>
+                {pace.linesPerMinute} lines a minute, under {pace.under}
+              </span>
+            </div>
+            {pace.brief.map((b) => (
+              <button key={b.id} className="mt-2 ml-[26px] flex items-start gap-2 text-left text-[13px] leading-[1.45] text-fg3 hover:text-fg" onClick={() => go(b.id)}>
+                <ArrowRight size={12} className="mt-[3px] flex-none" />
+                <span>
+                  {b.title}: open {b.seconds} s, scrolling it takes {b.needs} s
+                </span>
+              </button>
+            ))}
+            {(pace.brief.length > 0 || fastNow) && (
+              <p className="mt-2 pl-[26px] text-[12.5px] leading-[1.5] text-fg3">
+                {pace.brief.length > 0 ? 'Open them again and read them before you hand in. ' : ''}
+                {fastNow ? `The ${pace.lines} lines to read closely take at least ${Math.ceil(pace.lines / pace.under) + 1} minutes at this rule. ` : ''}
+                A review handed in like this is recorded and does not approve.
+              </p>
+            )}
           </div>
         )}
         <div className="px-4 py-3">

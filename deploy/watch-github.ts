@@ -19,7 +19,9 @@ import { setStatus } from '../server/github';
 
 const ROOT = resolve(import.meta.dir, '..');
 const APP = process.env.FLY_APP ?? 'readback-demo';
-const URL_FULL = `https://${APP}.fly.dev/full`;
+/** which review this watcher carries: 'full', or 'next' for a follow-up review (then RB_TOUR, RB_EVIDENCE, RB_ENTIRE, RB_ENTIRE_REPO and RB_WATCH_DIR point at its files) */
+const KEY = process.env.RB_WATCH_KEY ?? 'full';
+const URL_FULL = `https://${APP}.fly.dev/${KEY}`;
 const DIR = process.env.RB_WATCH_DIR ?? '/bulk3/runs/readback/watch';
 const DEMO_MINUTES = Number(process.env.RB_DEMO_MINUTES || 0);
 const json = <T>(p: string): T | undefined => (existsSync(resolve(ROOT, p)) ? (JSON.parse(readFileSync(resolve(ROOT, p), 'utf8')) as T) : undefined);
@@ -33,8 +35,9 @@ const log = (m: string) => {
   console.log(line);
   appendFileSync(resolve(DIR, 'log.txt'), line + '\n');
 };
-const NOBODY = 'Nobody has read this commit yet. It needs a full read.';
-const NOBODY_ENTIRE = 'Nobody has read this commit: it needs a full read in Readback.';
+const READ = KEY === 'full' ? 'a full read' : 'a follow-up review';
+const NOBODY = `Nobody has read this commit yet. It needs ${READ}.`;
+const NOBODY_ENTIRE = `Nobody has read this commit: it needs ${READ} in Readback.`;
 
 interface Row {
   type: string;
@@ -104,11 +107,11 @@ async function rows(): Promise<Row[]> {
     }
   });
 }
-const mine = (r: Row) => (r.type === 'sign' || r.type === 'unsign') && r.tour === 'full' && r.headSha === headSha;
+const mine = (r: Row) => (r.type === 'sign' || r.type === 'unsign') && r.tour === KEY && r.headSha === headSha;
 
 // what is already there when the watcher starts is history, not news
 let first = !existsSync(handledPath);
-log(`watching ${APP} for full reads of ${repo}@${headSha.slice(0, 7)}${trail ? `, carried to Entire trail #${trail.number}` : ''}`);
+log(`watching ${APP} for ${KEY} reads of ${repo}@${headSha.slice(0, 7)}${trail ? `, carried to Entire trail #${trail.number}` : ''}`);
 for (;;) {
   try {
     for (const r of (await rows()).filter(mine)) {

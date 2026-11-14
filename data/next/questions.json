@@ -1,0 +1,398 @@
+{
+ "schema": 1,
+ "headSha": "48471fe4a8497a7b4a3cde4b690668d4ce4aa5fc",
+ "at": "2026-11-14T20:48:06.045Z",
+ "madeBy": {
+  "writer": "claude-opus-5-5",
+  "checker": "claude-fable-5-2",
+  "costUsd": 2.6439
+ },
+ "stops": {
+  "long-note-refused": [
+   {
+    "id": "long-note-refused-v1",
+    "prompt": "`readNotes` is called with the string `\"  a\\rb\\r\\n\"` (two spaces, `a`, a lone carriage return, `b`, then CR LF). What does it return?",
+    "options": [
+     "`\"a\\nb\"`",
+     "`\"ab\"`",
+     "`\"a\\rb\"`",
+     "`\"  a\\nb\\n\"`"
+    ],
+    "answer": 0,
+    "explain": "src/lib/invoices.ts:229 turns both `\\r\\n` and a lone `\\r` into `\\n` (the regex `\\r\\n?`), then `trim()` removes the leading spaces and the trailing `\\n`.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 228,
+     "to": 230
+    }
+   },
+   {
+    "id": "long-note-refused-v2",
+    "prompt": "`form.items` has two entries. The first has `description`, `quantity` and `unit_price` all empty. The second has an empty `description`, `quantity` \"2\" and `unit_price` \"10\". Which description error does `validateInvoice` add?",
+    "options": [
+     "\"Add at least one line item.\"",
+     "\"Line 1: add a description.\"",
+     "No description error is added",
+     "\"Line 2: add a description.\""
+    ],
+    "answer": 1,
+    "explain": "src/lib/invoices.ts:284 drops the fully empty first entry, so the second entry gets index 0 in `filled`, and src/lib/invoices.ts:291 writes `Line ${i + 1}`, which is Line 1.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 284,
+     "to": 295
+    }
+   },
+   {
+    "id": "long-note-refused-v4",
+    "prompt": "A valid form is posted to `/invoices` with `intent` set to \"send\" (not \"sent\"). What does the route do?",
+    "options": [
+     "Creates a sent invoice and redirects",
+     "Creates nothing and redirects to `/invoices`",
+     "Answers 422 and shows the form again",
+     "Creates a draft invoice and redirects"
+    ],
+    "answer": 3,
+    "explain": "src/routes/invoices.ts:291 uses \"sent\" only when `raw.intent === \"sent\"`, so any other value creates a draft. src/routes/invoices.ts:292 then redirects to the new invoice.",
+    "reread": {
+     "file": "src/routes/invoices.ts",
+     "from": 284,
+     "to": 292
+    }
+   },
+   {
+    "id": "long-note-refused-v6",
+    "prompt": "A line has `description` \"Work\" and a valid quantity. `parseMoney` returns exactly `100_000_000` for its `unit_price`. What happens to this line in `validateInvoice`?",
+    "options": [
+     "It gets the unit price error and is not pushed",
+     "It is pushed to `items` with no error",
+     "It is pushed with the price cut to a lower limit",
+     "It gets the unit price error but is still pushed"
+    ],
+    "answer": 1,
+    "explain": "src/lib/invoices.ts:293 adds the error only when `unit > 100_000_000`, and the value is equal, not greater. src/lib/invoices.ts:294 then pushes the line because description, quantity and unit are all set.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 289,
+     "to": 294
+    }
+   },
+   {
+    "id": "long-note-refused-v7",
+    "prompt": "`form.items` has one entry: `description` \"Fix\", `quantity` \"\" and `unit_price` \"\". Assume `parseQuantity` and `parseMoney` both return `null` for an empty string. Which item errors does `validateInvoice` add?",
+    "options": [
+     "Only \"Add at least one line item.\"",
+     "No item error, the line is skipped",
+     "The quantity error and the unit price error for line 1",
+     "Only the quantity error for line 1"
+    ],
+    "answer": 2,
+    "explain": "src/lib/invoices.ts:284 keeps the entry because `description` is not empty, so the check on src/lib/invoices.ts:285 passes. Then src/lib/invoices.ts:292 and src/lib/invoices.ts:293 add the quantity and unit price errors because both values are null.",
+    "reread": {
+     "file": "src/lib/invoices.ts",
+     "from": 284,
+     "to": 293
+    }
+   },
+   {
+    "id": "long-note-refused-v8",
+    "prompt": "A valid form is posted to `/invoices` and `createInvoice` returns `42`. Where does the route send the user?",
+    "options": [
+     "`/invoices/42/edit`",
+     "`/invoices?done=created`",
+     "`/invoices/42`",
+     "`/invoices/42?done=created`"
+    ],
+    "answer": 3,
+    "explain": "src/routes/invoices.ts:291 stores the id from `createInvoice`, and src/routes/invoices.ts:292 redirects to `/invoices/${id}?done=created`.",
+    "reread": {
+     "file": "src/routes/invoices.ts",
+     "from": 290,
+     "to": 292
+    }
+   }
+  ],
+  "csv-workspaces-apart": [
+   {
+    "id": "csv-workspaces-apart-v1",
+    "prompt": "`exportCsv` is called with the same `workspaceId`, `status` and `q` as a stored entry, and the counters still match. Only `now` is a different date string. What does it do?",
+    "options": [
+     "It removes all stored files of this workspace",
+     "It builds a new file, because `now` is part of the key",
+     "It returns the stored file but with new status values",
+     "It returns the stored file unchanged"
+    ],
+    "answer": 1,
+    "explain": "src/routes/invoices.ts:145 puts `now` into the key, so `exportCache.get(key)` at line 148 finds nothing and the code from line 154 builds a new file.",
+    "reread": {
+     "file": "src/routes/invoices.ts",
+     "from": 145,
+     "to": 154
+    }
+   },
+   {
+    "id": "csv-workspaces-apart-v2",
+    "prompt": "A stored file is found and its `generation` and `version` both match. What happens to its entry in `exportCache` before the file is returned?",
+    "options": [
+     "It is removed and not stored again",
+     "Nothing, the entry stays where it is",
+     "It is removed and stored again at the newest end",
+     "Its `version` is raised by one"
+    ],
+    "answer": 2,
+    "explain": "src/routes/invoices.ts:150 deletes the key and line 151 sets it again with the same value, which moves it to the newest end of the map. Line 152 then returns `hit.body`.",
+    "reread": {
+     "file": "src/routes/invoices.ts",
+     "from": 148,
+     "to": 153
+    }
+   },
+   {
+    "id": "csv-workspaces-apart-v4",
+    "prompt": "A row has `r.total` equal to `1999`. What is written in the \"Total (EUR)\" column for this row?",
+    "options": [
+     "19.99",
+     "20.00",
+     "1999",
+     "19.990"
+    ],
+    "answer": 0,
+    "explain": "src/routes/invoices.ts:166 divides the total by 100 and calls `toFixed(2)`, so 1999 becomes \"19.99\".",
+    "reread": {
+     "file": "src/routes/invoices.ts",
+     "from": 155,
+     "to": 169
+    }
+   },
+   {
+    "id": "csv-workspaces-apart-v5",
+    "prompt": "A row has `paid_at` equal to `null` because the invoice is not paid yet. What is written in the \"Paid date\" column for this row?",
+    "options": [
+     "The text `unpaid`",
+     "An empty cell",
+     "The due date of the invoice",
+     "The text `null`"
+    ],
+    "answer": 1,
+    "explain": "src/routes/invoices.ts:163 writes `r.paid_at ?? \"\"`, so a null `paid_at` becomes an empty string.",
+    "reread": {
+     "file": "src/routes/invoices.ts",
+     "from": 155,
+     "to": 169
+    }
+   },
+   {
+    "id": "csv-workspaces-apart-v6",
+    "prompt": "A row is written to the CSV file. Where does the text in its \"Status\" column come from?",
+    "options": [
+     "The `paid_at` date of the row",
+     "The `status` filter passed to `exportCsv`",
+     "The result of `displayStatus(r, now)`",
+     "The `status` value stored on the row"
+    ],
+    "answer": 2,
+    "explain": "The third header at src/routes/invoices.ts:156 is \"Status\", and the third value at src/routes/invoices.ts:160 is `displayStatus(r, now)`, not the stored status or the filter.",
+    "reread": {
+     "file": "src/routes/invoices.ts",
+     "from": 155,
+     "to": 169
+    }
+   },
+   {
+    "id": "csv-workspaces-apart-v8",
+    "prompt": "The test makes four downloads. Which of them does it check to have more than one row?",
+    "options": [
+     "Bob's first download and alice's paid download",
+     "Only bob's two downloads",
+     "Only alice's two downloads",
+     "All four downloads"
+    ],
+    "answer": 0,
+    "explain": "test/features.test.ts:363 checks `other.length` (bob's first file) and test/features.test.ts:369 checks `alicePaid.length`. The files `own` and `bobPaid` get only the prefix check at lines 361 and 367.",
+    "reread": {
+     "file": "test/features.test.ts",
+     "from": 360,
+     "to": 370
+    }
+   }
+  ]
+ },
+ "checks": [
+  {
+   "id": "long-note-refused-q1",
+   "stopId": "long-note-refused",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "long-note-refused-q2",
+   "stopId": "long-note-refused",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "long-note-refused-v1",
+   "stopId": "long-note-refused",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "long-note-refused-v2",
+   "stopId": "long-note-refused",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "long-note-refused-v3",
+   "stopId": "long-note-refused",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "long-note-refused-v4",
+   "stopId": "long-note-refused",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "long-note-refused-v5",
+   "stopId": "long-note-refused",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "long-note-refused-v6",
+   "stopId": "long-note-refused",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "long-note-refused-v7",
+   "stopId": "long-note-refused",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "long-note-refused-v8",
+   "stopId": "long-note-refused",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "csv-workspaces-apart-q1",
+   "stopId": "csv-workspaces-apart",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "csv-workspaces-apart-q2",
+   "stopId": "csv-workspaces-apart",
+   "source": "tour",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "csv-workspaces-apart-v1",
+   "stopId": "csv-workspaces-apart",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "csv-workspaces-apart-v2",
+   "stopId": "csv-workspaces-apart",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "csv-workspaces-apart-v3",
+   "stopId": "csv-workspaces-apart",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": true,
+   "kept": false,
+   "reason": "can be answered without reading the code"
+  },
+  {
+   "id": "csv-workspaces-apart-v4",
+   "stopId": "csv-workspaces-apart",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "csv-workspaces-apart-v5",
+   "stopId": "csv-workspaces-apart",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "csv-workspaces-apart-v6",
+   "stopId": "csv-workspaces-apart",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  },
+  {
+   "id": "csv-workspaces-apart-v7",
+   "stopId": "csv-workspaces-apart",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": false,
+   "reason": "the reread range is longer than 15 lines"
+  },
+  {
+   "id": "csv-workspaces-apart-v8",
+   "stopId": "csv-workspaces-apart",
+   "source": "new",
+   "withCode": true,
+   "withoutCode": false,
+   "kept": true
+  }
+ ],
+ "counts": {
+  "tour": 4,
+  "written": 16,
+  "kept": 12,
+  "wrongKey": 0,
+  "answerableWithoutCode": 7,
+  "tourKept": 0
+ }
+}

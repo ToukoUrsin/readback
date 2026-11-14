@@ -20,6 +20,8 @@
  *   --agent true|false     authorIsAgent (default: guessed from the author)
  *   --cover <globs>        comma list of files whose changed lines must all be on the tour
  *                          (default: changed code files that are not tests)
+ *   --stops "<rule>"       replaces the rule "6 to 9 stops" of the tour prompt, for a small change (a follow-up commit):
+ *                          e.g. "2 or 3 stops, one for each point the reviewer sent back, with the test that answers it"
  *   --tour-model <id>      default claude-fable-5-2
  *   --plant-model <id>     default claude-opus-5-5
  *   --image <name>         Docker image for the tests (default oven/bun:1)
@@ -40,7 +42,7 @@ import { FOCUS_REPAIR_NOTE, FOCUS_SYSTEM, JUDGE_SYSTEM, PLANT_SYSTEM, REPAIR_NOT
 import { prepareSandbox, runTests, type Sandbox } from './lib/sandbox';
 import { ensureDir, exec, log, pool, ranges } from './lib/util';
 import { findStated, headlineProblem, type Kind, KINDS, type StatedSource, stopTexts } from './lib/stated';
-import { absorbBlankLines, type CheckedFocus, checkFocus, checkTour, clean, coverageOf, focusCap, type Issue, type RepoView, spreadAnswers } from './lib/validate';
+import { absorbBlankLines, type CheckedFocus, checkFocus, checkTour, clean, coverageOf, focusCap, type Issue, type RepoView, spreadAnswers, LIMITS } from './lib/validate';
 
 /* ---------- arguments ---------- */
 
@@ -324,7 +326,12 @@ interface RawTour {
   security?: string;
 }
 
-const tour = await ask<RawTour>('tour', { system: TOUR_SYSTEM, prompt: `${material}\n\nWrite the tour.`, schema: tourSchema, model: TOUR_MODEL, timeoutMs: 45 * 60_000 });
+const STOPS_RULE = '`stops`: 6 to 9 stops.';
+if (args.stops && !TOUR_SYSTEM.includes(STOPS_RULE)) die('the tour prompt no longer holds the rule --stops replaces');
+// the check in code follows the rule the model was given: a tour of a small change may have few stops
+if (args.stops) LIMITS.stopsMin = 1;
+const tourSystem = args.stops ? TOUR_SYSTEM.replace(STOPS_RULE, `\`stops\`: ${args.stops}.`) : TOUR_SYSTEM;
+const tour = await ask<RawTour>('tour', { system: tourSystem, prompt: `${material}\n\nWrite the tour.`, schema: tourSchema, model: TOUR_MODEL, timeoutMs: 45 * 60_000 });
 step('tour', { model: tour.model, ms: tour.durationMs, costUsd: round(tour.costUsd), turns: tour.turns, reused: tour.reused, stops: tour.out.stops?.length ?? 0, security: tour.out.security || '' });
 
 /* ---------- step 2: validate, one repair round ---------- */
@@ -338,7 +345,7 @@ log('validate', errors.length ? `${errors.length} problems:\n${errors.map(fmt).j
 
 if (errors.length) {
   const fix = await ask<{ full: boolean; intro?: string; stops: any[]; security?: string }>('tour-repair', {
-    system: `${TOUR_SYSTEM}\n\n${REPAIR_NOTE}`,
+    system: `${tourSystem}\n\n${REPAIR_NOTE}`,
     prompt: `${material}\n\n# Your earlier answer\n<answer>\n${JSON.stringify({ intro: raw.intro, stops: raw.stops }, null, 1)}\n</answer>\n\n# What is wrong\n${checked.issues.map(fmt).join('\n')}\n\nReturn the corrected stops.`,
     schema: repairSchema,
     model: TOUR_MODEL,
