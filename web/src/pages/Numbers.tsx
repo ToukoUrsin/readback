@@ -56,6 +56,7 @@ export default function Numbers() {
             <p className="mt-3 text-[13px] leading-[1.6] text-fg3">
               Goes at the cold test or a review so far: <b className="font-[590] text-fg">{n.people.goes}</b> by people, <b className="font-[590] text-fg2">{n.agents.goes}</b> by our agents and test browsers.
             </p>
+            <Measures n={n} />
             <Share n={n} />
             <Findings n={n} />
             <Pace n={n} />
@@ -86,6 +87,100 @@ export default function Numbers() {
         )}
       </Shell>
     </Pending.Provider>
+  );
+}
+
+/* ---- the four measures the challenge names: what is counted now, what a team watches, when to stop trusting it ---- */
+
+function Measures({ n }: { n: Data }) {
+  const route = n.route;
+  if (!route) return null;
+  const p = n.people;
+  const full = review(p, 'full');
+  const met = p.pace.reduce((k, b) => k + b.met, 0);
+  const missed = p.pace.reduce((k, b) => k + b.missed, 0);
+  const ruled = p.rulings.accepted + p.rulings.sentBack;
+  const none = <span className="text-fg3">no person yet</span>;
+  const rows: { measure: string; now: ReactNode; live: string; alarm: string; to: string }[] = [
+    {
+      measure: 'Reverts and incidents do not rise as review time falls',
+      now: (
+        <>
+          Stand-in: a known bug in every review. Missed by people: {met ? <b className="font-[590] text-fg">{missed} of {met}</b> : none}. Before Readback, in the cold test: {p.cold.shown ? <b className="font-[590] text-fg">{p.cold.approved} of {p.cold.shown} approved the bug</b> : none}.
+        </>
+      ),
+      live: 'Reverts and incident tickets of merged changes, set against the minutes and pace on the signature of each.',
+      alarm: 'The miss rate is higher in a faster pace band than in a slower one: the pace limit goes down. A revert of a change that was approved under the rule: that review is read again line by line.',
+      to: '#pace',
+    },
+    {
+      measure: 'AI findings are real and accepted',
+      now: (
+        <>
+          <b className="font-[590] text-fg">{route.unnoticed} of {route.unnoticed}</b> untested-line findings come from a run that can be repeated. <b className="font-[590] text-fg">{n.points.length}</b> open points; ruled on by people: {ruled ? <b className="font-[590] text-fg">{p.rulings.accepted} accepted, {p.rulings.sentBack} sent back</b> : none}.
+        </>
+      ),
+      live: 'Per kind of point: how many were sent back and then changed by the author.',
+      alarm: 'A finding that cannot be reproduced: none is tolerated. A kind of point accepted 9 times in 10 is noise and is asked less.',
+      to: '#findings',
+    },
+    {
+      measure: 'Time to merge',
+      now: (
+        <>
+          Start of the full review to the signature, median: <b className="font-[590] text-fg">{full.medianSecondsToSignature === null ? none : fmtSeconds(full.medianSecondsToSignature)}</b>. Cold test decision: {p.cold.medianSeconds === null ? none : <b className="font-[590] text-fg">{fmtSeconds(p.cold.medianSeconds)}</b>}.
+        </>
+      ),
+      live: 'Pull request opened to merged, split into waiting for a reviewer and minutes in the review.',
+      alarm: 'Review minutes go up while the share routed to a person stays the same: the questions or the stops are too heavy.',
+      to: '#time',
+    },
+    {
+      measure: 'Share routed to humans',
+      now: (
+        <>
+          <b className="font-[590] text-fg">
+            {route.linesToRead} of {route.linesAll.toLocaleString('en-US')} lines ({pct(route.linesToRead, route.linesAll)})
+          </b>
+          , {route.stopsToRead} of {n.stops} stops.
+        </>
+      ),
+      live: 'The same share per pull request, and which reason sent each line: risk, no test, open point.',
+      alarm: 'The share falls while the miss rate of the known bug rises: too little is routed. Most lines routed for “no test”: fix the tests first.',
+      to: '#share',
+    },
+  ];
+  return (
+    <div className="mt-7 overflow-hidden rounded-[10px] border border-line bg-raised" role="table" aria-label="The four measures">
+      <div className="hidden grid-cols-[minmax(0,0.8fr)_minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1.15fr)] gap-x-5 border-b border-line px-4 py-2.5 text-[12px] font-[510] text-fg3 lg:grid" role="row">
+        <span role="columnheader">The challenge’s measure</span>
+        <span role="columnheader">Counted on this copy now</span>
+        <span role="columnheader">Counted in real use</span>
+        <span role="columnheader">When we would stop trusting it</span>
+      </div>
+      <div className="divide-y divide-line">
+        {rows.map((r) => (
+          <div key={r.measure} className="px-4 py-3.5 lg:grid lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1.15fr)] lg:gap-x-5" role="row">
+            <p className="text-[13.5px] leading-[1.45] font-[590] text-fg" role="cell">
+              <a href={r.to} className="underline-offset-2 hover:underline">
+                {r.measure}
+              </a>
+            </p>
+            <p className="mt-1.5 text-[13.5px] leading-[1.55] text-fg2 lg:mt-0" role="cell">
+              {r.now}
+            </p>
+            <p className="mt-1.5 text-[13px] leading-[1.55] text-fg3 lg:mt-0" role="cell">
+              <span className="font-[510] text-fg2 lg:hidden">In real use: </span>
+              {r.live}
+            </p>
+            <p className="mt-1.5 text-[13px] leading-[1.55] text-fg3 lg:mt-0" role="cell">
+              <span className="font-[510] text-fg2 lg:hidden">Stop trusting it when: </span>
+              {r.alarm}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
