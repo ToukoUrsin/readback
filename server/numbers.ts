@@ -5,6 +5,7 @@
  * `agents` are our own agents' browsers, our test browsers and scripts. Only `people` may be quoted as results.
  */
 import type { Evidence, Tour } from '../shared/tour';
+import { closeLines } from './close';
 import { RULE } from './gate';
 import { type ColdCounts, type Counts, count, countCold, oursOf, type ReadEvent } from './store';
 
@@ -18,6 +19,18 @@ export interface Group {
   rulings: { accepted: number; sentBack: number };
   /** questions put to the guide */
   asked: number;
+  /** hand-ins of the review that approves, by how fast the lines to read closely went by: does a faster read miss more? */
+  pace: Band[];
+  /** cold tests by how long the decision took */
+  coldPace: Band[];
+}
+
+/** One band of time or pace: how many met the planted bug there, and how many caught it. */
+export interface Band {
+  band: string;
+  met: number;
+  caught: number;
+  missed: number;
 }
 
 /** One reader in one area. A reader is a browser, or a GitHub login when signed in; shown by initials once they signed. */
@@ -42,22 +55,39 @@ export interface Numbers {
   route: {
     linesAll: number;
     linesToRead: number;
-    stops: { id: string; title: string; route: 'read' | 'evidence'; lines: number; criteria: number[]; tried: number; caught: number; unnoticed: number; why: string[] }[];
+    stopsToRead: number;
+    stops: { id: string; title: string; route: 'read' | 'evidence'; lines: number; closely: number; risk: string[]; criteria: number[]; tried: number; caught: number; unnoticed: number; why: string[] }[];
     tests: { passed: number; failed: number };
     tried: number;
     caught: number;
     unnoticed: number;
   } | null;
   /** each thing the AI did not decide, and what reviewers ruled */
-  points: { id: string; kind: string; stopId: string; found: string; question: string; people: { accepted: number; sentBack: number }; agents: { accepted: number; sentBack: number } }[];
+  points: { id: string; kind: string; stopId: string; file: string; from: number; to: number; found: string; question: string; people: { accepted: number; sentBack: number }; agents: { accepted: number; sentBack: number } }[];
   planted: { total: number; byKind: Record<string, number> };
-  rule: { maxWrong: number; maxReads: number; fastLinesPerMinute: number };
+  /** the rule a signature has to meet; `paceLimit` is in lines to read closely a minute */
+  rule: { maxWrong: number; maxReads: number; fastLinesPerMinute: number; paceLimit: number; lockSeconds: number; maxFlags: number };
+  /** the sample change and its requirement */
+  pr: { repo: string; number: number; title: string; url: string; headSha: string; additions: number; deletions: number; files: number; issue?: { number: number; title: string } };
+  /** the acceptance criteria of the issue, word for word */
+  criteria: { n: number; text: string }[];
+  /** what made the review material, and what it cost */
+  madeBy: { plan: { model: string; plantModel?: string; costUsd: number }; evidence?: { model: string; costUsd: number } };
+  stops: number;
+  questions: number;
 }
 
 const initials = (name: string) => {
   const w = name.replace(/^@/, '').split(/[\s._-]+/).filter(Boolean);
   return (w.length > 1 ? w.map((x) => x[0]).join('') : (w[0] ?? '').slice(0, 2)).slice(0, 3).toUpperCase();
 };
+
+const bands = (rows: { v: number; hit: boolean }[], cuts: [string, number][]): Band[] =>
+  cuts.map(([band, below], i) => {
+    const from = i ? cuts[i - 1]![1] : -Infinity;
+    const r = rows.filter((x) => x.v >= from && x.v < below);
+    return { band, met: r.length, caught: r.filter((x) => x.hit).length, missed: r.filter((x) => !x.hit).length };
+  });
 
 function group(events: ReadEvent[]): Group {
   const reviews: Record<string, Counts> = {};
@@ -66,7 +96,17 @@ function group(events: ReadEvent[]): Group {
   const last = new Map<string, string>();
   for (const e of events) if (e.type === 'rule') last.set(`${e.rid}:${e.point}`, String(e.decision));
   const decisions = [...last.values()];
-  return { goes: new Set(events.map((e) => e.rid)).size, cold: countCold(events), reviews, rulings: { accepted: decisions.filter((x) => x === 'accept').length, sentBack: decisions.filter((x) => x === 'back').length }, asked: events.filter((e) => e.type === 'ask').length };
+  return {
+    goes: new Set(events.map((e) => e.rid)).size, cold: countCold(events), reviews, rulings: { accepted: decisions.filter((x) => x === 'accept').length, sentBack: decisions.filter((x) => x === 'back').length }, asked: events.filter((e) => e.type === 'ask').length,
+    pace: bands(
+      events.filter((e) => e.type === 'handin' && e.tour === 'full' && typeof e.linesPerMinute === 'number').map((e) => ({ v: Number(e.linesPerMinute), hit: !!e.caught })),
+      [['under 5 lines a minute', 5], ['5 to 14', 15], ['15 or more', Infinity]],
+    ),
+    coldPace: bands(
+      events.filter((e) => e.type === 'cold' && e.action !== 'skip' && typeof e.seconds === 'number').map((e) => ({ v: Number(e.seconds), hit: !!e.caught })),
+      [['under 30 seconds', 30], ['30 seconds to 2 minutes', 120], ['over 2 minutes', Infinity]],
+    ),
+  };
 }
 
 export function numbers(events: ReadEvent[], d: { tour: Tour; evidence?: Evidence }): Numbers {
@@ -95,10 +135,11 @@ export function numbers(events: ReadEvent[], d: { tour: Tour; evidence?: Evidenc
 
   const ev = d.evidence && d.evidence.headSha === d.tour.pr.headSha ? d.evidence : undefined;
   const linesOf = (s: Tour['stops'][number]) => s.blocks.reduce((a, b) => a + (b.type === 'code' ? b.to - b.from + 1 : 0), 0);
+  const close = closeLines(d.tour, ev);
   const stops = ev
     ? d.tour.stops.flatMap((s) => {
         const e = ev.stops[s.id];
-        return e ? [{ id: s.id, title: s.title, route: e.route, lines: linesOf(s), criteria: e.criteria, tried: e.changes.tried, caught: e.changes.caught, unnoticed: e.changes.survived.length, why: e.routeWhy }] : [];
+        return e ? [{ id: s.id, title: s.title, route: e.route, lines: linesOf(s), closely: close.get(s.id)?.size ?? 0, risk: e.risk, criteria: e.criteria, tried: e.changes.tried, caught: e.changes.caught, unnoticed: e.changes.survived.length, why: e.routeWhy }] : [];
       })
     : [];
   const rulingCount = (es: ReadEvent[], id: string) => {
@@ -118,7 +159,8 @@ export function numbers(events: ReadEvent[], d: { tour: Tour; evidence?: Evidenc
     route: ev
       ? {
           linesAll: stops.reduce((a, s) => a + s.lines, 0),
-          linesToRead: stops.filter((s) => s.route === 'read').reduce((a, s) => a + s.lines, 0),
+          linesToRead: stops.reduce((a, s) => a + s.closely, 0),
+          stopsToRead: stops.filter((s) => s.closely > 0).length,
           stops,
           tests: { passed: ev.tests.passed, failed: ev.tests.failed },
           tried: stops.reduce((a, s) => a + s.tried, 0),
@@ -126,8 +168,13 @@ export function numbers(events: ReadEvent[], d: { tour: Tour; evidence?: Evidenc
           unnoticed: stops.reduce((a, s) => a + s.unnoticed, 0),
         }
       : null,
-    points: (ev?.rulings ?? []).map((r) => ({ id: r.id, kind: r.kind, stopId: r.stopId, found: r.found, question: r.question, people: rulingCount(people, r.id), agents: rulingCount(agents, r.id) })),
+    points: (ev?.rulings ?? []).map((r) => ({ id: r.id, kind: r.kind, stopId: r.stopId, file: r.file, from: r.from, to: r.to, found: r.found, question: r.question, people: rulingCount(people, r.id), agents: rulingCount(agents, r.id) })),
     planted: { total: d.tour.plants.length, byKind },
-    rule: { maxWrong: RULE.maxWrong, maxReads: RULE.maxReads, fastLinesPerMinute: RULE.fastLinesPerMinute },
+    rule: { maxWrong: RULE.maxWrong, maxReads: RULE.maxReads, fastLinesPerMinute: RULE.fastLinesPerMinute, paceLimit: ev ? RULE.closeLinesPerMinute : RULE.fastLinesPerMinute, lockSeconds: RULE.lockSeconds, maxFlags: 3 },
+    pr: { repo: d.tour.pr.repo, number: d.tour.pr.number, title: d.tour.pr.title, url: d.tour.pr.url, headSha: d.tour.pr.headSha, additions: d.tour.pr.additions, deletions: d.tour.pr.deletions, files: d.tour.pr.files, ...(d.tour.pr.issue ? { issue: { number: d.tour.pr.issue.number, title: d.tour.pr.issue.title } } : {}) },
+    criteria: ev?.criteria ?? [],
+    madeBy: { plan: { model: d.tour.madeBy.model, plantModel: d.tour.madeBy.plantModel, costUsd: d.tour.madeBy.costUsd }, ...(ev ? { evidence: { model: ev.madeBy.model, costUsd: ev.madeBy.costUsd } } : {}) },
+    stops: d.tour.stops.length,
+    questions: d.tour.stops.filter((s) => (close.get(s.id)?.size ?? 0) > 0).reduce((a, s) => a + s.questions.length, 0),
   };
 }

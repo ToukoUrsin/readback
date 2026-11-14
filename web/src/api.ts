@@ -1,4 +1,4 @@
-import type { AnswerState, Flag, PublicTour, ReaderState } from '../../shared/tour';
+import type { AnswerState, Flag, PublicTour, ReaderState, Ruling } from '../../shared/tour';
 
 export interface ColdStats {
   shown: number;
@@ -24,7 +24,8 @@ try {
 async function call<T>(path: string, body?: unknown): Promise<T> {
   const r = await fetch(BASE + path, body === undefined ? { credentials: 'same-origin' } : { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error((j as { error?: string }).error ?? `The server answered ${r.status}.`);
+  // a refusal can carry the state it leaves behind (a closed question, the flags as they are)
+  if (!r.ok) throw Object.assign(new Error((j as { error?: string }).error ?? `The server answered ${r.status}.`), { body: j, status: r.status });
   return j as T;
 }
 
@@ -33,6 +34,7 @@ export const api = {
   start: () => call<ReaderState>('/api/start', {}),
   answer: (id: string, choice: number) => call<{ answer: AnswerState; reread?: { file: string; from: number; to: number } }>('/api/answer', { id, choice }),
   flag: (f: Flag & { on?: boolean }) => call<{ flags: Flag[] }>('/api/flag', f),
+  rule: (id: string, decision: Ruling['decision'], note: string) => call<{ rulings: Record<string, Ruling> }>('/api/rule', { id, decision, note }),
   handin: () => call<{ ok: boolean; tour: PublicTour }>('/api/handin', {}),
   sign: (name: string) => call<ReaderState>('/api/sign', { name }),
   reset: () => call<PublicTour>('/api/reset', {}),
@@ -42,6 +44,9 @@ export const api = {
   seen: (stop: string) => call<{ ok: boolean }>('/api/seen', { stop }).catch(() => undefined),
   stats: () => call<{ cold?: ColdStats }>('/api/stats'),
 };
+
+/** what a refused call left behind, when the server said */
+export const bodyOf = <T,>(e: unknown): Partial<T> => ((e as { body?: Partial<T> }).body ?? {});
 
 /** The guide's answer, piece by piece. */
 export async function askGuide(body: { q: string; stopId?: string; line?: { file: string; line: number }; history: { role: 'user' | 'model'; text: string }[] }, onText: (all: string) => void, signal?: AbortSignal): Promise<string> {

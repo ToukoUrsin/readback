@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AnswerState, Flag, PublicTour, Reveal } from '../../shared/tour';
-import { api } from './api';
+import type { AnswerState, Flag, PublicTour, Reveal, Ruling } from '../../shared/tour';
+import { api, bodyOf } from './api';
 import { Cold, ColdOutcome } from './pages/Cold';
 import { HandIn } from './pages/HandIn';
 import { Intro } from './pages/Intro';
@@ -12,6 +12,7 @@ import { Sidebar, type At } from './ui/Sidebar';
 import { LoadFailed, Loading } from './ui/States';
 
 const fromHash = (): At => decodeURIComponent(location.hash.replace(/^#\/?/, '')) || 'intro';
+const NONE: Record<string, Ruling> = {};
 const typing = (e: KeyboardEvent) => /^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement).tagName);
 
 function Clock({ from, until }: { from: string; until?: string }) {
@@ -40,6 +41,7 @@ export default function App() {
   const [menu, setMenu] = useState(false);
   const [pulse, setPulse] = useState<{ file: string; from: number; to: number; key: number } | null>(null);
   const [missedNow, setMissedNow] = useState<Reveal | null>(null);
+  const [flash, setFlash] = useState('');
   const main = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -68,7 +70,15 @@ export default function App() {
     return () => window.removeEventListener('hashchange', on);
   }, []);
 
-  const done = useCallback((id: string) => !!tour && (tour.stops.find((s) => s.id === id)?.questions.every((q) => tour.state.answers[q.id]?.right) ?? false), [tour]);
+  // a stop is done when its questions are right and its open points are ruled on; a stop the evidence carries has nothing to do
+  const done = useCallback(
+    (id: string) => {
+      const st = tour?.stops.find((s) => s.id === id);
+      if (!tour || !st) return false;
+      return st.questions.every((q) => tour.state.answers[q.id]?.right) && (tour.evidence?.rulings ?? []).filter((r) => r.stopId === id).every((r) => tour.state.rulings?.[r.id]);
+    },
+    [tour],
+  );
   // every stop is open once the review has started: a reviewer moves the way the code leads
   const reachable = useCallback((a: At) => !!tour && (a === 'intro' || (!!tour.state.startedAt && (a === 'handin' || tour.stops.some((s) => s.id === a)))), [tour]);
 
@@ -110,8 +120,28 @@ export default function App() {
   const patch = (p: Partial<PublicTour['state']>) => setTour((t) => (t ? { ...t, state: { ...t.state, ...p } } : t));
   const onAnswer = (id: string, a: AnswerState) => setTour((t) => (t ? { ...t, state: { ...t.state, answers: { ...t.state.answers, [id]: a } } } : t));
   const onFlag = useCallback((f: Flag & { on?: boolean }) => {
-    api.flag(f).then((r) => patch({ flags: r.flags }), () => {});
+    api.flag(f).then(
+      (r) => patch({ flags: r.flags }),
+      (e) => {
+        const b = bodyOf<{ flags: Flag[] }>(e);
+        if (b.flags) patch({ flags: b.flags });
+        setFlash((e as Error).message);
+      },
+    );
   }, []);
+  const onRule = useCallback(async (id: string, decision: Ruling['decision'], note: string) => {
+    try {
+      patch({ rulings: (await api.rule(id, decision, note)).rulings });
+      return null;
+    } catch (e) {
+      return (e as Error).message;
+    }
+  }, []);
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(''), 4000);
+    return () => clearTimeout(t);
+  }, [flash]);
   const unflag = (f: Flag) => onFlag({ ...f, on: false });
   const onAsk = useCallback((file: string, line: number) => {
     setAskLine({ file, line });
@@ -127,7 +157,7 @@ export default function App() {
   const start = async () => {
     if (!tour) return;
     if (!tour.state.startedAt) patch(await api.start());
-    const first = tour.stops.find((s) => !s.questions.every((q) => tour.state.answers[q.id]?.right));
+    const first = tour.stops.find((s) => s.required && !done(s.id));
     go(first ? first.id : 'handin');
   };
 
@@ -154,6 +184,7 @@ export default function App() {
   if (state.cold?.reveal && !state.startedAt) return <ColdOutcome tour={tour} result={state.cold} onStart={start} />;
   const stop = tour.stops.find((s) => s.id === at) ?? null;
   const stopIndex = stop ? tour.stops.indexOf(stop) : -1;
+  const points = (id: string) => (tour.evidence?.rulings ?? []).filter((r) => r.stopId === id);
   const sidebar = <Sidebar tour={tour} at={at} done={done} go={go} jump={jump} unflag={unflag} />;
 
   return (
@@ -213,8 +244,14 @@ export default function App() {
               locked={!!state.caught}
               canAsk={tour.ask}
               pulse={pulse}
+              evidence={tour.evidence}
+              issue={tour.pr.issue?.number}
+              points={points(stop.id)}
+              rulings={state.rulings ?? NONE}
+              lockSeconds={tour.rule.lockSeconds}
               onAnswer={onAnswer}
               onFlag={onFlag}
+              onRule={onRule}
               onAsk={onAsk}
               onReread={(r) => jump(r.file, r.from, r.to)}
               onPrev={() => prev && go(prev)}
@@ -229,6 +266,7 @@ export default function App() {
               setMissedNow={setMissedNow}
               jump={jump}
               unflag={unflag}
+              onFlag={onFlag}
               readAgain={() => go(tour.stops[0]!.id)}
               go={go}
               reset={async () => {
@@ -244,6 +282,7 @@ export default function App() {
         </div>
       </div>
 
+      {flash && <div className="fade fixed bottom-5 left-1/2 z-[60] max-w-[92vw] -translate-x-1/2 rounded-lg border border-bad/40 bg-raised px-3.5 py-2 text-[13px] text-fg shadow-2xl">{flash}</div>}
       {tour.ask && askOpen && (
         <>
           <div className="fade fixed inset-0 z-40 bg-black/60 xl:hidden" onClick={() => setAskOpen(false)} />

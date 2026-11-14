@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Flag, PublicTour } from '../../../shared/tour';
-import { Eye, FlagFill, Logo, Pull, StatusDone, StatusNow, StatusTodo, X } from './icons';
+import { Eye, FlagFill, Logo, Minus, Pull, StatusDone, StatusNow, StatusTodo, X } from './icons';
 
 export type At = 'intro' | 'handin' | (string & {});
 
@@ -18,6 +18,8 @@ export function Sidebar({ tour, at, done, go, jump, unflag }: Props) {
   const all = tour.stops.flatMap((s) => s.questions);
   const right = all.filter((q) => state.answers[q.id]?.right).length;
   const signed = !!state.signature;
+  const points = tour.evidence?.rulings ?? [];
+  const ruled = points.filter((r) => state.rulings?.[r.id]).length;
   const started = !!state.startedAt;
 
   const item = (key: At, label: string, mark: ReactNode, sub?: ReactNode) => {
@@ -43,7 +45,7 @@ export function Sidebar({ tour, at, done, go, jump, unflag }: Props) {
       <div className="flex h-12 flex-none items-center gap-2.5 px-4">
         <Logo size={20} />
         <span className="text-[14px] font-[590] tracking-[-0.01em]">Readback</span>
-        {tour.short && <span className="ml-auto rounded bg-flag/15 px-1.5 py-px text-[10.5px] font-[590] text-flag">Short read</span>}
+        {tour.short && <span className="ml-auto rounded bg-flag/15 px-1.5 py-px text-[10.5px] font-[590] text-flag">Short review</span>}
       </div>
 
       <div className="mx-2 mb-3 rounded-lg border border-line bg-raised px-3 py-2.5">
@@ -63,17 +65,29 @@ export function Sidebar({ tour, at, done, go, jump, unflag }: Props) {
         {tour.stops.map((s) => {
           const open = s.questions.filter((q) => !state.answers[q.id]?.right).length;
           const code = s.blocks.flatMap((b) => (b.type === 'code' ? [b] : []));
-          const focus = code.reduce((a, b) => a + (b.focus?.length ?? 0), 0);
           const flagged = state.flags.filter((f) => code.some((b) => b.file === f.file && b.from <= f.line && f.line <= b.to)).length;
+          const unruled = points.filter((r) => r.stopId === s.id && !state.rulings?.[r.id]).length;
           return item(
             s.id,
             s.title,
-            done(s.id) ? <StatusDone /> : at === s.id ? <StatusNow /> : <StatusTodo />,
-            started && (focus > 0 || flagged > 0 || open > 0) ? (
+            !s.required ? <Minus size={14} className="text-fg4" /> : done(s.id) ? <StatusDone /> : at === s.id ? <StatusNow /> : <StatusTodo />,
+            started ? (
               <>
-                {focus > 0 && (
+                {s.required ? (
                   <span className="flex items-center gap-1">
-                    <Eye size={11} className="text-warn/80" /> {focus} to read closely
+                    <Eye size={11} className="text-warn/80" /> {s.closely} {s.closely === 1 ? 'line' : 'lines'} closely
+                  </span>
+                ) : (
+                  <span>carried by its evidence</span>
+                )}
+                {unruled > 0 && (
+                  <span className="text-accent-hi">
+                    {unruled} open {unruled === 1 ? 'point' : 'points'}
+                  </span>
+                )}
+                {open > 0 && (
+                  <span>
+                    {open} {open === 1 ? 'question' : 'questions'}
                   </span>
                 )}
                 {flagged > 0 && (
@@ -81,7 +95,6 @@ export function Sidebar({ tour, at, done, go, jump, unflag }: Props) {
                     <FlagFill size={10} /> {flagged}
                   </span>
                 )}
-                {open > 0 && focus === 0 && <span>{open} {open === 1 ? 'question' : 'questions'}</span>}
               </>
             ) : undefined,
           );
@@ -95,7 +108,7 @@ export function Sidebar({ tour, at, done, go, jump, unflag }: Props) {
           </span>
         </p>
         {state.flags.length === 0 ? (
-          <p className="px-2 text-[12px] leading-[1.45] text-fg4">One line was changed on purpose. Click it and flag it when you see it.</p>
+          <p className="px-2 text-[12px] leading-[1.45] text-fg4">One line was changed on purpose. Click it, flag it, and say what it does wrong.</p>
         ) : (
           state.flags.map((f) => (
             <div key={`${f.file}:${f.line}`} className="group flex items-center gap-2 rounded-md px-2 py-[5px] hover:bg-hover">
@@ -123,6 +136,14 @@ export function Sidebar({ tour, at, done, go, jump, unflag }: Props) {
         <div className="mt-2 h-1 overflow-hidden rounded-full bg-active">
           <div className="h-full rounded-full bg-accent transition-[width] duration-500 ease-out-quint" style={{ width: `${all.length ? (right / all.length) * 100 : 0}%` }} />
         </div>
+        {points.length > 0 && (
+          <div className="mt-2 flex items-center justify-between text-[12px] text-fg3">
+            <span>Open points ruled on</span>
+            <span>
+              {ruled} of {points.length}
+            </span>
+          </div>
+        )}
         {state.read > 1 && <p className="mt-2.5 text-[12px] text-flag">Read {state.read}: a planted bug was missed before.</p>}
       </div>
     </nav>

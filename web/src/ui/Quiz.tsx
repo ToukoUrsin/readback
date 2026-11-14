@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
 import type { AnswerState, PublicQuestion } from '../../../shared/tour';
-import { api } from '../api';
+import { api, bodyOf } from '../api';
 import { Check, X } from './icons';
 import { inline } from './Prose';
 
 interface Props {
   questions: PublicQuestion[];
   answers: Record<string, AnswerState>;
+  /** a wrong try closes its question for this long */
+  lockSeconds?: number;
   onAnswer: (id: string, a: AnswerState) => void;
   onReread: (r: { file: string; from: number; to: number }) => void;
 }
 
-export function Quiz({ questions, answers, onAnswer, onReread }: Props) {
+export function Quiz({ questions, answers, lockSeconds, onAnswer, onReread }: Props) {
   const firstOpen = questions.find((q) => !answers[q.id]?.right)?.id ?? null;
   return (
     <section className="mt-10">
@@ -20,6 +22,7 @@ export function Quiz({ questions, answers, onAnswer, onReread }: Props) {
         <span className="text-[12px] text-fg4">
           {questions.filter((q) => answers[q.id]?.right).length} of {questions.length}
         </span>
+        {!!lockSeconds && <span className="ml-auto hidden text-[12px] text-fg4 sm:inline">A wrong answer closes its question for {lockSeconds} s and stays on the record.</span>}
       </div>
       <div className="space-y-3">
         {questions.map((q) => (
@@ -36,9 +39,18 @@ function One({ q, a, keys, onAnswer, onReread }: { q: PublicQuestion; a: AnswerS
   const [busy, setBusy] = useState(false);
   const [wrong, setWrong] = useState<{ choice: number; reread: { file: string; from: number; to: number } } | null>(null);
   const right = a?.right;
+  // a wrong try closes the question for a while: the seconds left tick down here
+  const until = a?.lockedUntil ? Date.parse(a.lockedUntil) : 0;
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!until || until <= Date.now()) return;
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, [until]);
+  const wait = right ? 0 : Math.max(0, Math.ceil((until - now) / 1000));
 
   const check = async () => {
-    if (picked === null || busy || right) return;
+    if (picked === null || busy || right || wait > 0) return;
     setBusy(true);
     try {
       const r = await api.answer(q.id, picked);
@@ -48,6 +60,11 @@ function One({ q, a, keys, onAnswer, onReread }: { q: PublicQuestion; a: AnswerS
         setTried((t) => [...t, picked]);
         setPicked(null);
       } else setWrong(null);
+    } catch (e) {
+      // the question is closed: the server says until when
+      const b = bodyOf<{ answer: AnswerState; reread: { file: string; from: number; to: number } }>(e);
+      if (b.answer) onAnswer(q.id, b.answer);
+      setNow(Date.now());
     } finally {
       setBusy(false);
     }
@@ -101,8 +118,8 @@ function One({ q, a, keys, onAnswer, onReread }: { q: PublicQuestion; a: AnswerS
         </p>
       ) : (
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          <button className="btn btn-primary" disabled={picked === null || busy} onClick={check}>
-            Check <span className="kbd">↵</span>
+          <button className="btn btn-primary" disabled={picked === null || busy || wait > 0} onClick={check}>
+            {wait > 0 ? `Opens again in ${wait} s` : 'Check'} {wait > 0 ? null : <span className="kbd">↵</span>}
           </button>
           {wrong && (
             <p className="fade min-w-0 flex-1 text-[13px] text-fg2">
@@ -111,7 +128,7 @@ function One({ q, a, keys, onAnswer, onReread }: { q: PublicQuestion; a: AnswerS
               <button className="icode underline decoration-fg4 underline-offset-2 hover:decoration-fg" onClick={() => onReread(wrong.reread)}>
                 {wrong.reread.file.split('/').pop()}:{wrong.reread.from}–{wrong.reread.to}
               </button>{' '}
-              again.
+              again.{a && a.misses > 0 ? ` ${a.misses} wrong ${a.misses === 1 ? 'try' : 'tries'} on this question.` : ''}
             </p>
           )}
         </div>

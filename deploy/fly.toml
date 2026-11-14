@@ -9,6 +9,7 @@ primary_region = "arn"
   HOST = "0.0.0.0"
   RB_DATA = "/data"
   RB_GITHUB_WATCH = "1"
+  RB_PUBLIC_URL = "https://readback-demo.fly.dev"
 
 [mounts]
   source = "readback_data"

@@ -12,6 +12,7 @@ import { getCookie, setCookie } from 'hono/cookie';
 import type { Block, ColdResult, CommitState, Evidence, Flag, GateCheck, PublicTour, ReaderState, Reveal, Ruling, Signature, Tour, TourPlant } from '../shared/tour';
 import { ask, type AskDeps } from './ask';
 import type { Me } from './auth';
+import { closeLines } from './close';
 import { gate, outcomeOf, RULE, statusFor } from './gate';
 import type { Grade } from './grade';
 import type { ReadEvent, Store } from './store';
@@ -139,26 +140,7 @@ export function createApp(d: Deps) {
   const ev = d.evidence && d.evidence.headSha === tour.pr.headSha ? d.evidence : undefined;
   const rulingItems = (ev?.rulings ?? []).filter((r) => tour.stops.some((s) => s.id === r.stopId));
   const linesOf = (s: { blocks: Block[] }) => s.blocks.reduce((b, x) => b + (x.type === 'code' ? x.to - x.from + 1 : 0), 0);
-  /**
-   * The lines of a stop a person has to read closely, as "file:line". With evidence these are the lines marked for
-   * what they can harm, the lines where a tried bug went unnoticed by the tests, and the lines of an open point.
-   * The rest of the stop is shown as context. Without evidence every line has to be read.
-   */
-  const closeOf = (st: Tour['stops'][number]): Set<string> => {
-    const out = new Set<string>();
-    const add = (file: string, from: number, to: number) => {
-      for (const b of st.blocks) if (b.type === 'code' && b.file === file) for (let n = Math.max(from, b.from); n <= Math.min(to, b.to); n++) out.add(`${file}:${n}`);
-    };
-    for (const b of st.blocks) {
-      if (b.type !== 'code') continue;
-      if (!ev) add(b.file, b.from, b.to);
-      for (const f of b.focus ?? []) add(b.file, f.from, f.to);
-    }
-    for (const x of ev?.stops[st.id]?.changes.survived ?? []) add(x.file, x.line, x.line);
-    for (const r of rulingItems) if (r.stopId === st.id) add(r.file, r.from, r.to);
-    return out;
-  };
-  const close = new Map(tour.stops.map((s) => [s.id, closeOf(s)] as const));
+  const close = closeLines(tour, ev);
   /** a stop with nothing to read closely is carried by its evidence: it asks nothing and holds no planted line */
   const required = (stopId: string) => (close.get(stopId)?.size ?? 0) > 0;
   const mustRead = tour.stops.filter((s) => required(s.id));
@@ -171,7 +153,9 @@ export function createApp(d: Deps) {
   const lockSeconds = d.lockSeconds ?? RULE.lockSeconds;
   const stopOf = (file: string, line: number) => tour.stops.find((s) => s.blocks.some((b) => b.type === 'code' && b.file === file && b.from <= line && line <= b.to))?.id ?? '';
   /** a line a reviewer can be held to: one they were told to read closely */
-  const onTour = (file: string, line: number) => !!close.get(stopOf(file, line))?.has(`${file}:${line}`);
+  /** lines whose real text the evidence shows beside them (a tried bug the tests did not notice): never planted, the two would not match */
+  const quoted = new Set(Object.values(ev?.stops ?? {}).flatMap((x) => x.changes.survived.map((v) => `${v.file}:${v.line}`)));
+  const onTour = (file: string, line: number) => !quoted.has(`${file}:${line}`) && !!close.get(stopOf(file, line))?.has(`${file}:${line}`);
   const shownAnywhere = (file: string, line: number) => stopOf(file, line) !== '';
   const inCold = (file: string, line: number) => !!tour.cold?.blocks.some((b) => b.file === file && b.from <= line && line <= b.to);
 
@@ -198,7 +182,7 @@ export function createApp(d: Deps) {
     return { total: rulingItems.length, open: rulingItems.filter((x) => !r[x.id]).length, back: rulingItems.filter((x) => r[x.id]?.decision === 'back').length };
   };
   const checksOf = (s: Session): GateCheck[] =>
-    gate({ login: s.login, test: s.test, prepared: !!s.prepared, questions: questions.size, wrong: wrong(s), reads: s.read, linesPerMinute: speed(s.caughtSeconds ?? seconds(s)), fastAt, skimmed: s.prepared ? 0 : skimmed(s), rulings: ruled(s) });
+    gate({ login: s.login, test: s.test && !!s.prepared, prepared: !!s.prepared, questions: questions.size, wrong: wrong(s), reads: s.read, linesPerMinute: speed(s.caughtSeconds ?? seconds(s)), fastAt, skimmed: s.prepared ? 0 : skimmed(s), rulings: ruled(s) });
   const whoOf = (sig: Signature) => (sig.login ? `@${sig.login}` : `${sig.name} (test read)`);
   /** what the reviews that counted say about this commit */
   const commit = (): CommitState => {

@@ -20,7 +20,7 @@ export const RULE = {
 export interface GateInput {
   /** GitHub login, when signed in */
   login?: string;
-  /** our own test browser: its name is typed, and the status says it is a test read */
+  /** our own recording browser, opened with the server's key: its name is typed, and the status says it is a test read */
   test: boolean;
   /** questions answered ahead for a recording (test browsers with the key only) */
   prepared: boolean;
@@ -43,7 +43,7 @@ export function gate(x: GateInput): GateCheck[] {
     x.login
       ? { id: 'who', ok: true, text: `Signed in with GitHub as @${x.login}` }
       : x.test
-        ? { id: 'who', ok: true, text: 'Our own test browser: the name is typed, and the status says so' }
+        ? { id: 'who', ok: true, text: 'Our own recording browser, opened with the server\'s key: the name is typed, and the status says test read' }
         : { id: 'who', ok: false, text: 'The name is typed, not verified. Only a GitHub sign-in can approve' },
   );
   checks.push({ id: 'questions', ok: x.wrong <= RULE.maxWrong, text: `${x.questions} of ${x.questions} questions right, ${n(x.wrong, 'wrong try', 'wrong tries')} (at most ${RULE.maxWrong})` });

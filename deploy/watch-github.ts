@@ -2,11 +2,10 @@
  * bun deploy/watch-github.ts            runs on this machine, next to gh; the public copy holds no GitHub token
  * bun deploy/watch-github.ts --reset    put the commit status back to "nobody has read this commit" and leave
  *
- * Watches the public copy's records. When a full read of the pull request's head commit is signed there,
- * it sets the commit status readback/read on GitHub, which the branch rule on main requires.
- * A signature taken back (test reads only) sets it to pending again.
- *
- * A visitor's typed name is not written to GitHub: only our own test reads carry their name there.
+ * Watches the public copy's records. The commit status readback/read on GitHub (required by the branch rule on main)
+ * follows the record: a signature whose review met the rule sets it green, one that sent points back sets it red,
+ * and a signature that does not count changes nothing. The server decides which (server/gate.ts) and writes the
+ * status into the `sign` row; this only carries it to GitHub. A signature taken back (test reads only) sets it to pending again.
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -19,7 +18,6 @@ const URL_FULL = `https://${APP}.fly.dev/full`;
 const DIR = process.env.RB_WATCH_DIR ?? '/bulk3/runs/readback/watch';
 const tour = JSON.parse(readFileSync(resolve(ROOT, process.env.RB_TOUR ?? 'data/live/tour.json'), 'utf8')) as Tour;
 const { repo, headSha } = tour.pr;
-const questions = tour.stops.reduce((a, s) => a + s.questions.length, 0);
 mkdirSync(DIR, { recursive: true });
 const log = (m: string) => {
   const line = `${new Date().toISOString()} ${m}`;
@@ -43,6 +41,9 @@ interface Row {
   test: boolean;
   name?: string;
   reads?: number;
+  outcome?: 'approved' | 'sent-back' | 'not-counted';
+  /** what the rule says this signature writes to GitHub; absent when it does not count */
+  status?: { state: 'success' | 'failure'; description: string };
 }
 const handledPath = resolve(DIR, 'handled.json');
 const handled = new Set<string>(existsSync(handledPath) ? (JSON.parse(readFileSync(handledPath, 'utf8')) as string[]) : []);
@@ -62,7 +63,6 @@ async function rows(): Promise<Row[]> {
   });
 }
 const mine = (r: Row) => (r.type === 'sign' || r.type === 'unsign') && r.tour === 'full' && r.headSha === headSha;
-const clean = (name: string) => name.replace(/[^\p{L}\p{N} .'-]/gu, '').trim().slice(0, 40) || 'a test reader';
 
 // what is already there when the watcher starts is history, not news
 let first = !existsSync(handledPath);
@@ -74,9 +74,13 @@ for (;;) {
       handled.add(key(r));
       if (first) continue;
       if (r.type === 'sign') {
-        const description = r.test ? `Read by ${clean(r.name ?? '')}: ${questions}/${questions} questions, planted bug caught on read ${r.reads ?? 1}` : `Read by a visitor of the public demo: ${questions}/${questions} questions, planted bug caught on read ${r.reads ?? 1}`;
-        await setStatus({ repo, sha: headSha, state: 'success', description, targetUrl: URL_FULL });
-        log(`success: ${description}`);
+        if (!r.status) {
+          log(`no change: a signature that does not count (${r.outcome ?? 'made before the rule'})`);
+          continue;
+        }
+        const description = r.status.description.slice(0, 140);
+        await setStatus({ repo, sha: headSha, state: r.status.state, description, targetUrl: URL_FULL });
+        log(`${r.status.state}: ${description}`);
       } else {
         await setStatus({ repo, sha: headSha, state: 'pending', description: NOBODY, targetUrl: URL_FULL });
         log('pending: a test signature was taken back');

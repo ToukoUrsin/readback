@@ -316,6 +316,15 @@
   .row.sel .num {
     color: var(--accent-hi);
   }
+  /* a flagged line stays orange while its bar is open */
+  .row.flagged.sel,
+  .row.flagged.sel:hover {
+    border-left-color: var(--flag);
+    background: var(--flag-soft);
+  }
+  .row.flagged.sel .num {
+    color: var(--flag);
+  }
   /* lines the guide marked: read these closely */
   .row.focus {
     box-shadow: inset 3px 0 0 -1px var(--warn);
@@ -334,6 +343,10 @@
   .row.focus.sel,
   .row.focus.sel:hover {
     background: rgba(94, 106, 210, 0.16);
+  }
+  .row.focus.flagged.sel,
+  .row.focus.flagged.sel:hover {
+    background: var(--flag-soft);
   }
   .tool {
     display: inline-flex;
