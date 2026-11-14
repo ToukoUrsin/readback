@@ -304,14 +304,20 @@ export function createApp(d: Deps) {
     const me = d.me?.(c) ?? null;
     if (me) {
       // a signed-in reviewer has one review of this commit, from whatever browser: no second try in a fresh window
-      id = `gh:${me.login.toLowerCase()}`;
-      if (!sessions.has(id)) {
-        d.shown?.copy(who, id);
-        const s = fresh(test, id);
+      const gid = `gh:${me.login.toLowerCase()}`;
+      if (!sessions.has(gid)) {
+        d.shown?.copy(who, gid);
+        // a visitor who signs in part-way keeps their review, with everything the record already says about it
+        const open = id && !id.startsWith('gh:') ? sessions.get(id) : undefined;
+        const s = open && !open.signature && !open.login ? open : fresh(test, gid);
+        if (s === open) sessions.delete(id!);
         s.login = me.login;
-        sessions.set(id, s);
+        s.who = gid;
+        sessions.set(gid, s);
+        record(s, 'signin', { login: me.login, kept: s === open });
         keep();
       }
+      id = gid;
     } else if (!id || id.startsWith('gh:') || !sessions.has(id)) {
       id = randomBytes(16).toString('hex');
       sessions.set(id, fresh(test, who));
