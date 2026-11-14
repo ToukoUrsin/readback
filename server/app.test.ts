@@ -9,7 +9,7 @@ const tour: Tour = {
   pr: { repo: 'o/r', number: 1, title: 't', url: 'u', author: 'a', authorIsAgent: true, baseSha: 'b', headSha: 'h'.repeat(40), additions: 3, deletions: 0, files: 1 },
   intro: 'i',
   stops: [
-    { id: 's1', title: 'S1', why: 'w', blocks: [{ type: 'code', file: 'a.ts', from: 1, to: 3, lines: [line(1, 'one'), line(2, 'two'), line(3, 'three')] }], questions: [{ id: 'q1', prompt: 'p', options: ['x', 'y'], answer: 1, explain: 'e', reread: { file: 'a.ts', from: 1, to: 1 } }] },
+    { id: 's1', title: 'S1', why: 'w', blocks: [{ type: 'code', file: 'a.ts', from: 1, to: 3, lines: [line(1, 'one'), line(2, 'two'), line(3, 'three')], focus: [{ from: 2, to: 3, why: 'w' }] }], questions: [{ id: 'q1', prompt: 'p', options: ['x', 'y'], answer: 1, explain: 'e', reread: { file: 'a.ts', from: 1, to: 1 } }] },
   ],
   plants: [
     { id: 'p1', file: 'a.ts', line: 2, original: 'two', planted: 'TWO', what: 'w1', failedTests: ['t1'], tokens: [['TWO', '']], originalTokens: [['two', '']] },
@@ -266,7 +266,7 @@ const evidence: Evidence = {
   headSha: tour.pr.headSha,
   criteria: [{ n: 1, text: 'c1' }],
   tests: { passed: 3, failed: 0, at: 'now' },
-  stops: { s1: { criteria: [1], tests: ['t1'], changes: { tried: 3, caught: 2, survived: [1, 2, 3].map((n) => ({ file: 'a.ts', line: n, original: 'x', changed: 'X', effect: 'e' })) }, risk: ['access'], riskWhy: 'r', route: 'read', routeWhy: ['x'] } },
+  stops: { s1: { criteria: [1], tests: ['t1'], changes: { tried: 3, caught: 2, survived: [1].map((n) => ({ file: 'a.ts', line: n, original: 'x', changed: 'X', effect: 'e' })) }, risk: ['access'], riskWhy: 'r', route: 'read', routeWhy: ['x'] } },
   rulings: [{ id: 'r1', kind: 'unasked', stopId: 's1', file: 'a.ts', from: 1, to: 1, found: 'f', question: 'q?' }],
   madeBy: { model: 'm', costUsd: 0, at: 'now' },
 };
@@ -390,7 +390,7 @@ test('a stop the evidence carries asks nothing and never holds the planted line'
   const t = await call('/api/tour');
   expect(t.stops.map((s: any) => [s.required, s.questions.length])).toEqual([[true, 1], [false, 0]]);
   expect(t.stops[1].blocks[0].lines[0].tokens[0][0]).toBe('uno'); // p0 is first in order, and is not planted
-  expect(t.lines).toEqual({ required: 3, all: 5 }); // the three lines where a tried bug went unnoticed
+  expect(t.lines).toEqual({ required: 3, all: 5 }); // one line where a tried bug went unnoticed (never planted: its real text is shown), two marked for what they can harm
   await call('/api/start', {});
   await call('/api/answer', { id: 'q1', choice: 1 });
   await call('/api/flag', { file: 'a.ts', line: 2, note: 'the value is upper case now' });
