@@ -358,7 +358,7 @@ test('a visitor who types a name signs a record that does not approve; a signed-
   expect(sig.outcome).toBe('approved');
   expect(statuses.at(-1).state).toBe('success');
   expect(statuses.at(-1).description).toContain('@ada');
-  expect((await v('/api/tour')).json.commit.approvedBy.who).toBe('@ada');
+  expect((await as('carol')('/api/tour')).json.commit.approvedBy.who).toBe('@ada'); // every reviewer sees who approved
 
   // another signed-in reviewer sends it back
   const bob = as('bob');
