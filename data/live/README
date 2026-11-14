@@ -1,6 +1,6 @@
 What the public copy serves. Copies, made by hand:
   tour.json   <- bun gen/materialize.ts --repo /bulk3/runs/readback/kuitti-live --plan data/kuitti-3-full/plan.json --out data/live/tour.json --rest
-                 (full read, PR head 55559f7, 11 planted lines; --rest adds the last stop with the 282 changed lines no other stop shows)
+                 (full read, PR head 55559f7, 11 planted lines that a test fails on; --rest adds the last stop with the 282 changed lines no other stop shows)
   short.json  <- data/kuitti-3-short/tour.json  (short read: 2 stops, with the cold test)
 The short read is made by:
   bun gen/short.ts --plan data/kuitti-3-full/plan.json --stops share-token,searched-list --cold "src/lib/invoices.ts:50-87" --cold-plants plant-invoices-61 --no-plants plant-invoices-147 --out data/kuitti-3-short/plan.json
@@ -30,3 +30,13 @@ entire.json     <- bun gen/entire.ts --repo /bulk3/runs/readback/entire/kuitti -
                    the agent sessions behind the lines (entire blame, checkpoints), what calls each changed function (entire graph), the trail
 efficiency.json <- bun gen/efficiency.ts --entire data/live/entire.json --head <checkout of 55559f7> --out /bulk3/runs/readback/efficiency/out
                    "what calls this function?" asked of Entire's graph and of claude-opus-5-5 with read tools, for all 37 changed functions
+
+Added by hand after the generators, 14.11.2026:
+  tour.json    + 3 planted lines no test notices: bun gen/untested-plants.ts --dir data/live --repo /bulk3/runs/readback/kuitti-live --skip src/db.ts:237
+                 (src/views/invoice.ts:13, src/lib/csv.ts:12, src/routes/invoices.ts:149; 14 planted lines in all). The tour before: /bulk3/runs/readback/next/tour-live-before-untested.json
+  questions.json  share-token-q1 taken out of the pool by hand (a judge found the open-point text on the same stop answers it): 42 kept, counts.droppedByHand 1
+  short.json   short.of = 10 (the full review has 10 stops with the "rest" stop)
+  entire.json  the one agent report that was cut at 4,000 characters now ends at its last full sentence (gen/entire.ts cutReport does the same on a rerun)
+
+data/next/ is the follow-up review of the author's answer to a sent-back review (PR #4, commit 48471fe): tour, evidence, questions, entire and
+followup.json, made by gen/followup.ts from data/kuitti-4/. The server mounts it at /next.

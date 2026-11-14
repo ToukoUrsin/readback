@@ -8,6 +8,13 @@ import { Check, X } from './icons';
 
 const n = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
 
+/** "invoices.ts:372, 380 · share.ts:25" */
+const where = (at: { file: string; line: number }[]) => {
+  const by = new Map<string, number[]>();
+  for (const x of at) by.set(x.file.split('/').pop()!, [...(by.get(x.file.split('/').pop()!) ?? []), x.line]);
+  return [...by].map(([f, ls]) => `${f}:${[...new Set(ls)].sort((a, b) => a - b).join(', ')}`).join(' · ');
+};
+
 export function Trace({ tour, name }: { tour: PublicTour; name: string }) {
   const ev = tour.evidence;
   if (!ev || !tour.stops.some((s) => s.evidence)) return null;
@@ -54,7 +61,7 @@ export function Trace({ tour, name }: { tour: PublicTour; name: string }) {
                 </p>
                 <p className="text-fg3">
                   {st.required
-                    ? `Left to a person: ${n(st.closely, 'line')} to read closely${e.changes.survived.length ? `, ${e.changes.survived.length} of them where no test notices a bug` : ''}`
+                    ? `Left to a person: ${n(st.closely, 'line')} to read closely${e.changes.survived.length ? `, ${e.changes.survived.length} of them where no test notices a bug (${where(e.changes.survived)})` : ''}`
                     : 'Carried by the tests: nothing here had to be read closely'}
                 </p>
               </div>

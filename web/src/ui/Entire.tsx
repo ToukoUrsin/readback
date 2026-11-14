@@ -95,9 +95,10 @@ function Report({ text }: { text: string }) {
   }, [text]);
   // a markdown heading stays a heading: one bold line over its part
   const parts: { head?: string; body: string[] }[] = [{ body: [] }];
-  // gen/entire.ts keeps the first 4000 characters of a report: one that long stops mid-sentence, and the page says so
-  const cutOff = text.length >= REPORT_KEPT;
-  for (const l of (cutOff ? `${text.trimEnd()}…` : text).split('\n')) {
+  // gen/entire.ts keeps about the first 4000 characters of a report, cut at a sentence end and marked with "…": the page says so
+  const ended = text.trimEnd().endsWith('…');
+  const cutOff = ended || text.length >= REPORT_KEPT;
+  for (const l of (cutOff && !ended ? `${text.trimEnd()}…` : text).split('\n')) {
     const h = /^#+\s+(.*)$/.exec(l.trim());
     if (h) parts.push({ head: h[1]!, body: [] });
     else if (!/^-{3,}$/.test(l.trim())) parts.at(-1)!.body.push(l);
@@ -112,7 +113,7 @@ function Report({ text }: { text: string }) {
             {p.body.some((l) => l.trim()) && <Rich text={p.body.join('\n')} />}
           </div>
         ))}
-        {cutOff && <p className="mt-2 text-fg4">The report goes on. Shown here: its first {REPORT_KEPT.toLocaleString('en-US')} characters.</p>}
+        {cutOff && <p className="mt-2 text-fg4">The report goes on. Shown here: about its first {REPORT_KEPT.toLocaleString('en-US')} characters.</p>}
       </div>
       {long && (
         <button className="mt-2 text-[12px] font-[510] text-accent-hi underline-offset-2 hover:underline" onClick={() => setAll(!all)} aria-expanded={all}>

@@ -28,9 +28,9 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
   const todo = tour.stops.filter((s) => s.required);
   const questions = todo.reduce((a, s) => a + s.questions.length, 0);
   const points = evidence?.rulings ?? [];
-  const tried = tour.stops.reduce((a, s) => a + (s.evidence?.changes.tried ?? 0), 0);
-  const caught = tour.stops.reduce((a, s) => a + (s.evidence?.changes.caught ?? 0), 0);
-  const unnoticed = tour.stops.reduce((a, s) => a + (s.evidence?.changes.survived.length ?? 0), 0);
+  const tried = evidence?.changes?.tried ?? tour.stops.reduce((a, s) => a + (s.evidence?.changes.tried ?? 0), 0);
+  const caught = evidence?.changes?.caught ?? tour.stops.reduce((a, s) => a + (s.evidence?.changes.caught ?? 0), 0);
+  const unnoticed = tried - caught;
   const minutes = Math.max(3, Math.round(tour.lines.required / 10 + questions * 0.5 + points.length * 0.5));
   const kinds = (['unasked', 'open', 'untested'] as const).map((k) => points.filter((p) => p.kind === k).length);
   const answers = points.filter((p) => p.kind === 'answer').length;
@@ -62,8 +62,8 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
       body: evidence ? 'The lines that decide who sees what, move money or change stored data, the lines where a tried bug went unnoticed, and the open points. The rest is shown as context.' : 'This change has no evidence of its own, so every line has to be read.',
     },
     { mark: <Check size={13} className="text-ok" />, title: `Answer ${questions} questions`, body: `Each one can only be answered from the code of its stop. A wrong answer closes the question for ${rule.lockSeconds} seconds and stays on the record.` },
-    ...(points.length ? [{ mark: <span className="text-[12px] font-[590] text-accent-hi">?</span>, title: `Rule on ${points.length} open ${points.length === 1 ? 'point' : 'points'}`, body: 'Accept it as it is, or send it back to the author with what has to change.' }] : []),
-    { mark: <FlagFill size={13} className="text-flag" />, title: 'Catch the planted bug', body: 'One of the lines to read closely was changed for you only. It is a real bug: the project’s tests fail on it. Flag it and say what it does wrong. The reason is checked.' },
+    ...(points.length ? [{ mark: <span className="text-[12px] font-[590] text-accent-hi">?</span>, title: `Rule on ${points.length} open ${points.length === 1 ? 'point' : 'points'}`, body: 'Accept it as it is, or send it back to the author with what has to change. Either way you give your reason, and a reason that would fit any line is refused.' }] : []),
+    { mark: <FlagFill size={13} className="text-flag" />, title: 'Catch the planted bug', body: 'One of the lines to read closely was changed for you only, and never on the branch. It is a real bug, and it may be one that no test notices. Flag it and say what it does wrong. The reason is checked.' },
     ...(tour.ask ? [{ mark: <Bot size={13} className="text-accent-hi" />, title: 'Ask the guide', body: 'Click any line to ask about it. The guide explains the code as the agent wrote it. It will not tell you what is wrong.' }] : []),
   ];
 
@@ -76,7 +76,7 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
     `Every question is right, with at most ${rule.maxWrong} wrong tries.`,
     `You flagged the planted bug by read ${rule.maxReads} at the latest, with the reason.`,
     `You read under ${rule.fastLinesPerMinute} of the lines to read closely a minute, and kept every stop that has some open at least as long as it takes to scroll it. The hand-in page shows both before you hand in.`,
-    ...(points.length ? ['You ruled on every open point and sent none back. Send one back and the status turns red for the author.'] : []),
+    ...(points.length ? ['You ruled on every open point, each with a reason, and sent none back. Send one back and the status turns red for the author, and stays red until the author pushes: no other review approves over it.'] : []),
     ...(fu ? [`The rest of the change stands on the review of ${fu.earlier.headSha.slice(0, 7)} by ${fu.earlier.who}: ${fu.untouched.stops} of its ${fu.untouched.of} stops are untouched by this commit.`] : []),
   ];
   const noticed = fu?.retried?.filter((r) => r.now === 'noticed') ?? [];
@@ -254,6 +254,27 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
             </ul>
             <p className="mt-2.5 border-t border-line pt-2.5 text-[12.5px] leading-[1.5] text-fg3">The commit status follows this rule and nothing else. A review that does not meet it is recorded and changes nothing on GitHub.</p>
           </div>
+          <dl className="mt-3 grid gap-x-6 gap-y-2.5 text-[12.5px] leading-[1.5] sm:grid-cols-3">
+            {(
+              [
+                ['Who owns the decision?', 'You. Your name goes on the commit status with how you reviewed it. The AI that wrote the change has no way to sign.'],
+                ['When not to trust it?', 'When the tests are weak, more lines come to you. Risk marks are a model’s reading: any line can be flagged.'],
+                ['How does it scale?', `By what is left for a person: ${tour.lines.required} of ${tour.lines.all} lines here. After a send-back only the answer is read again.`],
+              ] as const
+            ).map(([q, a]) => (
+              <div key={q}>
+                <dt className="font-[590] text-fg2">{q}</dt>
+                <dd className="mt-0.5 text-fg3">{a}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-2 text-[12.5px] text-fg3">
+            The whole concept, with its trade-offs and limits:{' '}
+            <a href="/concept" className="text-accent-hi underline-offset-2 hover:underline">
+              Concept
+            </a>
+            .
+          </p>
         </>
       )}
 

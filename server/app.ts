@@ -259,6 +259,11 @@ export function createApp(d: Deps) {
   ];
   const whoOf = (sig: Signature) => (sig.via === 'invite' ? `${sig.name} (invited judge)` : sig.login ? `@${sig.login}` : `${sig.name} (test read)`);
   /** on a demo copy an invited judge's signature decides for a while only: the record stays, the commit is blocked again for the next judge */
+  /** the same for another reviewer's page: who and when, without the reasons that reviewer wrote (they would be a crib for this one's rulings) */
+  const seenCommit = (): CommitState => {
+    const c = commit();
+    return { ...(c.approvedBy ? { approvedBy: { ...c.approvedBy, rulings: {} } } : {}), ...(c.sentBackBy ? { sentBackBy: { who: c.sentBackBy.who, at: c.sentBackBy.at, points: c.sentBackBy.points } } : {}) };
+  };
   const lapsed = (g: Signature) => g.via === 'invite' && !!d.demoMinutes && clock() - Date.parse(g.at) > d.demoMinutes * 60_000;
   /** what the reviews that counted say about this commit */
   const commit = (): CommitState => {
@@ -370,12 +375,12 @@ export function createApp(d: Deps) {
       ...(cold ? { cold: { blocks: withPlant(tour.cold!.blocks, tour.plants.find((x) => x.id === s.coldPlant)) } } : {}),
       ...(d.other ? { other: d.other } : {}),
       ...(d.after ? { after: d.after } : {}),
-      ...(ev ? { evidence: { criteria: ev.criteria, tests: ev.tests, rulings: rulingItems, madeBy: ev.madeBy } } : {}),
+      ...(ev ? { evidence: { criteria: ev.criteria, tests: ev.tests, rulings: rulingItems, madeBy: ev.madeBy, changes: { tried: tour.stops.reduce((a, st) => a + (ev.stops[st.id]?.changes.tried ?? 0), 0), caught: tour.stops.reduce((a, st) => a + (ev.stops[st.id]?.changes.caught ?? 0), 0) } } } : {}),
       lines: { required: lines, all: allLines },
       rule: { maxWrong: RULE.maxWrong, maxReads: RULE.maxReads, fastLinesPerMinute: fastAt, lockSeconds },
       ...(d.signIn ? { signIn: true } : {}),
       ...(s.login ? { me: { login: s.login } } : {}),
-      ...(!tour.short ? { commit: commit() } : {}),
+      ...(!tour.short ? { commit: seenCommit() } : {}),
       ...(d.entire && d.entire.headSha === tour.pr.headSha ? { entire: d.entire } : {}),
       ...(s.via ? { via: s.via } : {}),
       ...(d.demoMinutes && !tour.short ? { demoMinutes: d.demoMinutes } : {}),

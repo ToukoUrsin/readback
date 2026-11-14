@@ -487,7 +487,8 @@ test('a signed-in reviewer gets a planted line no unsigned visitor is shown; an 
   expect([sig.outcome, sig.via, sig.name, sig.rulings.r1.note]).toEqual(['approved', 'invite', 'Grace', 'the token is long and random']);
   expect(sig.checks[0]).toMatchObject({ id: 'who', ok: true });
   const seen = (await as('carol')('/api/tour')).json.commit.approvedBy;
-  expect([seen.who, seen.rulings.r1.note]).toEqual(['Grace (invited judge)', 'the token is long and random']);
+  // another reviewer is told who approved, not the reasons that reviewer wrote: they would be a crib for this one's own rulings
+  expect([seen.who, seen.rulings]).toEqual(['Grace (invited judge)', {}]);
   // the watcher reports back, with the key only
   expect((await as()('/api/carried', { key: 'no', at: sig.at })).status).toBe(404);
   const rid = (await j('/api/tour')).json.state.signature.at;

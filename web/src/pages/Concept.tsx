@@ -128,7 +128,7 @@ export default function Concept() {
               { head: 'During the review one line differs from the branch.', body: 'The real line is shown as soon as it is caught, and the approval covers the real code.' },
               { head: 'Which lines need a person rests on the tests plus a model’s reading of risk.', body: 'A risky line the model did not mark, in code the tests cover well, is shown as context only. Every changed line is in the review and can be flagged: what no stop explains is in the last stop, “The rest of the change”.' },
               { head: 'The guide cannot help with the lines that matter most.', body: 'It is never given a line the reviewer signs for, so it cannot say what such a line does. It answers from the code around it, from what calls it and from what the agent was asked.' },
-              { head: 'A new commit needs a new review of the whole change today.', body: 'Reviewing only the stops whose lines changed is the next step, not built.' },
+              { head: 'A new commit is a new review, but only of what it touches.', body: 'After a send-back the follow-up review shows the stops the answering commit changes; the others stand on the first review. Run once on this copy. A commit that is not an answer to a send-back still needs the whole review today.' },
             ]}
           />
         </Section>

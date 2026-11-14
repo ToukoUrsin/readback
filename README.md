@@ -22,9 +22,9 @@ Review the lines that need a person. Check that the person did.
 2. **The review** (`/` after the cold test is the short review, `/full` is the whole pull request). The change is cut into stops, in any order. Each stop shows:
    - **Its evidence.** The criteria it serves, how many tried bugs the tests noticed there, and how many lines are left for a person.
    - **Read closely.** The lines a person must read, each with the reason: what it can harm, or "No test notices this line. We changed `x` to `y` and all 74 tests still passed."
-   - **Open points.** "The AI does not decide this": accept as it is, or send back to the author with what has to change.
-   - **Questions.** Drawn for each reviewer from a pool a second model checked with the code and without it (70 written, 43 kept), options in the reviewer's own order. A wrong answer closes the question for 20 seconds, points back at the lines and stays on the record.
-   - **One planted bug.** One of the lines to read closely is changed for this reviewer only (never on the branch). It is a real bug: the project's tests pass without it and fail with it. Flag it (at most 3 flags) and say what it does wrong; the reason is checked. Miss it: "Not approved", with the consequence and the failing tests, and a different line is planted.
+   - **Open points.** "The AI does not decide this": accept as it is, or send back to the author with what has to change. Either way with a reason, and a model checks it: a reason that would fit any line is refused.
+   - **Questions.** Drawn for each reviewer from a pool a second model checked with the code and without it (70 written, 42 kept), options in the reviewer's own order. A wrong answer closes the question for 20 seconds, points back at the lines and stays on the record.
+   - **One planted bug.** One of the lines to read closely is changed for this reviewer only (never on the branch). It is a real bug: for 11 of the 14 the project's tests pass without it and fail with it; the other 3 are bugs no test notices (`gen/untested-plants.ts`), planted only for signed-in reviewers and invited judges, where the reviewer is the only check. Flag it (at most 3 flags) and say what it does wrong; the reason is checked. Miss it: "Not approved", with the consequence and the failing tests, and a different line is planted.
    - **Where the code comes from.** The agent sessions behind the stop's lines, as Entire holds them: what each was asked, its report, its tokens.
    - **A guide to ask.** It is never given the lines a reviewer signs for; it has the rest of the stop, the callers and the sessions. It does not say what is wrong.
    A stop with nothing to read closely is "carried by its evidence": it asks nothing.
@@ -33,7 +33,8 @@ Review the lines that need a person. Check that the person did.
    - every question right, at most 3 wrong tries;
    - the planted bug caught on the first or second read, with the reason;
    - under 15 of the lines to read closely a minute, and every stop that has some was open long enough to scroll;
-   - every open point ruled on, with a reason where no test checks the line.
+   - every open point ruled on, each with a checked reason;
+   - no other reviewer's send-back stands on this commit: a send-back stays until the author pushes, and no other review approves over it.
    All of it holds and none sent back: **approved**, `readback/read` green. A point sent back: **sent back**, `readback/read` red, with the points for the author. Anything else: **recorded, not approved**, and nothing changes on GitHub.
 
 Rules that keep it honest:
@@ -43,6 +44,11 @@ Rules that keep it honest:
 - A line whose real text the evidence quotes is never planted (the two would not match).
 - Access and money bugs are planted first; formatting last. A planted line is kept only if the stop's text or a code comment states what the line must do.
 - Only the full review approves. The short one says so and never writes to GitHub.
+- A question a reviewer met in the short review comes last in their draw for the full one.
+
+**After a send-back** (`/next`, `data/next/`, `gen/followup.ts`, `deploy/send-back.ts`). The points sent back become an issue in the reviewer's words. The author agent reads the rulings back from Entire Brain and answers with one more commit on its own pull request. The follow-up review shows only the stops that commit touches; the others stand on the first review. Run once here: 2 points sent back, the answer came 4.1 minutes later (+53 −2, tests 74 to 76), and the follow-up is 3 stops, 4 questions, 44 of 147 lines, against 16 questions and 103 of 1,372 lines the first time. A second watcher (`readback-watch-next`) carries its signature to the status of the answering commit and to Entire trail #2.
+
+**The signed page** shows the trace the signature stands on, part by part: the criteria that asked for it, the tests that fail when it breaks, what was left to a person, and what the named reviewer decided there, with the reason.
 
 ## How it is made
 
@@ -91,7 +97,7 @@ Without `RB_TOUR` the server serves `data/live/` (full review at `/full`, short 
 
 Every step is one line in `reads.jsonl` (`RB_DATA`; `/data` on Fly, a volume): cold test shown and decided (approve, flag which line, seconds), start, each stop opened and for how long, each answer, each flag with its reason, each ruling on an open point, each hand-in (read number, caught or missed, which planted line and its kind, whether the reason passed, lines per minute), failed reviews, sign-ins, signatures with the outcome and every check of the rule, questions to the guide, start-overs. `shown.json` keeps which planted lines each person has seen.
 
-`GET /api/numbers`: `people` and `agents` apart (a browser of ours, a script or an agent is never counted as a person), each with the cold test, the reviews, rulings, and caught/missed by pace; `route` (lines and stops routed to a person, per stop); `points`; `readers` (per reader and area of the code: planted bugs met, caught, missed, "needs a second reader"); `rule`; what making the tour and the evidence cost. `GET /api/stats` is the older, smaller count.
+`GET /api/numbers`: `people`, `judges` (anyone who came in with the judge link, a person or an AI) and `agents` apart (a browser of ours, a script or an agent is never counted as a person), each with the cold test, the reviews, rulings, and caught/missed by pace; `route` (lines and stops routed to a person, per stop); `points`; `readers` (per reader and area of the code: planted bugs met, caught, missed, "needs a second reader"); `rule`; what making the tour and the evidence cost. `GET /api/stats` is the older, smaller count.
 
 ## GitHub
 
