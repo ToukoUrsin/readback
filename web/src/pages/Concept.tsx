@@ -111,6 +111,7 @@ export default function Concept() {
             {[
               ['The AI', 'Wrote the code, made the evidence, the questions and the planted bug. It never approves and cannot set the status green.'],
               ['The author', 'Gets the points that were sent back.'],
+              ['Who may sign', 'On this copy any GitHub account, and GitHub says whose it is: through its sign-in page, or through a gist only that account can make. A team gives the server its list of reviewers; an account that is not on it is recorded and never approves. A typed name never approves.'],
             ].map(([who, what]) => (
               <div key={who} className="py-3 sm:grid sm:grid-cols-[168px_minmax(0,1fr)] sm:gap-x-6">
                 <dt className="text-[13.5px] font-[590] text-fg">{who}</dt>

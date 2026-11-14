@@ -4,21 +4,42 @@ An AI agent wrote the pull request. A person approves it. Readback checks that t
 
 Live: https://readback-demo.fly.dev
 
+## The idea
+
+Review the lines that need a person. Check that the person did.
+
+1. **The change shows its evidence.** Each part is tied to the acceptance criteria of the issue and to the tests that fail when it breaks. 74 tests pass; 69 one-line bugs were tried against them, 44 were noticed, 25 were not.
+2. **The AI says what it does not decide.** 7 open points: code no criterion asks for, choices the issue leaves open, behaviour no test checks. A person accepts each one or sends it back.
+3. **A person reads closely only what the evidence cannot carry**: lines marked for what they can harm (access, money, stored data), lines where a tried bug went unnoticed, and the open points. In the example that is 103 of 1,055 lines. Every line stays visible and can be flagged.
+4. **Readback checks the read, and the commit status follows the record.** One rule (`server/gate.ts`) decides whether a signature approves, sends back or changes nothing.
+
+`/concept` has the recommendation, principles, trade-offs, limits, failure modes we saw and the decision log. `/numbers` has what this copy has counted, by Tieto's four measures.
+
 ## What a reviewer meets
 
 1. **The cold test** (`/`). A plain pull request view: "An AI agent wrote this pull request. You are the reviewer." Approve, or flag a line. Nothing says a bug is hidden. One line is a bug Readback put there, and the project's own tests fail on it. Approve it and the next screen says what you just approved.
-2. **The review** (`/` after the cold test is the short review, `/full` is the whole pull request). The change is cut into stops, in any order:
-   - **Read closely.** The lines the guide marked as the ones a person must read, with one sentence on why.
-   - **Questions.** One or two per stop, answerable only from the code. A wrong answer points back at the lines.
-   - **One planted bug.** One line is changed for this reviewer only (never on the branch). It is a real bug: the project's tests pass without it and fail with it. Flag it (at most 3 flags) and the review counts. Miss it: "Not approved", with the consequence and the failing tests, and a different line is planted.
-   - **A guide to ask.** It explains any line. It does not say what is wrong.
-3. **The signature.** A named person, the commit, wrong answers, how many reads it took, lines per minute. On GitHub it is the commit status `readback/read`, and the branch rule on `main` requires it.
+2. **The review** (`/` after the cold test is the short review, `/full` is the whole pull request). The change is cut into stops, in any order. Each stop shows:
+   - **Its evidence.** The criteria it serves, how many tried bugs the tests noticed there, and how many lines are left for a person.
+   - **Read closely.** The lines a person must read, each with the reason: what it can harm, or "No test notices this line. We changed `x` to `y` and all 74 tests still passed."
+   - **Open points.** "The AI does not decide this": accept as it is, or send back to the author with what has to change.
+   - **Questions.** Answerable only from the code. A wrong answer closes the question for 20 seconds, points back at the lines and stays on the record.
+   - **One planted bug.** One of the lines to read closely is changed for this reviewer only (never on the branch). It is a real bug: the project's tests pass without it and fail with it. Flag it (at most 3 flags) and say what it does wrong; the reason is checked. Miss it: "Not approved", with the consequence and the failing tests, and a different line is planted.
+   - **A guide to ask.** It is given the code as the agent wrote it, never the changed line. It does not say what is wrong.
+   A stop with nothing to read closely is "carried by its evidence": it asks nothing.
+3. **The signature**, and what it does. The rule:
+   - the name is a GitHub account (sign-in, or a gist only that account can make; a typed name is recorded and never approves; a server can carry a list of reviewers, `RB_REVIEWERS`);
+   - every question right, at most 3 wrong tries;
+   - the planted bug caught on the first or second read, with the reason;
+   - under 15 of the lines to read closely a minute, and every stop that has some was open long enough to scroll;
+   - every open point ruled on.
+   All of it holds and none sent back: **approved**, `readback/read` green. A point sent back: **sent back**, `readback/read` red, with the points for the author. Anything else: **recorded, not approved**, and nothing changes on GitHub.
 
 Rules that keep it honest:
 
 - A planted line a reviewer has been shown is never planted for them again, in the cold test, the short review or the full one. When none is left, the review fails and someone else has to read the commit.
+- A signed-in reviewer has one review of a commit, from whatever browser.
+- A line whose real text the evidence quotes is never planted (the two would not match).
 - Access and money bugs are planted first; formatting last. A planted line is kept only if the stop's text or a code comment states what the line must do.
-- 60 lines a minute or faster gets a "Fast read" mark on the signature and in the record. It does not block.
 - Only the full review approves. The short one says so and never writes to GitHub.
 
 ## How it is made
@@ -26,9 +47,10 @@ Rules that keep it honest:
 | Step | What | Where |
 | --- | --- | --- |
 | Plan | A model reads the diff, the issue and the checkout and writes the stops and questions. Code checks every changed source line is on the tour. A second session marks the lines to read closely, without seeing the planted lines. A third proposes planted bugs; each is kept only if the project's tests (Docker, no network) fail with it and the stop states what the line must do. | `gen/plan.ts` |
+| Evidence | For each stop: which criteria it serves (a model, quoted), which tests fail when it is changed, one-line bugs tried on its lines and whether any test noticed (all run offline in Docker), what it can harm (a model's reading, quoting the code), and the open points. Code decides from these which lines a person must read. | `gen/evidence.ts` |
 | Tour | No model: highlights the code, marks what the pull request changed, counts coverage, builds the cold test. | `gen/materialize.ts` |
 | Short review | No model: some stops of a finished plan, plus the cold test. | `gen/short.ts` |
-| Review | Serves the tour to one reviewer. Answers and planted lines are checked on the server and never sent to the browser. | `server/` |
+| Review | Serves the tour to one reviewer. Answers, planted lines and the reason for a flag are checked on the server; the answer key never reaches the browser. `server/gate.ts` is the rule. | `server/` |
 | Page | | `web/` |
 
 `shared/tour.ts` is the contract between them.
@@ -53,20 +75,24 @@ Without `RB_TOUR` the server serves `data/live/` (full review at `/full`, short 
 | `/full` | the full review, the one that approves |
 | `/?new=1` | start over as a new reviewer, back to the first screen |
 | `/?test=1` | marks this browser as ours: left out of the counts, same planted lines every time, and the signature can be taken back |
+| `/concept` | the recommendation, principles, trade-offs, limits, failure modes, decision log |
+| `/numbers` | what this copy has counted, people and our own agents apart |
+| `/signin` | prove a GitHub account with a gist (used when the server has no GitHub OAuth app) |
+| `/api/numbers` | everything `/numbers` shows, as JSON |
 | `/api/stats` | the counts, no names |
 
 ## What is kept
 
-Every step is one line in `reads.jsonl` (`RB_DATA`; `/data` on Fly, a volume): cold test shown and decided (approve, flag which line, seconds), start, each stop opened, each answer, each flag, each hand-in (read number, caught or missed, which planted line and its kind, whether it sat on a read-closely line, lines per minute), failed reviews, signatures, questions to the guide, start-overs. `shown.json` keeps which planted lines each person has seen.
+Every step is one line in `reads.jsonl` (`RB_DATA`; `/data` on Fly, a volume): cold test shown and decided (approve, flag which line, seconds), start, each stop opened and for how long, each answer, each flag with its reason, each ruling on an open point, each hand-in (read number, caught or missed, which planted line and its kind, whether the reason passed, lines per minute), failed reviews, sign-ins, signatures with the outcome and every check of the rule, questions to the guide, start-overs. `shown.json` keeps which planted lines each person has seen.
 
-`GET /api/stats`: `all`, `tours.full`, `tours.short` (started, reads, caughtFirstRead, missedFirstRead, caughtLater, failed, signed, fastSignatures, medians) and `cold` (shown, approved, flaggedPlanted, flaggedOther, skipped, medianSeconds, thenGuided). Test browsers and scripts are left out.
+`GET /api/numbers`: `people` and `agents` apart (a browser of ours, a script or an agent is never counted as a person), each with the cold test, the reviews, rulings, and caught/missed by pace; `route` (lines and stops routed to a person, per stop); `points`; `readers` (per reader and area of the code: planted bugs met, caught, missed, "needs a second reader"); `rule`; what making the tour and the evidence cost. `GET /api/stats` is the older, smaller count.
 
 ## GitHub
 
 `main` of the example repository requires the status `readback/read`, admins included.
 
-- Self-hosted: `RB_GITHUB=1` sets the status when a full review is signed.
-- The public copy has no GitHub token. `deploy/watch-github.ts` (a service on our machine) reads the Fly records every few seconds and sets the status for the live commit: green when a full review is signed, pending again when a test signature is taken back. A visitor's name is not written to GitHub.
+- Self-hosted: `RB_GITHUB=1` sets the status when a full review is signed, by the same rule.
+- The public copy has no GitHub token. `deploy/watch-github.ts` (a service on our machine) reads the Fly records every few seconds and sets the status for the live commit from the outcome of each signature: green for approved, red for sent back, no change for a review that does not count, pending again when a test signature is taken back.
 - `bun deploy/watch-github.ts --reset` puts the commit back to "nobody has read this".
 - `bun deploy/test-status.ts` runs the project's tests offline in Docker and writes the result as `readback/tests`. The example repository's own CI is off: GitHub Actions is locked on that account.
 
