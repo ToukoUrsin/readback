@@ -1,0 +1,5 @@
+The full read of ToukoUrsin/junction26-kuitti#2 at head 55559f7.
+plan.json is data/kuitti-2-head/plan.json (made by gen/plan.ts, log in that folder) without two of its 13 proven planted lines:
+  src/lib/invoices.ts:262  the stop's own text says "Look at line 262", which gives it away
+  src/routes/share.ts:13   a search-engine header, tagged as an access bug; too weak to decide a read
+tour.json: bun gen/materialize.ts --repo /bulk3/runs/readback/kuitti-live --plan data/kuitti-3-full/plan.json

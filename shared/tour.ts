@@ -36,6 +36,8 @@ export interface Plan {
   madeBy: { model: string; costUsd: number; at: string; plantModel?: string };
   /** set on a short read: it shows only some stops of the full tour, and does not approve the change */
   short?: { stops: number; of: number };
+  /** the cold test before a short read: some of the code as a plain diff, nothing said about a hidden bug */
+  cold?: { blocks: { file: string; from: number; to: number }[]; plants: string[] };
 }
 
 export interface PlanStop {
@@ -73,6 +75,15 @@ export interface PlanCodeBlock {
   to: number;
   /** notes pinned to single lines, shown beside the code */
   notes?: { line: number; text: string }[];
+  /** lines a person must read closely, marked by the model from the real code (it does not know the planted lines) */
+  focus?: Focus[];
+}
+
+/** why: at most 12 words, what can go wrong here, e.g. "Decides who may revoke a link" */
+export interface Focus {
+  from: number;
+  to: number;
+  why: string;
 }
 
 export interface Question {
@@ -101,6 +112,14 @@ export interface Plant {
   what: string;
   /** names of the project's tests that fail with the planted line */
   failedTests: string[];
+  /** what kind of harm; a reader meets access and money bugs first, format bugs last */
+  kind?: 'access' | 'money' | 'data' | 'logic' | 'format';
+  /** one plain sentence that starts with "You would have approved": what the reader would have let through */
+  headline?: string;
+  /** the words of the stop (prose, note or code comment) that say what this line must do; a plant without them is not kept */
+  stated?: string;
+  /** the failing tests with what the test run printed for each, when it printed something short */
+  failures?: { test: string; message?: string }[];
 }
 
 /* ---------- Tour: what the server holds ---------- */
@@ -122,6 +141,7 @@ export interface CodeBlock {
   to: number;
   lines: Line[];
   notes?: { line: number; text: string }[];
+  focus?: Focus[];
 }
 
 export type Block = ProseBlock | DiagramBlock | CodeBlock;
@@ -151,6 +171,7 @@ export interface Tour {
   coverage: { changed: number; onTour: number; files: { file: string; changed: number; onTour: number }[] };
   madeBy: Plan['madeBy'];
   short?: Plan['short'];
+  cold?: { blocks: CodeBlock[]; plants: string[] };
 }
 
 /* ---------- What a reader's browser gets ---------- */
@@ -190,6 +211,21 @@ export interface Reveal {
   planted: Token[];
   what: string;
   failedTests: string[];
+  kind?: Plant['kind'];
+  headline?: string;
+  /** what the stop's text or a comment said this line must do */
+  stated?: string;
+  failures?: Plant['failures'];
+}
+
+/** What the reader did with the cold test: the plain diff before any guided read. */
+export interface ColdResult {
+  action: 'approve' | 'flag' | 'skip';
+  /** the flagged line was the planted one */
+  caught: boolean;
+  flagged?: { file: string; line: number };
+  /** null when skipped: the line was never shown as planted */
+  reveal: Reveal | null;
 }
 
 export interface Signature {
@@ -203,6 +239,11 @@ export interface Signature {
   misses: number;
   flagsForAuthor: Flag[];
   github?: { ok: boolean; note: string };
+  /** lines of code on the tour, and how fast they went by up to the hand-in that caught the bug */
+  lines?: number;
+  linesPerMinute?: number;
+  /** faster than a person reads code closely */
+  fast?: boolean;
 }
 
 export interface ReaderState {
@@ -217,6 +258,10 @@ export interface ReaderState {
   /** set when the planted bug of this read was caught */
   caught: Reveal | null;
   signature: Signature | null;
+  /** the cold test, once decided; null while it is open or when the tour has none */
+  cold?: ColdResult | null;
+  /** every planted line has been shown to this reader: their read of this commit cannot count any more */
+  exhausted?: boolean;
 }
 
 export interface PublicTour {
@@ -232,6 +277,12 @@ export interface PublicTour {
   github: boolean;
   ask: boolean;
   short?: Plan['short'];
+  /** a signature here reaches GitHub a few seconds later, through a watcher outside this server */
+  githubSoon?: boolean;
+  /** our own test read (cookie rb_test): left out of the counts, and its signature can be taken back */
+  test?: boolean;
+  /** present while the cold test is open; `stops` is empty until it is decided */
+  cold?: { blocks: Block[] };
   /** the other read of the same change: the short one from the full tour, the full one from the short */
   other?: { kind: 'short' | 'full'; href: string; stops: number };
 }

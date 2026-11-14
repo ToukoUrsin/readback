@@ -21,6 +21,18 @@ export const FlagFill = (p: P) => (
     <path d="M3.5 3h8l-1.8 3 1.8 3h-8z" fill="currentColor" />
   </svg>
 );
+export const Eye = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" />
+    <circle cx="8" cy="8" r="1.9" />
+  </svg>
+);
+export const Warn = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M8 2.2 14.3 13H1.7z" />
+    <path d="M8 6.4v3M8 11.2v.1" />
+  </svg>
+);
 export const Chat = (p: P) => (
   <svg {...base(p)}>
     <path d="M2.5 4.5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H8l-3 2.5V11.5h-.5a2 2 0 0 1-2-2z" />

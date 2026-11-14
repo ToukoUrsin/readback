@@ -12,6 +12,8 @@ export interface TestRun {
   code: number;
   passed: string[];
   failed: string[];
+  /** failed test -> the short thing the test run printed for it (expected / received), when there was one */
+  failures: Record<string, string>;
   ms: number;
   /** last part of the output, for the log */
   tail: string;
@@ -116,6 +118,79 @@ export function parseTests(output: string): { passed: string[]; failed: string[]
   return { passed: [...passed], failed: [...failed] };
 }
 
+const cut = (s: string, n: number) => (s.length <= n ? s : s.slice(0, n - 3).trimEnd() + '...');
+const hasPath = (s: string) => /(^|[\s"'(])\/[\w.-]+\/[\w./-]+|[\w-]+\.(ts|tsx|js|jsx|mjs|py|go|rs)(:\d+|\b)/.test(s);
+
+/**
+ * What `bun test` printed for each failed test, when it was short: the expected / received lines of the failed
+ * assertion ("Expected: 404, Received: 200"), or the message of a thrown error. No stack traces, no paths.
+ * A test whose output was long (an object diff, a whole page) gets no entry, or only its short half.
+ */
+export function parseFailures(output: string, limit = 200): Record<string, string> {
+  const out: Record<string, string> = {};
+  let seg: string[] = [];
+  for (const raw of output.split('\n')) {
+    const line = raw.replace(/\x1b\[[0-9;]*m/g, '').trimEnd();
+    const t = line.trim();
+    const m = /^(\(pass\)|\(fail\)|\(skip\)|\(todo\)|✓|✗)\s+(.+?)(?:\s+\[[\d.]+\s*(?:ms|s|µs|us|ns)\])?$/.exec(t);
+    if (!m) {
+      // a new test file starts a new segment
+      if (/^[\w./-]+\.(test|spec)\.[a-z]+:$/.test(t)) seg = [];
+      else seg.push(line);
+      continue;
+    }
+    if (m[1] === '(fail)' || m[1] === '✗') {
+      const msg = failureMessage(seg, limit);
+      if (msg && !(m[2]! in out)) out[m[2]!] = msg;
+    }
+    seg = [];
+  }
+  return out;
+}
+
+function failureMessage(seg: string[], limit: number): string {
+  // the assertion of the test is the last error printed before its (fail) line; errors logged by the app come before it
+  let at = -1;
+  for (let i = seg.length - 1; i >= 0; i--)
+    if (/^(error|[A-Z]\w*Error): /.test(seg[i]!.trim())) {
+      at = i;
+      break;
+    }
+  if (at < 0) return '';
+  const head = seg[at]!.trim();
+  const parts: string[] = [];
+  let long = false;
+  for (let i = at + 1; i < seg.length; i++) {
+    const t = seg[i]!.trim();
+    if (/^at\s/.test(t)) break;
+    if (!t) continue;
+    const m = /^((?:Expected|Received)[\w ]*): (.*)$/.exec(t);
+    // anything else here is a diff or a value that runs over several lines: not short
+    if (!m) {
+      long = true;
+      continue;
+    }
+    const value = m[2]!;
+    const open = (value.match(/[[{(]/g) ?? []).length - (value.match(/[\]})]/g) ?? []).length;
+    if (open > 0 || value.length > 110 || hasPath(value)) {
+      long = true;
+      continue;
+    }
+    parts.push(`${m[1]}: ${value}`);
+  }
+  if (parts.length && !(long && parts.every((p) => p.startsWith('Received')))) {
+    // "Received: x" alone says nothing: put the printed check in front, e.g. "expect(received).toBeNull(), Received: x"
+    const check = /^error: (expect\(received\)(?:\.\w+)+\(\w*\))$/.exec(head)?.[1];
+    if (check && !parts.some((p) => p.startsWith('Expected'))) parts.unshift(check);
+    return cut(parts.join(', '), limit);
+  }
+  if (parts.length || long) return '';
+  // a thrown error, not a failed expect()
+  const thrown = /^(?:error: )?(.+)$/.exec(head)![1]!;
+  if (/^expect\(/.test(thrown) || thrown.length > limit || hasPath(thrown)) return '';
+  return thrown;
+}
+
 /**
  * Run the tests on a fresh copy of the head checkout. `edit` may change one line first:
  * `{ file, line, text }` replaces that line (1-based) in the copy only.
@@ -135,7 +210,7 @@ export async function runTests(sb: Sandbox, label: string, edit?: { file: string
     }
     const r = await docker(sb.image, dir, sb.modules, sb.testCmd, { network: false, timeoutMs });
     const out = `${r.stdout}\n${r.stderr}`;
-    return { code: r.code, ...parseTests(out), ms: r.ms, tail: out.replace(/\x1b\[[0-9;]*m/g, '').trim().slice(-1500) };
+    return { code: r.code, ...parseTests(out), failures: parseFailures(out), ms: r.ms, tail: out.replace(/\x1b\[[0-9;]*m/g, '').trim().slice(-1500) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

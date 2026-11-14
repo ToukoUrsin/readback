@@ -285,42 +285,50 @@
   .row.pulse {
     animation: pulse 2.4s var(--ease-out-quint) 1;
   }
-  .row .tools {
-    position: sticky;
-    right: 8px;
-    display: flex;
-    gap: 2px;
-    height: 21px;
-    align-items: center;
-    opacity: 0;
-    margin-left: -200px;
-    justify-content: flex-end;
-    width: 200px;
-    flex: none;
-    pointer-events: none;
-    transition: opacity 80ms;
+  .row.pick {
+    cursor: pointer;
   }
-  .row:hover .tools,
-  .row.flagged .tools,
-  .row .tools:focus-within {
-    opacity: 1;
+  .row.sel,
+  .row.sel:hover {
+    background: rgba(94, 106, 210, 0.16);
+    border-left-color: var(--accent);
+  }
+  .row.sel .num {
+    color: var(--accent-hi);
+  }
+  /* lines the guide marked: read these closely */
+  .row.focus {
+    box-shadow: inset 3px 0 0 -1px var(--warn);
+    background: rgba(242, 201, 76, 0.05);
+  }
+  .row.focus.add {
+    background: rgba(242, 201, 76, 0.06);
+  }
+  .row.focus:hover {
+    background: rgba(242, 201, 76, 0.1);
+  }
+  .row.focus.flagged,
+  .row.focus.flagged:hover {
+    background: var(--flag-soft);
+  }
+  .row.focus.sel,
+  .row.focus.sel:hover {
+    background: rgba(94, 106, 210, 0.16);
   }
   .tool {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    height: 19px;
-    padding: 0 6px;
-    border-radius: 5px;
+    gap: 5px;
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 6px;
     font-family: var(--font-sans);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 510;
-    color: var(--fg3);
+    color: var(--fg2);
     background: #1d1e22;
     border: 1px solid var(--line-strong);
-  }
-  .row .tools .tool {
-    pointer-events: auto;
+    white-space: nowrap;
   }
   .tool:hover {
     color: var(--fg);
@@ -330,6 +338,18 @@
     color: var(--flag);
     border-color: rgba(242, 153, 74, 0.45);
     background: #2b2118;
+  }
+  .btn-ok {
+    background: #2f9e6b;
+    border-color: transparent;
+    color: #fff;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.14),
+      0 1px 2px rgba(0, 0, 0, 0.4);
+  }
+  .btn-ok:hover:not(:disabled) {
+    background: #36ad76;
+    color: #fff;
   }
 
   .tk-keyword {

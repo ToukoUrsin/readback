@@ -6,7 +6,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeF
 import { resolve } from 'node:path';
 
 export interface ReadEvent {
-  type: 'start' | 'answer' | 'handin' | 'sign' | 'ask' | 'reset';
+  type: 'start' | 'answer' | 'handin' | 'sign' | 'ask' | 'reset' | 'cold-shown' | 'cold' | 'stop' | 'failed' | 'unsign';
   at: string;
   /** one reader's one go at a tour; a new one after "Start over" */
   rid: string;
@@ -34,11 +34,31 @@ export interface Counts {
   medianSecondsToSignature: number | null;
   /** wrong answers before the first hand-in */
   medianWrongAnswers: number | null;
+  /** readers who were shown every planted line without catching one: their read cannot count */
+  failed: number;
+  /** signatures on reads that went faster than a person reads code closely */
+  fastSignatures: number;
+}
+
+/** The cold test: a plain diff with one planted line, before any guided read and with nothing said about a bug. */
+export interface ColdCounts {
+  shown: number;
+  /** pressed Approve with the planted line in front of them */
+  approved: number;
+  /** asked for changes on the planted line */
+  flaggedPlanted: number;
+  /** asked for changes on another line */
+  flaggedOther: number;
+  skipped: number;
+  /** from seeing the diff to deciding, skips left out */
+  medianSeconds: number | null;
+  /** of the people who decided the cold test and then handed in a guided read: how the first guided hand-in went */
+  thenGuided: { reads: number; caughtFirstRead: number };
 }
 
 export interface Store {
   record(e: ReadEvent): void;
-  stats(): { at: string; first: string | null; all: Counts; tours: Record<string, Counts>; testReadersLeftOut: number };
+  stats(): { at: string; first: string | null; all: Counts; tours: Record<string, Counts>; cold: ColdCounts; testReadersLeftOut: number };
   load<T>(name: string): T | null;
   /** written a moment later, once per burst */
   save(name: string, value: () => unknown): void;
@@ -54,12 +74,14 @@ const median = (xs: number[]) => {
 function count(events: ReadEvent[]): Counts {
   const by = new Map<string, ReadEvent[]>();
   for (const e of events) by.set(e.rid, [...(by.get(e.rid) ?? []), e]);
-  const c: Counts = { started: 0, reads: 0, caughtFirstRead: 0, missedFirstRead: 0, caughtLater: 0, signed: 0, handIns: 0, medianSeconds: null, medianSecondsToSignature: null, medianWrongAnswers: null };
+  const c: Counts = { started: 0, reads: 0, caughtFirstRead: 0, missedFirstRead: 0, caughtLater: 0, signed: 0, handIns: 0, medianSeconds: null, medianSecondsToSignature: null, medianWrongAnswers: null, failed: 0, fastSignatures: 0 };
   const secs: number[] = [];
   const signSecs: number[] = [];
   const wrong: number[] = [];
   for (const es of by.values()) {
     if (es.some((e) => e.type === 'start')) c.started++;
+    if (es.some((e) => e.type === 'failed')) c.failed++;
+    if (es.some((e) => e.type === 'sign' && e.fast)) c.fastSignatures++;
     const hs = es.filter((e) => e.type === 'handin');
     c.handIns += hs.length;
     const first = hs[0];
@@ -81,6 +103,33 @@ function count(events: ReadEvent[]): Counts {
   c.medianSeconds = median(secs);
   c.medianSecondsToSignature = median(signSecs);
   c.medianWrongAnswers = median(wrong);
+  return c;
+}
+
+function countCold(events: ReadEvent[]): ColdCounts {
+  const by = new Map<string, ReadEvent[]>();
+  for (const e of events) by.set(e.rid, [...(by.get(e.rid) ?? []), e]);
+  const c: ColdCounts = { shown: 0, approved: 0, flaggedPlanted: 0, flaggedOther: 0, skipped: 0, medianSeconds: null, thenGuided: { reads: 0, caughtFirstRead: 0 } };
+  const secs: number[] = [];
+  for (const es of by.values()) {
+    if (es.some((e) => e.type === 'cold-shown')) c.shown++;
+    const d = es.find((e) => e.type === 'cold');
+    if (!d) continue;
+    if (d.action === 'skip') {
+      c.skipped++;
+      continue;
+    }
+    if (d.action === 'approve') c.approved++;
+    else if (d.caught) c.flaggedPlanted++;
+    else c.flaggedOther++;
+    if (typeof d.seconds === 'number') secs.push(d.seconds);
+    const first = es.find((e) => e.type === 'handin');
+    if (first) {
+      c.thenGuided.reads++;
+      if (first.caught) c.thenGuided.caughtFirstRead++;
+    }
+  }
+  c.medianSeconds = median(secs);
   return c;
 }
 
@@ -108,10 +157,12 @@ export function createStore(dir: string | null): Store {
         }
     },
     stats() {
-      const real = events.filter((e) => !e.test);
+      // rows written before non-browser clients were marked: a go that named a client that is not a browser is not a person
+      const scripts = new Set(events.filter((e) => typeof e.agent === 'string' && e.agent && !e.agent.includes('Mozilla')).map((e) => e.rid));
+      const real = events.filter((e) => !e.test && !scripts.has(e.rid));
       const tours: Record<string, Counts> = {};
       for (const t of new Set(real.map((e) => e.tour))) tours[t] = count(real.filter((e) => e.tour === t));
-      return { at: new Date().toISOString(), first: real[0]?.at ?? null, all: count(real), tours, testReadersLeftOut: new Set(events.filter((e) => e.test).map((e) => e.rid)).size };
+      return { at: new Date().toISOString(), first: real[0]?.at ?? null, all: count(real), tours, cold: countCold(real), testReadersLeftOut: new Set(events.filter((e) => e.test || scripts.has(e.rid)).map((e) => e.rid)).size };
     },
     load<T>(name: string): T | null {
       if (!dir) return null;

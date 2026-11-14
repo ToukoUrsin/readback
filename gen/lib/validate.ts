@@ -3,7 +3,7 @@
  * `checkTour` turns whatever the model returned into typed stops and a list of problems, each written so that
  * it can be sent back to the model as is.
  */
-import type { DiagramBlock, PlanBlock, PlanCodeBlock, PlanStop, Question } from '../../shared/tour';
+import type { DiagramBlock, Focus, PlanBlock, PlanCodeBlock, PlanStop, Question } from '../../shared/tour';
 import { ranges } from './util';
 
 export interface Issue {
@@ -303,4 +303,103 @@ export function coverageOf(stops: PlanStop[], repo: RepoView, files: string[]) {
     return { file, changed: changed.length, onTour };
   });
   return { changed: out.reduce((a, f) => a + f.changed, 0), onTour: out.reduce((a, f) => a + f.onTour, 0), files: out };
+}
+
+/* ---------- focus: the lines a person must read closely ---------- */
+
+export const FOCUS = { maxLines: 8, whyWords: 12, share: 0.25 };
+
+/** How many lines of a stop may be marked: a quarter of the code lines it shows (at least 2). */
+export function focusCap(stop: PlanStop): number {
+  const shown = stop.blocks.reduce((a, b) => a + (b.type === 'code' ? b.to - b.from + 1 : 0), 0);
+  return shown ? Math.max(2, Math.ceil(shown * FOCUS.share)) : 0;
+}
+
+const PLUMBING = /^\s*(import\b|export\s+(\*|\{[^}]*\})\s+from\b|\}\s*from\s|\/\/|\/\*|\*|#|[)\]}]+[;,]?\s*$|$)/;
+
+export interface FocusEntry {
+  stop: string;
+  file: string;
+  from: number;
+  to: number;
+  why: string;
+}
+
+export interface CheckedFocus {
+  /** valid entries, in the order the model gave them (most important first within a stop) */
+  ok: { block: PlanCodeBlock; stop: PlanStop; focus: Focus }[];
+  issues: string[];
+}
+
+/**
+ * Ranges inside one code block of the named stop, 1 to 8 lines, no overlap, a concrete reason of at most 12 words,
+ * not only imports or comments, and at most a quarter of the stop's shown lines.
+ * With `trim`, a stop that is over its cap loses the entries the model listed last instead of being reported.
+ */
+export function checkFocus(raw: unknown, stops: PlanStop[], repo: RepoView, trim = false): CheckedFocus {
+  const issues: string[] = [];
+  const ok: CheckedFocus['ok'] = [];
+  const list = Array.isArray((raw as { focus?: unknown })?.focus) ? ((raw as { focus: unknown[] }).focus as any[]) : [];
+  for (const e of list) {
+    const stopId = str(e?.stop);
+    const file = str(e?.file).replace(/^\.\//, '');
+    const from = int(e?.from);
+    const to = int(e?.to);
+    const why = str(e?.why).replace(/[.]$/, '');
+    const at = `${stopId || 'no stop'} ${file}:${String(from)}-${String(to)}`;
+    const stop = stops.find((s) => s.id === stopId);
+    if (!stop) {
+      issues.push(`- ${at}: there is no stop with the id "${stopId}"`);
+      continue;
+    }
+    if (from === null || to === null || to < from) {
+      issues.push(`- ${at}: from and to must be whole numbers, from not after to`);
+      continue;
+    }
+    const block = stop.blocks.find((b): b is PlanCodeBlock => b.type === 'code' && b.file === file && b.from <= from && to <= b.to);
+    if (!block) {
+      issues.push(`- ${at}: is not inside one code block of this stop (${stop.blocks.filter((b): b is PlanCodeBlock => b.type === 'code').map((b) => `${b.file}:${b.from}-${b.to}`).join(', ')})`);
+      continue;
+    }
+    if (to - from + 1 > FOCUS.maxLines) {
+      issues.push(`- ${at}: is ${to - from + 1} lines; a range is 1 to ${FOCUS.maxLines} lines. Mark only the lines that decide`);
+      continue;
+    }
+    if (!why) {
+      issues.push(`- ${at}: why is empty`);
+      continue;
+    }
+    if (why.split(/\s+/).length > FOCUS.whyWords) {
+      issues.push(`- ${at}: why has ${why.split(/\s+/).length} words; at most ${FOCUS.whyWords}`);
+      continue;
+    }
+    const lines = repo.lines(file) ?? [];
+    if (lines.slice(from - 1, to).every((l) => PLUMBING.test(l))) {
+      issues.push(`- ${at}: marks only imports, comments, brackets or blank lines`);
+      continue;
+    }
+    const clash = ok.find((o) => o.block === block && o.focus.from <= to && from <= o.focus.to);
+    if (clash) {
+      issues.push(`- ${at}: overlaps ${file}:${clash.focus.from}-${clash.focus.to}`);
+      continue;
+    }
+    ok.push({ block, stop, focus: { from, to, why } });
+  }
+  for (const stop of stops) {
+    const mine = ok.filter((o) => o.stop === stop);
+    const cap = focusCap(stop);
+    let marked = mine.reduce((a, o) => a + o.focus.to - o.focus.from + 1, 0);
+    if (marked <= cap) continue;
+    if (!trim) {
+      issues.push(`- stop ${stop.id}: ${marked} lines are marked, but at most ${cap} may be (a quarter of the ${stop.blocks.reduce((a, b) => a + (b.type === 'code' ? b.to - b.from + 1 : 0), 0)} lines it shows). Keep the ones that matter most`);
+      continue;
+    }
+    for (let i = mine.length - 1; i >= 0 && marked > cap; i--) {
+      const o = mine[i]!;
+      marked -= o.focus.to - o.focus.from + 1;
+      ok.splice(ok.indexOf(o), 1);
+      issues.push(`- stop ${stop.id}: ${o.block.file}:${o.focus.from}-${o.focus.to} left out, the stop was over its cap of ${cap} lines`);
+    }
+  }
+  return { ok, issues };
 }

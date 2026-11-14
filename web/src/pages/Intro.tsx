@@ -1,5 +1,5 @@
 import type { PublicTour } from '../../../shared/tour';
-import { ArrowRight, Bot, Check, FlagFill } from '../ui/icons';
+import { ArrowRight, Bot, Check, Eye, FlagFill } from '../ui/icons';
 import { inline } from '../ui/Prose';
 
 export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void }) {
@@ -11,15 +11,17 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
   const lines = tour.stops.reduce((a, s) => a + s.blocks.reduce((b, x) => b + (x.type === 'code' ? x.to - x.from + 1 : 0), 0), 0);
   const minutes = Math.max(3, Math.round(lines / 45 + questions * 0.5));
 
+  const focus = tour.stops.reduce((a, s) => a + s.blocks.reduce((b, x) => b + (x.type === 'code' ? (x.focus?.length ?? 0) : 0), 0), 0);
   const rules = [
-    { mark: <span className="text-[12px] font-[590] text-fg2">{tour.stops.length}</span>, title: short ? `Read ${short.stops} of the ${short.of} stops, in order` : `Read ${tour.stops.length} stops, in order`, body: 'Each stop shows one part of the change: what it does, why it is built that way, and the code itself.' },
-    { mark: <Check size={13} className="text-ok" />, title: `Answer ${questions} questions`, body: 'Each one can only be answered from the code of its stop. A stop opens when the one before it is answered.' },
-    { mark: <FlagFill size={13} className="text-flag" />, title: 'Catch the planted bug', body: 'One line you will read was changed on purpose. It is a real bug: the project’s own tests fail with it. Flag it, or the read does not count and you read again with a different one.' },
-    { mark: <Bot size={13} className="text-accent-hi" />, title: 'Ask the guide', body: 'It explains any line. It will not tell you what is wrong.' },
+    { mark: <span className="text-[12px] font-[590] text-fg2">{tour.stops.length}</span>, title: short ? `Review ${short.stops} of the ${short.of} stops, in any order` : `Review ${tour.stops.length} stops, in any order`, body: 'Each stop shows one part of the change: what it does, why it is built that way, and the code itself. Move between them as you like.' },
+    ...(focus ? [{ mark: <Eye size={13} className="text-warn" />, title: `${focus} places marked “Read closely”`, body: 'The guide marked the lines where a mistake would cost the most, and says why. The rest still has to be read: the marks were made without knowing which line is planted.' }] : []),
+    { mark: <Check size={13} className="text-ok" />, title: `Answer ${questions} questions`, body: 'Each one can only be answered from the code of its stop. All of them have to be right before you hand in.' },
+    { mark: <FlagFill size={13} className="text-flag" />, title: 'Catch the planted bug', body: 'One line was changed on purpose. It is a real bug: the project’s own tests fail with it. Click it and flag it, or the review does not count and you review again with a different one.' },
+    { mark: <Bot size={13} className="text-accent-hi" />, title: 'Ask the guide', body: 'Click any line to ask about it. The guide explains; it will not tell you what is wrong.' },
   ];
 
   return (
-    <div className="rise mx-auto max-w-[720px] px-6 pt-14 pb-24 sm:pt-20">
+    <div className="rise mx-auto max-w-[720px] px-4 pt-10 pb-24 sm:px-6 sm:pt-16">
       <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-fg3">
         <span className="chip">
           {pr.repo} #{pr.number}
@@ -32,7 +34,7 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
           <span>{pr.files} files</span>
         </span>
       </div>
-      <h1 className="mt-5 text-[32px] leading-[1.12] font-[590] tracking-[-0.022em] text-fg sm:text-[40px]">{pr.title}</h1>
+      <h1 className="mt-5 text-[28px] leading-[1.12] font-[590] tracking-[-0.022em] text-fg sm:text-[38px]">{pr.title}</h1>
       <p className="mt-5 text-[16px] leading-[1.6] text-fg2">{inline(tour.intro)}</p>
 
       <p className="mt-10 text-[15px] leading-[1.6] text-fg">
@@ -41,12 +43,12 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
             This is the short read: {short.stops} of the {short.of} stops. It works like the full read, but it does not approve the change.{' '}
             {other && (
               <a className="text-accent-hi underline-offset-2 hover:underline" href={other.href}>
-                Take the full read
+                The full read does
               </a>
             )}
           </>
         ) : (
-          'Nobody has read this code yet. Before it can merge, you read it, and you show that you did.'
+          'This is the read that approves. Nobody has read this code yet: before it can merge, you review all of it, and you show that you did.'
         )}
       </p>
 
@@ -64,7 +66,7 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
 
       <div className="mt-8 flex flex-wrap items-center gap-4">
         <button className="btn btn-primary btn-lg" onClick={onStart} autoFocus>
-          {state.startedAt ? 'Continue reading' : 'Start reading'} <ArrowRight size={15} />
+          {state.startedAt ? 'Continue the review' : 'Start the review'} <ArrowRight size={15} />
         </button>
         <span className="text-[13px] text-fg3">
           About {minutes} minutes · {lines} lines of code
@@ -76,6 +78,7 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
           <a className="text-accent-hi underline-offset-2 hover:underline" href={other.href}>
             Take the short read: {other.stops} stops
           </a>
+          . It does not approve the change.
         </p>
       )}
 

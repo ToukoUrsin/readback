@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AnswerState, Flag, PublicTour, Reveal } from '../../shared/tour';
 import { api } from './api';
+import { Cold, ColdOutcome } from './pages/Cold';
 import { HandIn } from './pages/HandIn';
 import { Intro } from './pages/Intro';
 import { StopView } from './pages/StopView';
@@ -31,7 +32,7 @@ export default function App() {
   const [tour, setTour] = useState<PublicTour | null>(null);
   const [failed, setFailed] = useState('');
   const [at, setAt] = useState<At>(fromHash);
-  const [askOpen, setAskOpen] = useState(() => window.innerWidth >= 1360);
+  const [askOpen, setAskOpen] = useState(false);
   const [askLine, setAskLine] = useState<{ file: string; line: number } | null>(null);
   const [askFocus, setAskFocus] = useState(0);
   const [msgs, setMsgs] = useState<Msg[]>([]);
@@ -41,23 +42,22 @@ export default function App() {
   const main = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    api.tour().then(setTour, (e) => setFailed((e as Error).message));
+    // "?new=1" starts over as a new reader: one link puts the page back to its first screen
+    const q = new URLSearchParams(location.search);
+    const fresh = q.get('new') === '1';
+    if (fresh) {
+      q.delete('new');
+      history.replaceState(null, '', location.pathname + (q.size ? `?${q}` : ''));
+    }
+    (fresh ? api.reset() : api.tour()).then(setTour, (e) => setFailed((e as Error).message));
     const on = () => setAt(fromHash());
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
   }, []);
 
   const done = useCallback((id: string) => !!tour && (tour.stops.find((s) => s.id === id)?.questions.every((q) => tour.state.answers[q.id]?.right) ?? false), [tour]);
-  const reachable = useCallback(
-    (a: At) => {
-      if (!tour) return false;
-      if (a === 'intro') return true;
-      if (!tour.state.startedAt) return false;
-      const i = a === 'handin' ? tour.stops.length : tour.stops.findIndex((s) => s.id === a);
-      return i >= 0 && tour.stops.slice(0, i).every((s) => done(s.id));
-    },
-    [tour, done],
-  );
+  // every stop is open once the review has started: a reviewer moves the way the code leads
+  const reachable = useCallback((a: At) => !!tour && (a === 'intro' || (!!tour.state.startedAt && (a === 'handin' || tour.stops.some((s) => s.id === a)))), [tour]);
 
   const go = useCallback((a: At) => {
     setMenu(false);
@@ -84,6 +84,10 @@ export default function App() {
     },
     [tour, reachable],
   );
+  const started = !!tour?.state.startedAt;
+  useEffect(() => {
+    if (started && at !== 'intro') void api.seen(at);
+  }, [at, started]);
   useEffect(() => {
     if (!pulse) return;
     const t = setTimeout(() => document.getElementById(lineId(pulse.file, pulse.from))?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
@@ -121,7 +125,8 @@ export default function App() {
         e.preventDefault();
         setAskOpen((v) => !v);
         setAskFocus((n) => n + 1);
-      } else if ((e.key === 'j' || e.key === 'ArrowRight') && next && reachable(next) && at !== 'intro') go(next);
+      } else if (tour?.cold) return;
+      else if ((e.key === 'j' || e.key === 'ArrowRight') && next && reachable(next) && at !== 'intro') go(next);
       else if ((e.key === 'k' || e.key === 'ArrowLeft') && prev) go(prev);
     };
     window.addEventListener('keydown', on);
@@ -132,9 +137,11 @@ export default function App() {
   if (!tour) return <div className="h-full bg-bg" />;
 
   const { state } = tour;
+  if (tour.cold) return <Cold tour={tour} setTour={setTour} />;
+  if (state.cold?.reveal && !state.startedAt) return <ColdOutcome tour={tour} result={state.cold} onStart={start} />;
   const stop = tour.stops.find((s) => s.id === at) ?? null;
   const stopIndex = stop ? tour.stops.indexOf(stop) : -1;
-  const sidebar = <Sidebar tour={tour} at={at} done={done} reachable={reachable} go={go} jump={jump} unflag={unflag} />;
+  const sidebar = <Sidebar tour={tour} at={at} done={done} go={go} jump={jump} unflag={unflag} />;
 
   return (
     <div className="flex h-full">
@@ -210,6 +217,7 @@ export default function App() {
               jump={jump}
               unflag={unflag}
               readAgain={() => go(tour.stops[0]!.id)}
+              go={go}
               reset={async () => {
                 setTour(await api.reset());
                 setMsgs([]);
@@ -226,7 +234,7 @@ export default function App() {
       {tour.ask && askOpen && (
         <>
           <div className="fade fixed inset-0 z-40 bg-black/60 xl:hidden" onClick={() => setAskOpen(false)} />
-          <div className="fixed inset-y-0 right-0 z-50 w-[min(400px,92vw)] border-l border-line shadow-2xl xl:static xl:z-auto xl:w-[372px] xl:flex-none xl:shadow-none">
+          <div className="fixed inset-y-0 right-0 z-50 w-[min(400px,92vw)] border-l border-line shadow-2xl xl:static xl:z-auto xl:w-[360px] xl:flex-none xl:shadow-none">
             <Ask stop={stop} line={askLine} clearLine={() => setAskLine(null)} msgs={msgs} setMsgs={setMsgs} onJump={jump} onClose={() => setAskOpen(false)} focusKey={askFocus} />
           </div>
         </>

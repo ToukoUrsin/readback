@@ -8,6 +8,7 @@ primary_region = "arn"
   PORT = "8080"
   HOST = "0.0.0.0"
   RB_DATA = "/data"
+  RB_GITHUB_WATCH = "1"
 
 [mounts]
   source = "readback_data"

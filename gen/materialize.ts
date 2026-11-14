@@ -108,7 +108,7 @@ function view(file: string): FileView {
 
 /* ---------- blocks ---------- */
 
-function codeBlock(b: { file: string; from: number; to: number; notes?: { line: number; text: string }[] }): CodeBlock {
+function codeBlock(b: { file: string; from: number; to: number; notes?: { line: number; text: string }[]; focus?: { from: number; to: number; why: string }[] }): CodeBlock {
   const v = view(b.file);
   const last = v.head[v.head.length - 1] === '' ? v.head.length - 1 : v.head.length;
   const from = Math.max(1, b.from);
@@ -124,7 +124,8 @@ function codeBlock(b: { file: string; from: number; to: number; notes?: { line: 
   }
   if (to === last) removed(last + 1);
   const notes = (b.notes ?? []).filter((x) => x.line >= from && x.line <= to);
-  return { type: 'code', file: b.file, from, to, lines, ...(notes.length ? { notes } : {}) };
+  const focus = (b.focus ?? []).filter((x) => x.from >= from && x.to <= to && x.from <= x.to);
+  return { type: 'code', file: b.file, from, to, lines, ...(notes.length ? { notes } : {}), ...(focus.length ? { focus } : {}) };
 }
 
 const stops = plan.stops.map((s) => ({
@@ -138,7 +139,8 @@ const plants: TourPlant[] = plan.plants.map((p) => {
   const v = view(p.file);
   if (v.head[p.line - 1] !== p.original) throw new Error(`plant ${p.id}: ${p.file}:${p.line} is not the line the plan says it is`);
   const onTour = stops.some((s) => s.blocks.some((b) => b.type === 'code' && b.file === p.file && b.from <= p.line && p.line <= b.to));
-  if (!onTour) throw new Error(`plant ${p.id}: ${p.file}:${p.line} is not on the tour`);
+  const onCold = !!plan.cold?.plants.includes(p.id) && plan.cold.blocks.some((b) => b.file === p.file && b.from <= p.line && p.line <= b.to);
+  if (!onTour && !onCold) throw new Error(`plant ${p.id}: ${p.file}:${p.line} is not on the tour`);
   const mutated = [...v.head];
   mutated[p.line - 1] = p.planted;
   return { ...p, tokens: highlight(p.file, mutated.join('\n'))[p.line - 1]!, originalTokens: v.headTokens[p.line - 1]! };
@@ -165,7 +167,21 @@ const files = changedFiles
   .filter((f) => f.changed > 0);
 const coverage = { changed: files.reduce((a, f) => a + f.changed, 0), onTour: files.reduce((a, f) => a + f.onTour, 0), files };
 
-const tour: Tour = { schema: 1, pr: plan.pr, intro: plan.intro, stops, plants, coverage, madeBy: plan.madeBy, ...(plan.short ? { short: plan.short } : {}) };
+/* ---------- the cold test ---------- */
+
+let cold: Tour['cold'];
+if (plan.cold) {
+  const blocks = plan.cold.blocks.map((b) => codeBlock(b));
+  for (const id of plan.cold.plants) {
+    const p = plants.find((x) => x.id === id);
+    if (!p) throw new Error(`cold test: no plant ${id}`);
+    if (!blocks.some((b) => b.file === p.file && b.from <= p.line && p.line <= b.to)) throw new Error(`cold test: plant ${id} is not in the lines it shows`);
+  }
+  if (!plan.cold.plants.length) throw new Error('cold test: it needs a planted line');
+  cold = { blocks, plants: plan.cold.plants };
+}
+
+const tour: Tour = { schema: 1, pr: plan.pr, intro: plan.intro, stops, plants, coverage, madeBy: plan.madeBy, ...(plan.short ? { short: plan.short } : {}), ...(cold ? { cold } : {}) };
 writeFileSync(outPath, JSON.stringify(tour));
 console.log(`${outPath}: ${stops.length} stops, ${stops.reduce((a, s) => a + s.questions.length, 0)} questions, ${plants.length} planted lines, ${coverage.onTour} of ${coverage.changed} changed lines on the tour`);
 for (const f of files) console.log(`  ${f.onTour}/${f.changed}  ${f.file}`);

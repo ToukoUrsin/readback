@@ -5,9 +5,14 @@
  *
  *   1. tour      one model session reads the diff, the issue and the head checkout and writes intro + stops
  *   2. validate  in code: files, ranges, answers, ids, diagrams, coverage. One repair round, then fail loudly
- *   3. plants    another model proposes one-line bugs; each is proven by the project's own tests in Docker
- *                and checked once more so that no planted line changes the answer to a question
- *   4. write     plan.json
+ *   3. focus     the tour model marks, per code block, the few lines a person must read closely.
+ *                It never sees a planted line, and no planted line is chosen with the marks in view
+ *   4. plants    another model proposes one-line bugs (access and money first). Each is kept only when
+ *                  - the stop that shows the line already says what the line must do (the quote is checked in code),
+ *                  - the project's own tests, in Docker, pass without it and fail with it,
+ *                  - a second session finds that it changes no quiz answer and that the quote and the headline hold.
+ *                Every line that passes is kept
+ *   5. write     plan.json
  *
  * Options
  *   --issue <n>            issue the pull request answers (default: the one the pull request closes)
@@ -20,6 +25,8 @@
  *   --image <name>         Docker image for the tests (default oven/bun:1)
  *   --test-cmd "<cmd>"     test command inside the image (default "bun test")
  *   --resume               reuse model answers of an earlier run with the same prompts (kept in the scratch folder)
+ *   --reuse <dir,dir>      with --resume: also look for saved answers in these scratch folders of other runs
+ *   --must-reuse <names>   stop instead of asking again when one of these steps (tour, tour-repair, ...) has no saved answer
  *
  * The repository at --repo is only read. Checkouts and sandboxes live under RB_BULK (/bulk3/runs/readback).
  * The pull request is untrusted: models get read-only tools, and its code runs only in Docker without network.
@@ -29,10 +36,11 @@ import { appendFileSync, existsSync, readFileSync, realpathSync, rmSync, writeFi
 import { basename, join, resolve } from 'node:path';
 import type { Plan, PlanCodeBlock, PlanStop, Plant, PrInfo } from '../shared/tour';
 import { type AgentResult, runAgent } from './lib/agent';
-import { JUDGE_SYSTEM, PLANT_SYSTEM, REPAIR_NOTE, TOUR_SYSTEM } from './lib/prompts';
+import { FOCUS_REPAIR_NOTE, FOCUS_SYSTEM, JUDGE_SYSTEM, PLANT_SYSTEM, REPAIR_NOTE, TOUR_SYSTEM } from './lib/prompts';
 import { prepareSandbox, runTests, type Sandbox } from './lib/sandbox';
 import { ensureDir, exec, log, pool, ranges } from './lib/util';
-import { absorbBlankLines, checkTour, coverageOf, type Issue, type RepoView, spreadAnswers } from './lib/validate';
+import { findStated, headlineProblem, type Kind, KINDS, type StatedSource, stopTexts } from './lib/stated';
+import { absorbBlankLines, type CheckedFocus, checkFocus, checkTour, clean, coverageOf, focusCap, type Issue, type RepoView, spreadAnswers } from './lib/validate';
 
 /* ---------- arguments ---------- */
 
@@ -57,8 +65,13 @@ const PLANT_MODEL = args['plant-model'] || 'claude-opus-5-5';
 const IMAGE = args.image || 'oven/bun:1';
 const TEST_CMD = (args['test-cmd'] || 'bun test').split(/\s+/);
 const BULK = resolve(process.env.RB_BULK || '/bulk3/runs/readback');
-const CANDIDATES = 8;
-const KEEP = 3;
+/** how many planted lines the first session is asked for, and the second one if fewer than MIN_KEPT pass every check */
+const CANDIDATES = 14;
+const CANDIDATES_MORE = 10;
+const MIN_KEPT = 6;
+/** the kinds a bank or hospital reader should meet first; fewer than MIN_STRONG of them kept = one more round only for them */
+const STRONG: Kind[] = ['access', 'money'];
+const MIN_STRONG = 5;
 
 const t0 = Date.now();
 const LOG = join(OUT, 'gen.log.jsonl');
@@ -88,6 +101,8 @@ const baseTip = (await git(['rev-parse', '--verify', `${args.base}^{commit}`])).
 const SCRATCH = ensureDir(join(BULK, `${basename(OUT)}-${headSha.slice(0, 7)}`));
 const HEAD_DIR = join(SCRATCH, 'head');
 const STEPS = ensureDir(join(SCRATCH, 'steps'));
+const REUSE = args.reuse && args.reuse !== 'true' ? args.reuse.split(',').map((d) => resolve(d.trim())) : [];
+const MUST_REUSE = args['must-reuse'] && args['must-reuse'] !== 'true' ? args['must-reuse'].split(',').map((d) => d.trim()) : [];
 
 /** A plain copy of the head commit (no .git): `git archive` only reads the repository. */
 async function checkoutHead() {
@@ -224,15 +239,18 @@ step('setup', {
 async function ask<T>(name: string, o: { system: string; prompt: string; schema: object; model: string; timeoutMs?: number }): Promise<AgentResult<T> & { reused: boolean }> {
   const hash = createHash('sha256').update(JSON.stringify([o.model, o.system, o.prompt, o.schema])).digest('hex').slice(0, 16);
   const file = join(STEPS, `${name}.json`);
-  if (args.resume && existsSync(file)) {
-    const saved = JSON.parse(readFileSync(file, 'utf8'));
-    if (saved.hash === hash) {
-      log('agent', `${name}: reusing the saved answer`);
+  if (args.resume)
+    for (const f of [file, ...REUSE.map((d) => join(d, 'steps', `${name}.json`))]) {
+      if (!existsSync(f)) continue;
+      const saved = JSON.parse(readFileSync(f, 'utf8'));
+      if (saved.hash !== hash) continue;
+      log('agent', `${name}: reusing the saved answer${f === file ? '' : ` from ${f}`}`);
+      if (f !== file) writeFileSync(file, JSON.stringify(saved, null, 1));
       cost += saved.result.costUsd;
       return { ...saved.result, reused: true };
     }
-  }
   writeFileSync(join(STEPS, `${name}.prompt.md`), `${o.system}\n\n=====\n\n${o.prompt}`);
+  if (MUST_REUSE.includes(name)) die(`--must-reuse ${name}: no saved answer fits this prompt (see ${join(STEPS, `${name}.prompt.md`)}). Nothing was asked.`);
   const result = await runAgent<T>({ name, system: o.system, prompt: o.prompt, schema: o.schema, model: o.model, cwd: HEAD_DIR, effort: 'high', timeoutMs: o.timeoutMs });
   writeFileSync(file, JSON.stringify({ hash, result }, null, 1));
   cost += result.costUsd;
@@ -348,7 +366,71 @@ step('tidy', { blankLinesJoined: joined, answersMoved: moved, answerPositions: [
 log('validate', `${stops.length} stops, ${nQuestions} questions · source lines on the tour: ${cover.onTour}/${cover.changed} · all changed lines: ${coverAll.onTour}/${coverAll.changed}`);
 if (cover.onTour !== cover.changed) log('validate', `WARNING: ${cover.changed - cover.onTour} blank changed lines are not next to any block`);
 
-/* ---------- step 3: planted bugs, each proven by the tests ---------- */
+/* ---------- step 3: focus, the lines a person must read closely ---------- */
+
+/** The stops as the reader sees them, with the code. No questions and no planted lines: this session knows neither. */
+function tourForFocus(): string {
+  return stops
+    .map((s, i) => {
+      const blocks = s.blocks.map((b) => {
+        if (b.type === 'prose') return `prose: ${b.text}`;
+        if (b.type === 'diagram') return `diagram: ${b.title}`;
+        const lines = headLines(b.file) ?? [];
+        const w = String(b.to).length;
+        const ch = changed.get(b.file) ?? [];
+        const body = lines.slice(b.from - 1, b.to).map((l, k) => `${String(b.from + k).padStart(w)} ${ch.includes(b.from + k) ? '+' : ' '} ${l}`);
+        const notes = (b.notes ?? []).map((n) => `note on line ${n.line}: ${n.text}`);
+        return `<code file="${b.file}" from="${b.from}" to="${b.to}">\n${body.join('\n')}\n</code>${notes.length ? `\n${notes.join('\n')}` : ''}`;
+      });
+      return `## Stop ${i + 1}, id "${s.id}": ${s.title}\nwhy: ${s.why}\nAt most ${focusCap(s)} lines may be marked in this stop.\n\n${blocks.join('\n\n')}`;
+    })
+    .join('\n\n');
+}
+
+const focusSchema = {
+  type: 'object',
+  properties: {
+    focus: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { stop: { type: 'string' }, file: { type: 'string' }, from: { type: 'integer' }, to: { type: 'integer' }, why: { type: 'string' } },
+        required: ['stop', 'file', 'from', 'to', 'why'],
+      },
+    },
+    security: { type: 'string' },
+  },
+  required: ['focus'],
+};
+
+/**
+ * Runs beside the planted-bug step and shares nothing with it: this session never sees a planted line, and the
+ * planted-bug sessions never see a mark. The marks are put on the stops only when both are done.
+ */
+async function focusStep(): Promise<CheckedFocus['ok']> {
+  const material = `# The tour\nEach code line: number, "+" if the pull request added or changed it, then the text.\n\n${tourForFocus()}`;
+  const first = await ask<{ focus: unknown[]; security?: string }>('focus', { system: FOCUS_SYSTEM, prompt: `${material}\n\nMark the lines.`, schema: focusSchema, model: TOUR_MODEL, timeoutMs: 30 * 60_000 });
+  let got = checkFocus(first.out, stops, repoView);
+  step('focus', { model: first.model, ms: first.durationMs, costUsd: round(first.costUsd), turns: first.turns, reused: first.reused, returned: first.out.focus?.length ?? 0, valid: got.ok.length, problems: got.issues, security: first.out.security || '' });
+  if (got.issues.length) {
+    log('focus', `${got.issues.length} problems:\n${got.issues.join('\n')}`);
+    const fix = await ask<{ focus: unknown[]; security?: string }>('focus-repair', {
+      system: `${FOCUS_SYSTEM}\n\n${FOCUS_REPAIR_NOTE}`,
+      prompt: `${material}\n\n# Your earlier answer\n<answer>\n${JSON.stringify({ focus: first.out.focus }, null, 1)}\n</answer>\n\n# What is wrong\n${got.issues.join('\n')}\n\nReturn the corrected list.`,
+      schema: focusSchema,
+      model: TOUR_MODEL,
+      timeoutMs: 30 * 60_000,
+    });
+    // after the one repair round nothing is sent back: what is still wrong is left out
+    got = checkFocus(fix.out, stops, repoView, true);
+    step('focus-repair', { model: fix.model, ms: fix.durationMs, costUsd: round(fix.costUsd), turns: fix.turns, reused: fix.reused, returned: fix.out.focus?.length ?? 0, valid: got.ok.length, leftOut: got.issues, security: fix.out.security || '' });
+    if (got.issues.length) log('focus', `WARNING: left out after the repair round:\n${got.issues.join('\n')}`);
+  }
+  return got.ok;
+}
+const focusJob: Promise<CheckedFocus['ok'] | Error> = focusStep().catch((e) => e as Error);
+
+/* ---------- step 4: planted bugs, each proven by the tests ---------- */
 
 interface Candidate {
   file: string;
@@ -356,7 +438,9 @@ interface Candidate {
   original: string;
   planted: string;
   what: string;
-  kind?: string;
+  kind: Kind;
+  headline: string;
+  stated: string;
   test?: string;
 }
 interface Verdict {
@@ -364,13 +448,17 @@ interface Verdict {
   round: number;
   stopId: string;
   hasNote: boolean;
+  /** where in the stop the stated words were found */
+  statedIn: StatedSource | '';
   failedTests: string[];
-  /** why it was dropped; empty when proven */
+  failures: NonNullable<Plant['failures']>;
+  /** why it was dropped; empty when kept */
   why: string;
 }
 
 const codeBlocks = stops.flatMap((s) => s.blocks.filter((b): b is PlanCodeBlock => b.type === 'code').map((b) => ({ stop: s.id, b })));
 const blockOf = (file: string, line: number) => codeBlocks.find((x) => x.b.file === file && x.b.from <= line && line <= x.b.to);
+const stopsOf = (file: string, line: number) => stops.filter((s) => codeBlocks.some((x) => x.stop === s.id && x.b.file === file && x.b.from <= line && line <= x.b.to));
 const inReread = (file: string, line: number) => stops.some((s) => s.questions.some((q) => q.reread.file === file && q.reread.from <= line && line <= q.reread.to));
 const hasNote = (file: string, line: number) => codeBlocks.some((x) => x.b.file === file && x.b.notes?.some((n) => n.line === line));
 const strip = (s: string) => s.replace(/\/\/.*$/, '').replace(/\/\*.*?\*\//g, '').replace(/\s+/g, '');
@@ -380,7 +468,8 @@ const allowed = (file: string, line: number) => {
 };
 const plantFiles = mustCover.filter((f) => changed.get(f)!.some((n) => allowed(f, n)));
 
-function tourForPlants(): string {
+/** The words of the tour, without the code and without any focus mark. */
+function tourText(withQuestions: boolean): string {
   return stops
     .map((s, i) => {
       const blocks = s.blocks.map((b) =>
@@ -390,8 +479,8 @@ function tourForPlants(): string {
             ? `  code: ${b.file}:${b.from}-${b.to}${b.notes?.length ? `\n${b.notes.map((n) => `    note on line ${n.line}: ${n.text}`).join('\n')}` : ''}`
             : `  diagram: ${b.title}: ${b.nodes.map((n) => n.label).join(' -> ')}`,
       );
-      const qs = s.questions.map((q) => `  question: ${q.prompt}\n    right answer: ${q.options[q.answer]}\n    settled by ${q.reread.file}:${q.reread.from}-${q.reread.to}`);
-      return `## Stop ${i + 1} (${s.id}): ${s.title}\n  why: ${s.why}\n${[...blocks, ...qs].join('\n')}`;
+      const qs = withQuestions ? s.questions.map((q) => `  question: ${q.prompt}\n    right answer: ${q.options[q.answer]}\n    settled by ${q.reread.file}:${q.reread.from}-${q.reread.to}`) : [];
+      return `## Stop ${i + 1} (${s.id})\n  title: ${s.title}\n  why: ${s.why}\n${[...blocks, ...qs].join('\n')}`;
     })
     .join('\n\n');
 }
@@ -403,8 +492,18 @@ const plantSchema = {
       type: 'array',
       items: {
         type: 'object',
-        properties: { file: { type: 'string' }, line: { type: 'integer' }, original: { type: 'string' }, planted: { type: 'string' }, what: { type: 'string' }, kind: { type: 'string' }, test: { type: 'string' } },
-        required: ['file', 'line', 'original', 'planted', 'what'],
+        properties: {
+          file: { type: 'string' },
+          line: { type: 'integer' },
+          original: { type: 'string' },
+          planted: { type: 'string' },
+          kind: { type: 'string', enum: [...KINDS] },
+          stated: { type: 'string' },
+          what: { type: 'string' },
+          headline: { type: 'string' },
+          test: { type: 'string' },
+        },
+        required: ['file', 'line', 'original', 'planted', 'kind', 'stated', 'what', 'headline'],
       },
     },
     security: { type: 'string' },
@@ -412,42 +511,45 @@ const plantSchema = {
   required: ['candidates'],
 };
 
-function plantPrompt(n: number, earlier: Verdict[]): string {
+function plantPrompt(n: number, earlier: Verdict[], only: Kind[] = []): string {
   const dropped = earlier.filter((v) => v.why);
   const kept = earlier.filter((v) => !v.why);
   return [
-    `# The tour the reader follows\n${tourForPlants()}`,
+    `# The tour the reader follows\nThe words in \`stated\` must come from the stop that shows the line: its title, why, prose or notes as written here, or a comment inside the code lines that stop shows.\n\n${tourText(true)}`,
     `# Test files in the working folder\n${testFilesAtHead.map((f) => `- ${f}`).join('\n') || '- none found; look for them'}\nThe tests are run with: ${TEST_CMD.join(' ')}`,
     `# Source files at the head commit\nEach line: number, a marker, then the text. ">" = you may plant here. "n" = you may plant here, but a note is pinned to this line, so prefer another. No marker = not allowed (unchanged line, a line that settles a question, or a line that is not on the tour).\n\n${plantFiles.map((f) => listing(f, (ln) => (allowed(f, ln) ? (hasNote(f, ln) ? 'n' : '>') : ' '))).join('\n\n')}`,
     ...(earlier.length
       ? [
-          `# Earlier candidates\nThese were checked already. Do not propose them again.\n${dropped.map((v) => `- DROPPED ${v.c.file}:${v.c.line}  \`${v.c.planted.trim()}\`  because: ${v.why}`).join('\n')}${kept.length ? `\n${kept.map((v) => `- kept ${v.c.file}:${v.c.line} (a test caught it); do not use this line again`).join('\n')}` : ''}\nLearn from the dropped ones: choose lines whose effect a test asserts directly.`,
+          `# Earlier candidates\nThese were checked already. Do not propose them again.\n${dropped.map((v) => `- DROPPED ${v.c.file}:${v.c.line}  \`${v.c.planted.trim()}\`  because: ${v.why}`).join('\n')}${kept.length ? `\n${kept.map((v) => `- kept ${v.c.file}:${v.c.line} (${v.c.kind}); do not use this line again`).join('\n')}` : ''}\nLearn from the dropped ones: choose lines whose effect a test asserts directly and whose stop says in words what the line must do.`,
         ]
       : []),
-    `Propose ${n} candidates.`,
+    only.length
+      ? `Propose up to ${n} more candidates, this time only of kind ${only.join(' or ')}. Go through every line marked ">" or "n" that limits rows to one workspace, checks an owner, a session or a token, decides what a public link shows, or computes, rounds or prints an amount. The rules are the same: a test must fail, and the stop must already say in words what the line must do. Propose fewer rather than a line that breaks a rule.`
+      : `Propose ${n} candidates.`,
   ].join('\n\n');
 }
 
-function staticCheck(c: Candidate, taken: Set<string>): string {
+function staticCheck(c: Candidate, taken: Set<string>): { why: string; statedIn: StatedSource | '' } {
+  const no = (why: string) => ({ why, statedIn: '' as const });
   const lines = headLines(c.file);
-  if (!lines) return 'the file does not exist at the head commit';
-  if (!mustCover.includes(c.file)) return 'the file is not a source file of this change';
-  if (!Number.isInteger(c.line) || c.line < 1 || c.line > lines.length) return 'the line number is outside the file';
-  if (typeof c.original !== 'string' || typeof c.planted !== 'string' || /[\r\n]/.test(c.planted)) return 'planted must be exactly one line';
+  if (!lines) return no('the file does not exist at the head commit');
+  if (!mustCover.includes(c.file)) return no('the file is not a source file of this change');
+  if (!Number.isInteger(c.line) || c.line < 1 || c.line > lines.length) return no('the line number is outside the file');
+  if (typeof c.original !== 'string' || typeof c.planted !== 'string' || /[\r\n]/.test(c.planted)) return no('planted must be exactly one line');
   if (lines[c.line - 1] !== c.original) {
     // the right line with the wrong number or indentation: take the line from the file, never from the model
     const hits = lines.map((l, i) => (l.trim() === c.original.trim() ? i + 1 : 0)).filter(Boolean);
-    if (lines[c.line - 1]!.trim() !== c.original.trim() && hits.length !== 1) return `original is not line ${c.line} of the file`;
+    if (lines[c.line - 1]!.trim() !== c.original.trim() && hits.length !== 1) return no(`original is not line ${c.line} of the file`);
     if (lines[c.line - 1]!.trim() !== c.original.trim()) c.line = hits[0]!;
     c.original = lines[c.line - 1]!;
     c.planted = c.original.match(/^\s*/)![0] + c.planted.trim();
   }
-  if (!changed.get(c.file)!.includes(c.line)) return 'the pull request did not add or change this line';
-  if (!blockOf(c.file, c.line)) return 'the line is not inside a code block of the tour';
-  if (inReread(c.file, c.line)) return 'the line is inside the reread range of a question';
-  if (c.planted === c.original || c.planted.trim() === c.original.trim()) return 'planted is the same as the original';
-  if (/^\s*(\/\/|\/\*|\*)/.test(c.original) || strip(c.planted) === strip(c.original)) return 'only a comment or whitespace changed';
-  if (taken.has(`${c.file}:${c.line}`)) return 'another candidate already uses this line';
+  if (!changed.get(c.file)!.includes(c.line)) return no('the pull request did not add or change this line');
+  if (!blockOf(c.file, c.line)) return no('the line is not inside a code block of the tour');
+  if (inReread(c.file, c.line)) return no('the line is inside the reread range of a question');
+  if (c.planted === c.original || c.planted.trim() === c.original.trim()) return no('planted is the same as the original');
+  if (/^\s*(\/\/|\/\*|\*)/.test(c.original) || strip(c.planted) === strip(c.original)) return no('only a comment or whitespace changed');
+  if (taken.has(`${c.file}:${c.line}`)) return no('another candidate already uses this line');
   const ext = c.file.split('.').pop()!;
   if (['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'mts', 'cts'].includes(ext)) {
     const mutated = [...lines];
@@ -455,11 +557,20 @@ function staticCheck(c: Candidate, taken: Set<string>): string {
     try {
       new Bun.Transpiler({ loader: ext === 'tsx' ? 'tsx' : ext === 'jsx' ? 'jsx' : ext.includes('ts') ? 'ts' : 'js' }).transformSync(mutated.join('\n'));
     } catch (e) {
-      return `the file no longer parses: ${String((e as Error).message).split('\n')[0]!.slice(0, 120)}`;
+      return no(`the file no longer parses: ${String((e as Error).message).split('\n')[0]!.slice(0, 120)}`);
     }
   }
-  if (!String(c.what ?? '').trim()) return 'what is empty';
-  return '';
+  if (!String(c.what ?? '').trim()) return no('what is empty');
+  if (!(KINDS as readonly string[]).includes(c.kind)) return no(`kind "${String(c.kind)}" is not one of ${KINDS.join(', ')}`);
+  // the stated gate: the words must be in a stop that shows this line, as the reader sees it (planted line in place)
+  let found: ReturnType<typeof findStated> = { problem: '' };
+  for (const s of stopsOf(c.file, c.line)) {
+    found = findStated(c.stated, stopTexts(s, headLines, { file: c.file, line: c.line, text: c.planted }));
+    if ('stated' in found) break;
+  }
+  if ('problem' in found) return no(`not stated: ${found.problem}. Quote given: "${String(c.stated ?? '').replace(/\s+/g, ' ').trim().slice(0, 160)}"`);
+  c.stated = found.stated;
+  return { why: '', statedIn: found.source };
 }
 
 const testFilesAtHead = [...new Bun.Glob('**/*').scanSync({ cwd: HEAD_DIR, onlyFiles: true })].filter((f) => !f.includes('node_modules/') && CODE.test(f) && isTest(f)).sort();
@@ -481,58 +592,125 @@ const judgeSchema = {
         properties: {
           candidate: { type: 'integer' },
           conflicts: { type: 'array', items: { type: 'object', properties: { question: { type: 'string' }, why: { type: 'string' } }, required: ['question', 'why'] } },
+          stated_ok: { type: 'boolean' },
+          stated_why: { type: 'string' },
+          kind: { type: 'string', enum: [...KINDS] },
+          headline_ok: { type: 'boolean' },
+          headline: { type: 'string' },
         },
-        required: ['candidate', 'conflicts'],
+        required: ['candidate', 'conflicts', 'stated_ok', 'stated_why', 'kind', 'headline_ok'],
       },
     },
     security: { type: 'string' },
   },
   required: ['verdicts'],
 };
+interface JudgeVerdict {
+  candidate: number;
+  conflicts: { question: string; why: string }[];
+  stated_ok: boolean;
+  stated_why: string;
+  kind: Kind;
+  headline_ok: boolean;
+  headline?: string;
+}
+
+/** Everything a headline may take a number from. */
+const factsOf = (v: Verdict) => [v.c.what, v.c.original, v.c.planted, ...v.failedTests, ...v.failures.map((f) => f.message ?? '')].join('\n');
 
 /**
- * A planted line outside a question's reread range can still change that question (a function the question's code
- * calls). Code cannot see that, so one more session traces every question with each proven line in place.
+ * What code cannot see, checked by one more session for the lines the tests have proven:
+ * a planted line outside a question's reread range can still change that question (a function the question's
+ * code calls); the quoted words can be in the stop and still not say what the line must do; and the headline
+ * has to follow from what the tests printed, which the session that proposed the line had not seen.
  */
 async function judge(roundNo: number, list: Verdict[]) {
   if (!list.length) return;
   const questions = stops
     .flatMap((s) => s.questions.map((q) => `- ${q.id} (stop "${s.title}")\n  ${q.prompt}\n${q.options.map((o, i) => `    ${i === q.answer ? 'RIGHT' : 'wrong'}: ${o}`).join('\n')}\n  settled by ${q.reread.file}:${q.reread.from}-${q.reread.to}`))
     .join('\n');
-  const cands = list.map((v, i) => `${i + 1}. ${v.c.file}:${v.c.line}\n   original: ${v.c.original.trim()}\n   planted:  ${v.c.planted.trim()}`).join('\n');
+  const cands = list
+    .map((v, i) => {
+      const hp = headlineProblem(v.c.headline, factsOf(v));
+      return [
+        `${i + 1}. ${v.c.file}:${v.c.line}, shown in stop ${v.stopId}`,
+        `   original: ${v.c.original.trim()}`,
+        `   planted:  ${v.c.planted.trim()}`,
+        `   what goes wrong, as proposed: ${v.c.what.trim()}`,
+        `   kind, as proposed: ${v.c.kind}`,
+        `   stated (found in the stop's ${v.statedIn}): "${v.c.stated}"`,
+        `   headline: ${v.c.headline.trim()}${hp ? `\n   the program found a problem with this headline: ${hp}` : ''}`,
+        `   tests that fail with the planted line:\n${v.failures.map((f) => `     - ${f.test}${f.message ? `\n       printed: ${f.message}` : ''}`).join('\n')}`,
+      ].join('\n');
+    })
+    .join('\n\n');
   const files = [...new Set([...list.map((v) => v.c.file), ...stops.flatMap((s) => s.questions.map((q) => q.reread.file))])].filter((f) => mustCover.includes(f));
-  const r = await ask<{ verdicts: { candidate: number; conflicts: { question: string; why: string }[] }[]; security?: string }>(`plants-judge-${roundNo}`, {
+  const r = await ask<{ verdicts: JudgeVerdict[]; security?: string }>(`plants-judge-${roundNo}`, {
     system: JUDGE_SYSTEM,
-    prompt: [`# Questions of the tour\n${questions}`, `# Candidate planted lines\n${cands}`, `# Source files at the head commit (with the original lines)\n${files.map((f) => listing(f, () => ' ')).join('\n\n')}`, 'Check every candidate against every question.'].join('\n\n'),
+    prompt: [
+      `# The tour the reader follows\n${tourText(false)}`,
+      `# Questions of the tour\n${questions}`,
+      `# Candidate planted lines\n${cands}`,
+      `# Source files at the head commit (with the original lines)\n${files.map((f) => listing(f, () => ' ')).join('\n\n')}`,
+      'Check every candidate.',
+    ].join('\n\n'),
     schema: judgeSchema,
     model: PLANT_MODEL,
     timeoutMs: 30 * 60_000,
   });
   const ids = new Set(stops.flatMap((s) => s.questions.map((q) => q.id)));
-  const out: { at: string; conflicts: { question: string; why: string }[] }[] = [];
+  const out: Record<string, unknown>[] = [];
   list.forEach((v, i) => {
     const got = (r.out.verdicts ?? []).find((x) => Number(x.candidate) === i + 1);
     const conflicts = (got?.conflicts ?? []).filter((c) => ids.has(c.question));
-    if (!got) v.why = 'the question check gave no verdict for this line';
+    const row: Record<string, unknown> = { at: `${v.c.file}:${v.c.line}`, conflicts, statedOk: got?.stated_ok ?? null, statedWhy: got?.stated_why ?? '' };
+    out.push(row);
+    if (!got) v.why = 'the second check gave no verdict for this line';
     else if (conflicts.length) v.why = `it changes the answer to a question (${conflicts.map((c) => `${c.question}: ${c.why}`).join('; ')})`;
+    else if (got.stated_ok !== true) v.why = `not stated: the quoted words are in the stop but do not say what this line must do (${got.stated_why}). Quote: "${v.c.stated}"`;
+    else {
+      if ((KINDS as readonly string[]).includes(got.kind) && got.kind !== v.c.kind) {
+        row.kind = `${v.c.kind} -> ${got.kind}`;
+        v.c.kind = got.kind;
+      }
+      const mine = headlineProblem(v.c.headline, factsOf(v));
+      if (got.headline_ok !== true || mine) {
+        const fixed = clean(String(got.headline ?? ''));
+        const still = headlineProblem(fixed, factsOf(v));
+        row.headline = { from: v.c.headline, to: fixed, because: mine || 'the second check did not accept it' };
+        if (still) v.why = `no usable headline: ${still}`;
+        else v.c.headline = fixed;
+      }
+    }
     if (v.why) log('plants', `${v.c.file}:${v.c.line} dropped: ${v.why}`);
-    out.push({ at: `${v.c.file}:${v.c.line}`, conflicts });
   });
   step('plants-judge', { round: roundNo, model: r.model, ms: r.durationMs, costUsd: round(r.costUsd), turns: r.turns, reused: r.reused, checked: out, security: r.out.security || '' });
 }
 
 const verdicts: Verdict[] = [];
-async function plantRound(roundNo: number, n: number) {
-  const r = await ask<{ candidates: Candidate[]; security?: string }>(`plants-${roundNo}`, { system: PLANT_SYSTEM, prompt: plantPrompt(n, verdicts), schema: plantSchema, model: PLANT_MODEL, timeoutMs: 30 * 60_000 });
-  const cands = (r.out.candidates ?? []).map((c) => ({ ...c, file: String(c.file ?? '').replace(/^\.\//, ''), line: Number(c.line) }));
-  step('plants-ask', { round: roundNo, model: r.model, ms: r.durationMs, costUsd: round(r.costUsd), turns: r.turns, reused: r.reused, candidates: cands.length, security: r.out.security || '' });
+async function plantRound(roundNo: number, n: number, only: Kind[] = []) {
+  const r = await ask<{ candidates: Candidate[]; security?: string }>(`plants-${roundNo}`, { system: PLANT_SYSTEM, prompt: plantPrompt(n, verdicts, only), schema: plantSchema, model: PLANT_MODEL, timeoutMs: 30 * 60_000 });
+  const cands = (r.out.candidates ?? []).map((c) => ({ ...c, file: String(c.file ?? '').replace(/^\.\//, ''), line: Number(c.line), headline: clean(String(c.headline ?? '')), what: clean(String(c.what ?? '')), stated: String(c.stated ?? '') }));
+  step('plants-ask', {
+    round: roundNo,
+    model: r.model,
+    ms: r.durationMs,
+    costUsd: round(r.costUsd),
+    turns: r.turns,
+    reused: r.reused,
+    asked: n,
+    only,
+    candidates: cands.map((c) => ({ at: `${c.file}:${c.line}`, kind: c.kind, original: c.original, planted: c.planted, stated: c.stated, what: c.what, headline: c.headline, test: c.test ?? '' })),
+    security: r.out.security || '',
+  });
   const taken = new Set(verdicts.map((v) => `${v.c.file}:${v.c.line}`));
   const tv = Date.now();
   const fresh: Verdict[] = cands.map((c) => {
-    const why = staticCheck(c, taken);
+    let { why, statedIn } = staticCheck(c, taken);
+    if (!why && only.length && !only.includes(c.kind)) why = `this round asked only for ${only.join(' and ')}; this one is ${c.kind}`;
     if (why) log('plants', `${c.file}:${c.line} dropped before the tests: ${why}`);
     else taken.add(`${c.file}:${c.line}`);
-    return { c, round: roundNo, stopId: blockOf(c.file, c.line)?.stop ?? '', hasNote: hasNote(c.file, c.line), failedTests: [], why };
+    return { c, round: roundNo, stopId: blockOf(c.file, c.line)?.stop ?? '', hasNote: hasNote(c.file, c.line), statedIn, failedTests: [], failures: [], why };
   });
   await pool(
     fresh.filter((v) => !v.why),
@@ -544,7 +722,10 @@ async function plantRound(roundNo: number, n: number) {
       else if (run.code === 0 && !failed.length) v.why = 'no test caught it: all tests still pass with this line';
       else if (!failed.length) v.why = `the test run broke without a failing test (exit ${run.code}): ${run.tail.split('\n').find((l) => /error/i.test(l))?.slice(0, 160) ?? ''}`;
       else if (failed.length > Math.max(8, totalTests * 0.4)) v.why = `${failed.length} of ${totalTests} tests fail with this line: that is a crash, not a hidden bug`;
-      else v.failedTests = failed;
+      else {
+        v.failedTests = failed;
+        v.failures = failed.map((t) => ({ test: t, ...(run.failures[t] ? { message: run.failures[t] } : {}) }));
+      }
       log('plants', `${v.c.file}:${v.c.line} ${v.why ? `dropped: ${v.why}` : `proven: ${failed.length} test${failed.length === 1 ? '' : 's'} fail`}`);
     },
   );
@@ -554,49 +735,71 @@ async function plantRound(roundNo: number, n: number) {
   step('plants-verify', {
     round: roundNo,
     ms: msTests,
-    proven: fresh.filter((v) => !v.why).map((v) => ({ at: `${v.c.file}:${v.c.line}`, stop: v.stopId, kind: v.c.kind ?? '', original: v.c.original, planted: v.c.planted, failedTests: v.failedTests })),
-    rejected: fresh.filter((v) => v.why).map((v) => ({ at: `${v.c.file}:${v.c.line}`, kind: v.c.kind ?? '', original: v.c.original, planted: v.c.planted, why: v.why, ...(v.failedTests.length ? { failedTests: v.failedTests } : {}) })),
+    kept: fresh.filter((v) => !v.why).map((v) => ({ at: `${v.c.file}:${v.c.line}`, stop: v.stopId, kind: v.c.kind, original: v.c.original, planted: v.c.planted, stated: v.c.stated, statedIn: v.statedIn, headline: v.c.headline, failures: v.failures })),
+    dropped: fresh.filter((v) => v.why).map((v) => ({ at: `${v.c.file}:${v.c.line}`, stop: v.stopId, kind: v.c.kind, original: v.c.original, planted: v.c.planted, why: v.why, ...(v.failedTests.length ? { failedTests: v.failedTests } : {}) })),
   });
 }
 
 await plantRound(1, CANDIDATES);
-if (verdicts.filter((v) => !v.why).length < 2) {
-  log('plants', 'fewer than 2 proven; asking once more');
-  await plantRound(2, CANDIDATES);
+{
+  // one more round at most: for anything when few lines passed, or only for access and money when those are few
+  const ok = verdicts.filter((v) => !v.why);
+  const strong = ok.filter((v) => STRONG.includes(v.c.kind)).length;
+  if (ok.length < MIN_KEPT) {
+    log('plants', `${ok.length} kept, fewer than ${MIN_KEPT}; asking once more`);
+    await plantRound(2, CANDIDATES_MORE);
+  } else if (strong < MIN_STRONG) {
+    log('plants', `${strong} access or money lines kept, fewer than ${MIN_STRONG}; asking once more, only for those`);
+    await plantRound(2, CANDIDATES_MORE, STRONG);
+  }
 }
 
-/**
- * Up to KEEP. Lines without a note first, then the order the model gave (best first). Each next one is taken from
- * a stop and a file not used yet where possible, and as far along the tour from the ones already taken as possible,
- * so that a second read cannot be passed by looking where the first planted line was.
- */
-function choose(proven: Verdict[]): Verdict[] {
-  const order = [...proven].sort((a, b) => Number(a.hasNote) - Number(b.hasNote));
-  const out: Verdict[] = [];
-  const at = (v: Verdict) => stops.findIndex((s) => s.id === v.stopId);
-  const score = (v: Verdict) =>
-    (out.some((o) => o.stopId === v.stopId) ? 0 : 200) + (out.some((o) => o.c.file === v.c.file) ? 0 : 100) + Math.min(99, ...out.map((o) => Math.abs(at(o) - at(v))));
-  while (out.length < KEEP && order.length) {
-    let best = 0;
-    if (out.length) for (let i = 1; i < order.length; i++) if (score(order[i]!) > score(order[best]!)) best = i;
-    out.push(order.splice(best, 1)[0]!);
-  }
-  return out;
-}
-const proven = verdicts.filter((v) => !v.why);
-const chosen = choose(proven);
-const plants: Plant[] = chosen.map((v) => ({
-  id: `plant-${basename(v.c.file).replace(/\.[^.]+$/, '').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${v.c.line}`,
+/** Every planted line that passed every check is kept. A reader meets access and money first, format last. */
+const kept = verdicts
+  .filter((v) => !v.why)
+  .map((v, i) => ({ v, i }))
+  .sort((a, b) => KINDS.indexOf(a.v.c.kind) - KINDS.indexOf(b.v.c.kind) || Number(a.v.hasNote) - Number(b.v.hasNote) || a.i - b.i)
+  .map((x) => x.v);
+const plantId = (v: Verdict, long: boolean) => {
+  const parts = v.c.file.replace(/\.[^./]+$/, '').split('/');
+  return `plant-${(long ? parts.slice(-2) : parts.slice(-1)).join('-').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${v.c.line}`;
+};
+const shortIds = kept.map((v) => plantId(v, false));
+const plants: Plant[] = kept.map((v, i) => ({
+  id: shortIds.indexOf(shortIds[i]!) !== shortIds.lastIndexOf(shortIds[i]!) ? plantId(v, true) : shortIds[i]!,
   file: v.c.file,
   line: v.c.line,
   original: v.c.original,
   planted: v.c.planted,
   what: v.c.what.trim(),
   failedTests: v.failedTests,
+  kind: v.c.kind,
+  headline: v.c.headline,
+  stated: v.c.stated,
+  failures: v.failures,
 }));
-step('plants-choose', { proven: proven.length, kept: chosen.map((v) => ({ at: `${v.c.file}:${v.c.line}`, stop: v.stopId })), notKept: proven.filter((v) => !chosen.includes(v)).map((v) => ({ at: `${v.c.file}:${v.c.line}`, stop: v.stopId, why: 'proven, but three others were kept' })) });
+const byKind = Object.fromEntries(KINDS.map((k) => [k, plants.filter((p) => p.kind === k).length]));
+step('plants-keep', {
+  candidates: verdicts.length,
+  kept: plants.length,
+  byKind,
+  plants: kept.map((v, i) => ({ id: plants[i]!.id, at: `${v.c.file}:${v.c.line}`, stop: v.stopId, kind: v.c.kind, statedIn: v.statedIn, round: v.round })),
+  dropped: verdicts.filter((v) => v.why).map((v) => ({ at: `${v.c.file}:${v.c.line}`, kind: v.c.kind, round: v.round, why: v.why })),
+});
 
-/* ---------- step 4: write ---------- */
+/* ---------- step 5: write ---------- */
+
+// the marks go on now, after every planted line is settled: neither step has seen the other's result
+const focus = await focusJob;
+if (focus instanceof Error) die(`the focus step failed: ${focus.message}`);
+for (const s of stops) for (const b of s.blocks) if (b.type === 'code') delete b.focus;
+for (const f of focus) (f.block.focus ??= []).push(f.focus);
+for (const s of stops) for (const b of s.blocks) if (b.type === 'code') b.focus?.sort((x, y) => x.from - y.from);
+const focusByStop = stops.map((s) => {
+  const mine = focus.filter((f) => f.stop === s);
+  return { stop: s.id, ranges: mine.length, lines: mine.reduce((a, f) => a + f.focus.to - f.focus.from + 1, 0), cap: focusCap(s) };
+});
+step('focus-apply', { ranges: focus.length, lines: focusByStop.reduce((a, f) => a + f.lines, 0), stopsWithout: focusByStop.filter((f) => !f.ranges).map((f) => f.stop), byStop: focusByStop });
 
 const plan: Plan = { schema: 1, pr, intro: checked.intro, stops, plants, madeBy: { model: TOUR_MODEL, costUsd: round(cost), at: new Date().toISOString(), plantModel: PLANT_MODEL } };
 writeFileSync(join(OUT, 'plan.json'), JSON.stringify(plan, null, 1) + '\n');
@@ -605,17 +808,20 @@ step('write', {
   stops: stops.length,
   questions: nQuestions,
   plants: plants.length,
+  plantsByKind: byKind,
+  focusRanges: focus.length,
   coverage: { changed: cover.changed, onTour: cover.onTour },
   costUsd: round(cost),
   totalMs: Date.now() - t0,
   warnings,
 });
 
-console.log(`${join(OUT, 'plan.json')}: ${stops.length} stops, ${nQuestions} questions, ${plants.length} planted lines · source lines on the tour ${cover.onTour}/${cover.changed} · $${cost.toFixed(2)} · ${((Date.now() - t0) / 60000).toFixed(1)} min`);
-for (const p of plants) console.log(`  ${p.file}:${p.line}\n    - ${p.original.trim()}\n    + ${p.planted.trim()}\n    fails: ${p.failedTests.join(' | ')}`);
+console.log(`${join(OUT, 'plan.json')}: ${stops.length} stops, ${nQuestions} questions, ${plants.length} planted lines (${KINDS.map((k) => `${byKind[k]} ${k}`).join(', ')}), ${focus.length} focus ranges · source lines on the tour ${cover.onTour}/${cover.changed} · $${cost.toFixed(2)} · ${((Date.now() - t0) / 60000).toFixed(1)} min`);
+for (const p of plants) console.log(`  [${p.kind}] ${p.file}:${p.line}\n    - ${p.original.trim()}\n    + ${p.planted.trim()}\n    ${p.headline}\n    stated: "${p.stated}"\n    fails: ${p.failures!.map((f) => `${f.test}${f.message ? ` (${f.message})` : ''}`).join(' | ')}`);
+for (const v of verdicts.filter((x) => x.why)) console.log(`  dropped ${v.c.file}:${v.c.line} [${v.c.kind}]: ${v.why.slice(0, 300)}`);
 for (const w of warnings) console.log(`  WARNING: ${w}`);
 if (plants.length < 2) {
-  console.error(`\nplan.ts: only ${plants.length} planted line${plants.length === 1 ? '' : 's'} could be proven by the tests. plan.json is written, but a read needs at least one, and a second read needs another.`);
+  console.error(`\nplan.ts: only ${plants.length} planted line${plants.length === 1 ? '' : 's'} passed every check. plan.json is written, but a read needs at least one, and a second read needs another.`);
   process.exit(plants.length ? 0 : 1);
 }
 process.exit(0);

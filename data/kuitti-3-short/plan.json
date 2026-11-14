@@ -1,0 +1,516 @@
+{
+ "schema": 1,
+ "pr": {
+  "repo": "ToukoUrsin/junction26-kuitti",
+  "number": 2,
+  "title": "Invoice search, share link, notes and CSV export",
+  "url": "https://github.com/ToukoUrsin/junction26-kuitti/pull/2",
+  "author": "Crashtest author agent",
+  "authorIsAgent": true,
+  "baseSha": "c9d4f4bd080e451ccd7292e28b2156dc7eb6c10f",
+  "headSha": "55559f75e42757817126fb003058b7ae404ac72b",
+  "additions": 935,
+  "deletions": 93,
+  "files": 12,
+  "issue": {
+   "number": 1,
+   "title": "Invoice search, share link, notes and CSV export",
+   "url": "https://github.com/ToukoUrsin/junction26-kuitti/issues/1",
+   "body": "As someone who sends a lot of invoices, I want to find invoices quickly, share one with a client without making them sign up, keep a note on an invoice, and take my list into a spreadsheet, so I spend less time hunting through pages and answering \"can you send that again?\" emails.\n\n## Acceptance criteria\n\n1. On the invoice list I can search by client name or invoice number. Search combines with the status filter, and both survive paging.\n2. Each row of the invoice list also shows how many line items the invoice has.\n3. An invoice has a free-text notes field. I can edit it; it shows on the invoice page.\n4. I can create a public share link for an invoice. Anyone with the link sees a read-only page of that invoice (client, line items, total, notes) without signing in. I can revoke the link, after which it shows \"not found\".\n5. I can export the invoices I am looking at (current search and filter) as a CSV file.\n6. Everything that worked before still works."
+  }
+ },
+ "intro": "This change adds four things to the invoice app: search on the invoice list, a free-text notes field, a public share link that can be revoked, and a CSV export of the current list. Each list row also shows how many line items the invoice has. The database gets two new invoice columns and a per-workspace change counter that the export cache uses.",
+ "stops": [
+  {
+   "id": "share-token",
+   "title": "A share link is a random token stored on the invoice row",
+   "why": "The issue asks for a link that works without sign-in and can be revoked. The token is 32 random bytes kept in `share_token`. Revoking sets the column back to `NULL`.",
+   "blocks": [
+    {
+     "type": "prose",
+     "text": "Three small functions own the token. Look at the `WHERE` part of the update in `enableShare`."
+    },
+    {
+     "type": "code",
+     "file": "src/lib/invoices.ts",
+     "from": 367,
+     "to": 387,
+     "notes": [
+      {
+       "line": 373,
+       "text": "32 random bytes in base64url are 43 characters, the length that `SHARE_TOKEN_RE` expects."
+      },
+      {
+       "line": 384,
+       "text": "A token of the wrong shape is refused before any query runs."
+      }
+     ],
+     "focus": [
+      {
+       "from": 373,
+       "to": 373,
+       "why": "Makes the token, it must be impossible to guess"
+      },
+      {
+       "from": 375,
+       "to": 375,
+       "why": "Writes the token only when none is stored yet"
+      },
+      {
+       "from": 380,
+       "to": 380,
+       "why": "Removes the token, so the old link stops working"
+      },
+      {
+       "from": 384,
+       "to": 385,
+       "why": "Finds the invoice a public visitor may see"
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "Two new routes call these functions. Both first load the invoice through `ownInvoice`. Their paths start with `/invoices/`, so the existing `requirePage` middleware checks the session and the CSRF token before the handler runs."
+    },
+    {
+     "type": "code",
+     "file": "src/routes/invoices.ts",
+     "from": 362,
+     "to": 386,
+     "focus": [
+      {
+       "from": 368,
+       "to": 370,
+       "why": "Decides who may create or revoke a share link"
+      }
+     ]
+    },
+    {
+     "type": "diagram",
+     "title": "Creating a share link",
+     "nodes": [
+      {
+       "id": "a",
+       "label": "Browser",
+       "sub": "owner, signed in",
+       "role": "outside"
+      },
+      {
+       "id": "b",
+       "label": "requirePage",
+       "sub": "session and CSRF",
+       "role": "existing"
+      },
+      {
+       "id": "c",
+       "label": "POST /invoices/:id/share",
+       "role": "new"
+      },
+      {
+       "id": "d",
+       "label": "ownInvoice",
+       "sub": "404 or 403",
+       "role": "new"
+      },
+      {
+       "id": "e",
+       "label": "enableShare",
+       "sub": "writes share_token",
+       "role": "new"
+      },
+      {
+       "id": "f",
+       "label": "GET /invoices/:id",
+       "sub": "shows the link",
+       "role": "changed"
+      }
+     ],
+     "edges": [
+      {
+       "from": "a",
+       "to": "b",
+       "label": "form post"
+      },
+      {
+       "from": "b",
+       "to": "c"
+      },
+      {
+       "from": "c",
+       "to": "d"
+      },
+      {
+       "from": "d",
+       "to": "e"
+      },
+      {
+       "from": "e",
+       "to": "f",
+       "label": "redirect"
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "After the redirect the invoice page shows a message. Two entries are added to the message table."
+    },
+    {
+     "type": "code",
+     "file": "src/routes/invoices.ts",
+     "from": 38,
+     "to": 44
+    },
+    {
+     "type": "prose",
+     "text": "The invoice page builds one of two cards. With a token it shows the link with a Copy button and a Revoke form. Without a token it shows a form that creates the link."
+    },
+    {
+     "type": "code",
+     "file": "src/routes/invoices.ts",
+     "from": 295,
+     "to": 331,
+     "notes": [
+      {
+       "line": 310,
+       "text": "The link uses the origin of the current request, so it matches the host the owner is using."
+      },
+      {
+       "line": 317,
+       "text": "`data-copy` names the input that the script copies from."
+      }
+     ],
+     "focus": [
+      {
+       "from": 300,
+       "to": 302,
+       "why": "Keeps another workspace from seeing the invoice and its share link"
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "A small script handles the Copy button."
+    },
+    {
+     "type": "code",
+     "file": "public/app.js",
+     "from": 45,
+     "to": 62,
+     "notes": [
+      {
+       "line": 57,
+       "text": "If the clipboard write is refused, the empty function runs and the label does not change."
+      }
+     ]
+    }
+   ],
+   "questions": [
+    {
+     "id": "share-token-q1",
+     "prompt": "An invoice already has a share link, and the owner posts to `/invoices/:id/share` again. Which token does the invoice have afterwards?",
+     "options": [
+      "A new token, and the old link stops working",
+      "The same token as before",
+      "Two tokens, and both links work",
+      "No token, the second call turns sharing off"
+     ],
+     "answer": 1,
+     "explain": "The update on line 375 has `AND share_token IS NULL`, so it changes nothing when a token exists. Line 376 then reads back the stored token.",
+     "reread": {
+      "file": "src/lib/invoices.ts",
+      "from": 371,
+      "to": 377
+     }
+    },
+    {
+     "id": "share-token-q2",
+     "prompt": "A signed-in user from another workspace posts to `/invoices/:id/share/revoke`. What happens?",
+     "options": [
+      "A 404 page, as if the invoice did not exist",
+      "The link is revoked",
+      "A redirect to the invoice list",
+      "A 403 page, and the token is unchanged"
+     ],
+     "answer": 3,
+     "explain": "Lines 368 to 370 return a 403 page when the invoice belongs to another workspace. The route returns that error before it reaches `revokeShare`.",
+     "reread": {
+      "file": "src/routes/invoices.ts",
+      "from": 363,
+      "to": 372
+     }
+    }
+   ]
+  },
+  {
+   "id": "searched-list",
+   "title": "A search reads all matching ids once, then counts and pages in memory",
+   "why": "During a search the tab counts must follow the search. The code reads every matching invoice once from an index, counts the tabs in JavaScript, and loads full rows only for the page that is shown.",
+   "blocks": [
+    {
+     "type": "prose",
+     "text": "The function starts with two queries. The first finds clients of this workspace whose name matches. The second finds every invoice of this workspace that matches by number or belongs to one of those clients. **It reads only id, status and due date.**"
+    },
+    {
+     "type": "code",
+     "file": "src/lib/invoices.ts",
+     "from": 130,
+     "to": 151,
+     "notes": [
+      {
+       "line": 146,
+       "text": "`INDEXED BY` makes SQLite use the index created in `LATE_INDEXES`."
+      },
+      {
+       "line": 148,
+       "text": "The client ids travel as one JSON array, and `json_each` turns it back into rows."
+      }
+     ],
+     "focus": [
+      {
+       "from": 141,
+       "to": 141,
+       "why": "Limits the client name match to the caller's workspace"
+      },
+      {
+       "from": 147,
+       "to": 148,
+       "why": "Limits matching invoices to the caller's workspace"
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "Next the tab counts are made from that list, and the page is cut out of it. Look at what `counts.all` is, and at what happens when no id is left for the page."
+    },
+    {
+     "type": "code",
+     "file": "src/lib/invoices.ts",
+     "from": 152,
+     "to": 178,
+     "notes": [
+      {
+       "line": 164,
+       "text": "`inTab` is the list for the chosen tab, still in display order."
+      },
+      {
+       "line": 172,
+       "text": "Full rows, with total and line count, are loaded only for this page's ids."
+      }
+     ],
+     "focus": [
+      {
+       "from": 172,
+       "to": 172,
+       "why": "Loads rows by id only, with no workspace check here"
+      }
+     ]
+    },
+    {
+     "type": "diagram",
+     "title": "Steps of a searched list",
+     "nodes": [
+      {
+       "id": "a",
+       "label": "clients query",
+       "sub": "name LIKE pattern",
+       "role": "new"
+      },
+      {
+       "id": "b",
+       "label": "invoices index scan",
+       "sub": "id, status, due_date",
+       "role": "new"
+      },
+      {
+       "id": "c",
+       "label": "counts",
+       "sub": "per tab, in memory",
+       "role": "new"
+      },
+      {
+       "id": "d",
+       "label": "page ids",
+       "sub": "slice of PAGE_SIZE",
+       "role": "new"
+      },
+      {
+       "id": "e",
+       "label": "LIST_COLUMNS query",
+       "sub": "full rows for the page",
+       "role": "new"
+      }
+     ],
+     "edges": [
+      {
+       "from": "a",
+       "to": "b",
+       "label": "client ids"
+      },
+      {
+       "from": "b",
+       "to": "c"
+      },
+      {
+       "from": "c",
+       "to": "d"
+      },
+      {
+       "from": "d",
+       "to": "e"
+      }
+     ]
+    }
+   ],
+   "questions": [
+    {
+     "id": "searched-list-q1",
+     "prompt": "A search matches 40 invoices, and 10 of them are paid. The user is on the Paid tab. What is `counts.all`?",
+     "options": [
+      "10",
+      "25",
+      "40",
+      "The number of all invoices in the workspace"
+     ],
+     "answer": 2,
+     "explain": "Line 153 sets `all` to `matches.length`, the number of search matches, whatever tab is chosen. Line 162 then takes `total` from the chosen tab.",
+     "reread": {
+      "file": "src/lib/invoices.ts",
+      "from": 153,
+      "to": 162
+     }
+    },
+    {
+     "id": "searched-list-q2",
+     "prompt": "The search text matches no client and no invoice number. How many database queries does `searchInvoices` run?",
+     "options": [
+      "One",
+      "Two",
+      "Three",
+      "Four"
+     ],
+     "answer": 1,
+     "explain": "The client query and the invoice scan always run. Lines 166 and 176 skip the last query and return an empty list when `ids` is empty.",
+     "reread": {
+      "file": "src/lib/invoices.ts",
+      "from": 164,
+      "to": 176
+     }
+    }
+   ]
+  }
+ ],
+ "plants": [
+  {
+   "id": "plant-invoices-380",
+   "file": "src/lib/invoices.ts",
+   "line": 380,
+   "original": "  getDb().query(\"UPDATE invoices SET share_token = NULL WHERE id = ?\").run(invoiceId);",
+   "planted": "  getDb().query(\"UPDATE invoices SET share_token = NULL WHERE id = ? AND share_token IS NULL\").run(invoiceId);",
+   "what": "The revoke update now only touches rows that have no token, so it never clears a token. A share link keeps working after the owner revoked it.",
+   "failedTests": [
+    "share links > create, view without signing in, revoke",
+    "share links > creating twice keeps the same link; revoking and re-creating makes a new one"
+   ],
+   "kind": "access",
+   "headline": "You would have approved a change that lets a customer link keep working after the owner switched it off.",
+   "stated": "Revoking sets the column back to `NULL`.",
+   "failures": [
+    {
+     "test": "share links > create, view without signing in, revoke",
+     "message": "expect(received).toBeNull(), Received: \"AIivRG-WcdfNLZMC8VRaz8SdMu5U_oErNtefDr7gFeQ\""
+    },
+    {
+     "test": "share links > creating twice keeps the same link; revoking and re-creating makes a new one",
+     "message": "Expected: not \"LYa2ZkZuwgKZq6r-wpjItDKJ_Gv6YH8t7zyhztftiD4\""
+    }
+   ]
+  },
+  {
+   "id": "plant-invoices-148",
+   "file": "src/lib/invoices.ts",
+   "line": 148,
+   "original": "         AND (number LIKE ? ESCAPE '\\\\' OR client_id IN (SELECT value FROM json_each(?)))",
+   "planted": "         AND (number LIKE ? ESCAPE '\\\\' AND client_id IN (SELECT value FROM json_each(?)))",
+   "what": "An invoice must now match both the number and the client name. A search by client name or by invoice number finds almost nothing.",
+   "failedTests": [
+    "invoice search > finds invoices by client name, case-insensitively",
+    "invoice search > finds an invoice by its number",
+    "invoice search > combines with the status filter, and tab counts follow the search",
+    "invoice search > search and filter survive paging",
+    "invoice search > the JSON API accepts q too"
+   ],
+   "kind": "logic",
+   "headline": "You would have approved a search that does not find invoices by client name or by invoice number.",
+   "stated": "The second finds every invoice of this workspace that matches by number or belongs to one of those clients.",
+   "failures": [
+    {
+     "test": "invoice search > finds invoices by client name, case-insensitively",
+     "message": "Expected: 10, Received: 0"
+    },
+    {
+     "test": "invoice search > finds an invoice by its number",
+     "message": "Expected: 1, Received: 0"
+    },
+    {
+     "test": "invoice search > combines with the status filter, and tab counts follow the search",
+     "message": "Expected: 10, Received: 0"
+    },
+    {
+     "test": "invoice search > search and filter survive paging",
+     "message": "Expected to contain: \"Page 1 of 2\""
+    },
+    {
+     "test": "invoice search > the JSON API accepts q too",
+     "message": "Expected: 1, Received: 0"
+    }
+   ]
+  },
+  {
+   "id": "plant-invoices-61",
+   "file": "src/lib/invoices.ts",
+   "line": 61,
+   "original": "  let sql = \"i.workspace_id = ?\";",
+   "planted": "  let sql = \"i.workspace_id >= ?\";",
+   "what": "The shared WHERE clause now keeps every invoice whose workspace id is equal to or higher than the user's, not only the user's own workspace. The invoice list and the CSV export then show invoices that belong to other workspaces.",
+   "failedTests": [
+    "invoices > list shows 25 per page with a pager",
+    "workspace isolation > lists only show the own workspace"
+   ],
+   "kind": "access",
+   "headline": "You would have approved a change that shows a customer the invoices of other companies in their invoice list and in their spreadsheet export.",
+   "stated": "WHERE clause for a workspace's invoices narrowed by status and search.",
+   "failures": [
+    {
+     "test": "invoices > list shows 25 per page with a pager",
+     "message": "Expected: 17, Received: 25"
+    },
+    {
+     "test": "workspace isolation > lists only show the own workspace",
+     "message": "Expected to not contain: \"HC-\""
+    }
+   ]
+  }
+ ],
+ "madeBy": {
+  "model": "claude-fable-5-2",
+  "costUsd": 7.9673,
+  "at": "2026-11-14T16:43:21.776Z",
+  "plantModel": "claude-opus-5-5"
+ },
+ "short": {
+  "stops": 2,
+  "of": 9
+ },
+ "cold": {
+  "blocks": [
+   {
+    "file": "src/lib/invoices.ts",
+    "from": 50,
+    "to": 87
+   }
+  ],
+  "plants": [
+   "plant-invoices-61"
+  ]
+ }
+}

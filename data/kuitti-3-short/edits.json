@@ -1,0 +1,5 @@
+[
+  { "find": "Every route passes the raw `q` value from the URL through `parseSearch` first. The import list at the top was only reformatted, with one new type added.", "replace": "The top of the same file. Every route passes the raw `q` value from the URL through `parseSearch` before it reaches the two helpers above. The import list was only reformatted, with one new type added." },
+  { "find": "`MAX_NOTES` belongs to the notes feature, shown in a later stop.", "replace": "`MAX_NOTES` belongs to the notes feature, which the full read shows." },
+  { "find": "The `Invoice` type is used by the share-link lookup later in this file.", "replace": "The `Invoice` type is used by the share-link lookup in the next stop." }
+]

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Flag, PublicTour } from '../../../shared/tour';
-import { FlagFill, Logo, Pull, StatusDone, StatusLocked, StatusNow, StatusTodo, X } from './icons';
+import { Eye, FlagFill, Logo, Pull, StatusDone, StatusNow, StatusTodo, X } from './icons';
 
 export type At = 'intro' | 'handin' | (string & {});
 
@@ -8,31 +8,32 @@ interface Props {
   tour: PublicTour;
   at: At;
   done: (stopId: string) => boolean;
-  reachable: (at: At) => boolean;
   go: (at: At) => void;
   jump: (file: string, line: number) => void;
   unflag: (f: Flag) => void;
 }
 
-export function Sidebar({ tour, at, done, reachable, go, jump, unflag }: Props) {
+export function Sidebar({ tour, at, done, go, jump, unflag }: Props) {
   const { state } = tour;
   const all = tour.stops.flatMap((s) => s.questions);
   const right = all.filter((q) => state.answers[q.id]?.right).length;
   const signed = !!state.signature;
+  const started = !!state.startedAt;
 
-  const item = (key: At, label: string, mark: ReactNode, n?: number) => {
-    const open = reachable(key);
+  const item = (key: At, label: string, mark: ReactNode, sub?: ReactNode) => {
+    const open = key === 'intro' || started;
     return (
       <button
         key={key}
         disabled={!open}
         onClick={() => go(key)}
-        title={open ? label : 'Answer the questions of the stops before this one first'}
         className={`group flex w-full items-start gap-2.5 rounded-md px-2 py-[6px] text-left text-[13px] leading-[1.35] transition-colors ${at === key ? 'bg-active text-fg' : open ? 'text-fg2 hover:bg-hover hover:text-fg' : 'text-fg4'}`}
       >
         <span className="mt-[2px] flex-none">{mark}</span>
-        <span className="line-clamp-2 min-w-0 flex-1">{label}</span>
-        {n !== undefined && <span className="mt-px flex-none text-[11px] text-fg4">{n}</span>}
+        <span className="min-w-0 flex-1">
+          {label}
+          {sub && <span className="mt-0.5 flex flex-wrap items-center gap-x-2.5 text-[11px] text-fg4">{sub}</span>}
+        </span>
       </button>
     );
   };
@@ -42,6 +43,7 @@ export function Sidebar({ tour, at, done, reachable, go, jump, unflag }: Props) 
       <div className="flex h-12 flex-none items-center gap-2.5 px-4">
         <Logo size={20} />
         <span className="text-[14px] font-[590] tracking-[-0.01em]">Readback</span>
+        {tour.short && <span className="ml-auto rounded bg-flag/15 px-1.5 py-px text-[10.5px] font-[590] text-flag">Short read</span>}
       </div>
 
       <div className="mx-2 mb-3 rounded-lg border border-line bg-raised px-3 py-2.5">
@@ -52,14 +54,39 @@ export function Sidebar({ tour, at, done, reachable, go, jump, unflag }: Props) 
           </span>
           {tour.pr.authorIsAgent && <span className="ml-auto rounded bg-accent-soft px-1.5 py-px text-[10.5px] font-[590] text-accent-hi">AI-written</span>}
         </div>
-        <p className="mt-1 line-clamp-2 text-[12.5px] leading-[1.4] font-[510] text-fg">{tour.pr.title}</p>
+        <p className="mt-1 text-[12.5px] leading-[1.4] font-[510] text-fg">{tour.pr.title}</p>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        <p className="px-2 pt-1 pb-1.5 text-[11.5px] font-[510] text-fg4">Tour</p>
-        {item('intro', 'Before you start', state.startedAt ? <StatusDone /> : <StatusNow />)}
-        {tour.stops.map((s, i) => item(s.id, s.title, done(s.id) ? <StatusDone /> : at === s.id ? <StatusNow /> : reachable(s.id) ? <StatusTodo /> : <StatusLocked />, i + 1))}
-        {item('handin', signed ? 'Signed' : state.caught ? 'Sign' : 'Hand in', signed ? <StatusDone /> : at === 'handin' ? <StatusNow /> : reachable('handin') ? <StatusTodo /> : <StatusLocked />)}
+        <p className="px-2 pt-1 pb-1.5 text-[11.5px] font-[510] text-fg4">Review</p>
+        {item('intro', 'Before you start', started ? <StatusDone /> : <StatusNow />)}
+        {tour.stops.map((s) => {
+          const open = s.questions.filter((q) => !state.answers[q.id]?.right).length;
+          const code = s.blocks.flatMap((b) => (b.type === 'code' ? [b] : []));
+          const focus = code.reduce((a, b) => a + (b.focus?.length ?? 0), 0);
+          const flagged = state.flags.filter((f) => code.some((b) => b.file === f.file && b.from <= f.line && f.line <= b.to)).length;
+          return item(
+            s.id,
+            s.title,
+            done(s.id) ? <StatusDone /> : at === s.id ? <StatusNow /> : <StatusTodo />,
+            started && (focus > 0 || flagged > 0 || open > 0) ? (
+              <>
+                {focus > 0 && (
+                  <span className="flex items-center gap-1">
+                    <Eye size={11} className="text-warn/80" /> {focus} to read closely
+                  </span>
+                )}
+                {flagged > 0 && (
+                  <span className="flex items-center gap-1 text-flag">
+                    <FlagFill size={10} /> {flagged}
+                  </span>
+                )}
+                {open > 0 && focus === 0 && <span>{open} {open === 1 ? 'question' : 'questions'}</span>}
+              </>
+            ) : undefined,
+          );
+        })}
+        {item('handin', signed ? 'Signed' : state.caught ? 'Sign' : 'Hand in', signed ? <StatusDone /> : at === 'handin' ? <StatusNow /> : <StatusTodo />)}
 
         <p className="flex items-center gap-2 px-2 pt-5 pb-1.5 text-[11.5px] font-[510] text-fg4">
           Flagged lines
@@ -68,7 +95,7 @@ export function Sidebar({ tour, at, done, reachable, go, jump, unflag }: Props) 
           </span>
         </p>
         {state.flags.length === 0 ? (
-          <p className="px-2 text-[12px] leading-[1.45] text-fg4">One line you will read was changed on purpose. Flag it when you see it.</p>
+          <p className="px-2 text-[12px] leading-[1.45] text-fg4">One line was changed on purpose. Click it and flag it when you see it.</p>
         ) : (
           state.flags.map((f) => (
             <div key={`${f.file}:${f.line}`} className="group flex items-center gap-2 rounded-md px-2 py-[5px] hover:bg-hover">

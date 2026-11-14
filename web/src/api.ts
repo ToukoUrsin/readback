@@ -1,7 +1,15 @@
 import type { AnswerState, Flag, PublicTour, ReaderState } from '../../shared/tour';
 
-/** the short read is the same page under /short, with its own server behind it */
-export const BASE = /^\/short(\/|$)/.test(location.pathname) ? '/short' : '';
+export interface ColdStats {
+  shown: number;
+  approved: number;
+  flaggedPlanted: number;
+  flaggedOther: number;
+  skipped: number;
+}
+
+/** "/" and "/short" are the short read, "/full" the read that approves: the same page with another server behind it */
+export const BASE = /^\/(short|full)(\/|$)/.exec(location.pathname)?.[0].replace(/\/$/, '') ?? '';
 
 // our own test reads carry a mark, so they stay out of the counts
 try {
@@ -25,6 +33,10 @@ export const api = {
   handin: () => call<{ ok: boolean; tour: PublicTour }>('/api/handin', {}),
   sign: (name: string) => call<ReaderState>('/api/sign', { name }),
   reset: () => call<PublicTour>('/api/reset', {}),
+  unsign: () => call<ReaderState>('/api/unsign', {}),
+  cold: (b: { action: 'approve' | 'flag' | 'skip'; file?: string; line?: number }) => call<PublicTour>('/api/cold', b),
+  seen: (stop: string) => call<{ ok: boolean }>('/api/seen', { stop }).catch(() => undefined),
+  stats: () => call<{ cold?: ColdStats }>('/api/stats'),
 };
 
 /** The guide's answer, piece by piece. */

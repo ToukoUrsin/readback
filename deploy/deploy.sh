@@ -11,5 +11,5 @@ hsec exec --only JUNCTION_GEMINI_API_KEY,FLY_API_TOKEN -- sh -c 'flyctl secrets 
 hsec exec --only FLY_API_TOKEN -- flyctl deploy --app "$APP" --config deploy/fly.toml --dockerfile deploy/Dockerfile --remote-only --ha=false .
 hsec exec --only FLY_API_TOKEN -- flyctl scale count 1 --app "$APP" --yes >/dev/null
 URL="https://${APP}.fly.dev"
-curl --fail --silent --show-error "$URL/api/tour" >/dev/null
+curl --fail --silent --show-error "$URL/healthz" >/dev/null
 echo "$URL"

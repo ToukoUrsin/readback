@@ -1,0 +1,6 @@
+What the public copy serves. Copies, made by hand:
+  tour.json   <- data/kuitti-3-full/tour.json   (full read, PR head 55559f7, 11 planted lines)
+  short.json  <- data/kuitti-3-short/tour.json  (short read: 2 stops, with the cold test)
+The short read is made by:
+  bun gen/short.ts --plan data/kuitti-3-full/plan.json --stops share-token,searched-list --cold "src/lib/invoices.ts:50-87" --cold-plants plant-invoices-61 --no-plants plant-invoices-147 --out data/kuitti-3-short/plan.json
+  bun gen/materialize.ts --repo /bulk3/runs/readback/kuitti-live --plan data/kuitti-3-short/plan.json

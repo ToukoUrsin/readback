@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import type { Flag, PublicTour, Reveal, Token } from '../../../shared/tour';
+import type { Flag, PublicTour, Reveal } from '../../../shared/tour';
 import { api } from '../api';
 import { Tokens } from '../ui/Code';
-import { ArrowRight, Check, FlagFill, X } from '../ui/icons';
+import { ArrowRight, Check, FlagFill, Warn, X } from '../ui/icons';
+import { RevealCard } from '../ui/Reveal';
 
 interface Props {
   tour: PublicTour;
@@ -14,85 +15,12 @@ interface Props {
   unflag: (f: Flag) => void;
   readAgain: () => void;
   reset: () => void;
+  go: (stopId: string) => void;
 }
 
 const fmtTime = (s: number) => (s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`);
 
-/** The two lines without their shared indent, and where they differ (character offsets into each). */
-function differ(a: Token[], b: Token[]) {
-  const ta = a.map((t) => t[0]).join('');
-  const tb = b.map((t) => t[0]).join('');
-  const indent = Math.min(ta.length - ta.trimStart().length, tb.length - tb.trimStart().length);
-  let pre = 0;
-  while (pre < ta.length && pre < tb.length && ta[pre] === tb[pre]) pre++;
-  let suf = 0;
-  while (suf < ta.length - pre && suf < tb.length - pre && ta[ta.length - 1 - suf] === tb[tb.length - 1 - suf]) suf++;
-  return { indent, pre, endA: ta.length - suf, endB: tb.length - suf };
-}
-
-/** tokens from `skip` on, with the characters in [from, to) marked */
-function Marked({ tokens, skip, from, to, mark }: { tokens: Token[]; skip: number; from: number; to: number; mark: string }) {
-  const out: { text: string; c: string; on: boolean }[] = [];
-  let at = 0;
-  for (const [text, c] of tokens) {
-    const cuts = [...new Set([0, text.length, skip - at, from - at, to - at].filter((x) => x >= 0 && x <= text.length))].sort((x, y) => x - y);
-    for (let i = 0; i + 1 < cuts.length; i++) {
-      const s = at + cuts[i]!;
-      if (s >= skip) out.push({ text: text.slice(cuts[i]!, cuts[i + 1]!), c, on: s >= from && s < to });
-    }
-    at += text.length;
-  }
-  return (
-    <>
-      {out.map((o, i) => (
-        <span key={i} className={`${o.c ? `tk-${o.c}` : ''} ${o.on ? mark : ''}`}>
-          {o.text}
-        </span>
-      ))}
-    </>
-  );
-}
-
-function RevealCard({ r, stopTitle, tone }: { r: Reveal; stopTitle: string; tone: 'missed' | 'caught' }) {
-  const d = differ(r.planted, r.original);
-  const row = (sign: string, tokens: Token[], cls: string, to: number, mark: string) => (
-    <div className={`row min-w-0! ${cls}`}>
-      <span className="num cursor-default!">{sign}</span>
-      <span className="src min-w-0 pr-4! whitespace-pre-wrap! [overflow-wrap:anywhere]">
-        <Marked tokens={tokens} skip={d.indent} from={d.pre} to={to} mark={mark} />
-      </span>
-    </div>
-  );
-  return (
-    <div className="card overflow-hidden">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-2.5">
-        <span className="font-mono text-[12px] text-fg2">
-          {r.file}:{r.line}
-        </span>
-        <span className="text-[12px] text-fg4">in “{stopTitle}”</span>
-      </div>
-      <div>
-        <div className="code py-2">
-          <p className="px-4 pb-1 font-sans text-[11.5px] text-fg4">{tone === 'missed' ? 'What you were shown' : 'What you were shown, and flagged'}</p>
-          {row('−', r.planted, 'del [&_.src]:no-underline! [&_.src]:opacity-100!', d.endA, 'rounded-[3px] bg-[#e5484d]/30')}
-          <p className="px-4 pt-2 pb-1 font-sans text-[11.5px] text-fg4">What is on the branch</p>
-          {row('+', r.original, 'add', d.endB, 'rounded-[3px] bg-[#3fb950]/25')}
-        </div>
-      </div>
-      <div className="border-t border-line px-4 py-3">
-        <p className="text-[13.5px] leading-[1.55] text-fg2">{r.what}</p>
-        {r.failedTests.length > 0 && (
-          <p className="mt-2 text-[12.5px] leading-[1.55] text-fg4">
-            With the planted line, {r.failedTests.length === 1 ? 'this test of the project fails' : `${r.failedTests.length} tests of the project fail`}: {r.failedTests.slice(0, 3).join(' · ')}
-            {r.failedTests.length > 3 ? ` · and ${r.failedTests.length - 3} more` : ''}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, readAgain, reset }: Props) {
+export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, readAgain, reset, go }: Props) {
   const { state, short, other } = tour;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -131,23 +59,60 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, r
   /* ---- just missed ---- */
   if (missedNow)
     return (
-      <div className="rise mx-auto max-w-[720px] px-6 pt-14 pb-24">
+      <div className="rise mx-auto max-w-[720px] px-4 pt-10 pb-24 sm:px-6 sm:pt-14">
         <span className="chip border-bad/30! bg-bad-soft! text-bad!">
           <X size={12} /> Not approved
         </span>
-        <h1 className="mt-4 text-[32px] leading-[1.12] font-[590] tracking-[-0.022em]">You read past a planted bug.</h1>
-        <p className="mt-4 mb-6 text-[15.5px] leading-[1.6] text-fg2">This line was changed for your read only. It was not among the lines you flagged, so the read does not count and the change stays unapproved.</p>
-        <RevealCard r={missedNow} stopTitle={titleOf(missedNow.stopId)} tone="missed" />
-        <p className="mt-6 text-[15px] leading-[1.6] text-fg2">A different line is changed now. Your answers are kept. Read again from the first stop.</p>
-        <button
-          className="btn btn-primary btn-lg mt-5"
-          autoFocus
-          onClick={() => {
-            setMissedNow(null);
-            readAgain();
-          }}
-        >
-          Read again <ArrowRight size={15} />
+        <h1 className="mt-4 text-[26px] leading-[1.15] font-[590] tracking-[-0.022em] sm:text-[32px]">{missedNow.headline ?? 'You read past a planted bug.'}</h1>
+        <p className="mt-4 mb-6 text-[15.5px] leading-[1.6] text-fg2">Readback changed this line for your read only. It was not among the lines you flagged, so the read does not count and the change stays unapproved.</p>
+        <RevealCard r={missedNow} where={titleOf(missedNow.stopId)} />
+        {state.exhausted ? (
+          <>
+            <p className="mt-6 text-[15px] leading-[1.6] text-fg2">That was the last planted line this commit has for you: you have now been shown all of them. Your read of this commit cannot count any more. Someone else has to read it.</p>
+            <button className="btn mt-5" onClick={reset}>
+              Start over as a new reader
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="mt-6 text-[15px] leading-[1.6] text-fg2">A different line is changed now, and this one will not be used for you again. Your answers are kept.</p>
+            <button
+              className="btn btn-primary btn-lg mt-5"
+              onClick={() => {
+                setMissedNow(null);
+                readAgain();
+              }}
+            >
+              Review again <ArrowRight size={15} />
+            </button>
+          </>
+        )}
+      </div>
+    );
+
+  /* ---- every planted line shown, none caught ---- */
+  if (state.exhausted)
+    return (
+      <div className="rise mx-auto max-w-[720px] px-4 pt-10 pb-24 sm:px-6 sm:pt-14">
+        <span className="chip border-bad/30! bg-bad-soft! text-bad!">
+          <X size={12} /> Read failed
+        </span>
+        <h1 className="mt-4 text-[26px] leading-[1.15] font-[590] tracking-[-0.022em] sm:text-[32px]">This commit needs another reader.</h1>
+        <p className="mt-4 text-[15.5px] leading-[1.6] text-fg2">
+          You were shown {state.missed.length} planted {state.missed.length === 1 ? 'line' : 'lines'} and flagged none of them. A line you have seen revealed is never planted for you again, so there is nothing left that could show you read this commit. Someone else has to.
+        </p>
+        <div className="card mt-6 divide-y divide-line">
+          {state.missed.map((m) => (
+            <div key={`${m.file}:${m.line}`} className="flex items-baseline gap-3 px-4 py-2.5">
+              <span className="flex-none font-mono text-[12px] text-fg2">
+                {m.file.split('/').pop()}:{m.line}
+              </span>
+              <span className="min-w-0 text-[13px] leading-[1.5] text-fg3">{m.what}</span>
+            </div>
+          ))}
+        </div>
+        <button className="btn mt-6" onClick={reset}>
+          Start over as a new reader
         </button>
       </div>
     );
@@ -156,7 +121,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, r
   if (state.signature) {
     const s = state.signature;
     return (
-      <div className="rise mx-auto max-w-[720px] px-6 pt-14 pb-24">
+      <div className="rise mx-auto max-w-[720px] px-4 pt-10 pb-24 sm:px-6 sm:pt-14">
         <span className="chip border-ok/30! bg-ok-soft! text-ok!">
           <Check size={12} /> {short ? 'Short read done' : 'Read and approved'}
         </span>
@@ -169,7 +134,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, r
             ['Stops read', `${tour.stops.length} of ${short ? short.of : tour.stops.length}`],
             ['Questions right', `${s.questions} of ${s.questions}`, s.misses ? `${s.misses} wrong ${s.misses === 1 ? 'try' : 'tries'} first` : 'no wrong tries'],
             ['Planted bug', s.reads === 1 ? 'Caught' : `Caught on read ${s.reads}`, s.reads === 1 ? 'first read' : `missed ${s.reads - 1} before`],
-            ['Time', fmtTime(s.seconds)],
+            ['Time', fmtTime(s.seconds), s.lines && s.linesPerMinute ? `${s.lines} lines, ${s.linesPerMinute} a minute` : undefined],
           ].map(([k, v, sub]) => (
             <div key={k} className="px-4 py-3.5">
               <p className="text-[12px] text-fg4">{k}</p>
@@ -178,9 +143,18 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, r
             </div>
           ))}
         </div>
+        {s.fast && (
+          <p className="mt-3 flex items-start gap-2 rounded-lg border border-warn/25 bg-warn/[0.07] px-3.5 py-2.5 text-[13px] leading-[1.5] text-fg2">
+            <Warn size={14} className="mt-[2px] flex-none text-warn" />
+            <span>
+              <span className="font-[590] text-warn">Fast read. </span>
+              {s.linesPerMinute} lines a minute is a line a second or more, faster than a person reads code closely. The signature stands, and the record says how fast it was.
+            </span>
+          </p>
+        )}
         {state.caught && (
           <div className="mt-5">
-            <RevealCard r={state.caught} stopTitle={titleOf(state.caught.stopId)} tone="caught" />
+            <RevealCard r={state.caught} where={titleOf(state.caught.stopId)} shownAs="What you were shown, and flagged" />
           </div>
         )}
         {s.flagsForAuthor.length > 0 && (
@@ -208,11 +182,26 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, r
                 </a>
               )}
             </>
+          ) : tour.githubSoon ? (
+            <>
+              Within a few seconds the commit status readback/read on GitHub turns green for {s.headSha.slice(0, 7)}, and{' '}
+              <a className="text-accent-hi underline-offset-2 hover:underline" href={tour.pr.url} target="_blank" rel="noreferrer">
+                the pull request
+              </a>{' '}
+              is no longer blocked. A new commit needs a new read.{!tour.test && ' From this public copy the status says a visitor read it; your name stays in the record here.'}
+            </>
           ) : s.github ? (s.github.ok ? `On GitHub, the commit status readback/read is now green for ${s.headSha.slice(0, 7)}. A new commit needs a new read.` : `GitHub did not take the status: ${s.github.note}`) : 'On this public copy nothing is written to GitHub. On a real repository the signature sets the commit status readback/read, and the merge stays locked without it.'}
         </p>
-        <button className="btn mt-6" onClick={reset}>
-          Start over as a new reader
-        </button>
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <button className="btn" onClick={reset}>
+            Start over as a new reader
+          </button>
+          {tour.test && (
+            <button className="btn btn-ghost" onClick={async () => setTour({ ...tour, state: await api.unsign() })} title="Test reads only: back to the step before the signature">
+              Take the signature back
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -221,13 +210,13 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, r
   if (state.caught) {
     const others = state.flags.filter((f) => !(f.file === state.caught!.file && f.line === state.caught!.line));
     return (
-      <div className="rise mx-auto max-w-[720px] px-6 pt-14 pb-24">
+      <div className="rise mx-auto max-w-[720px] px-4 pt-10 pb-24 sm:px-6 sm:pt-14">
         <span className="chip border-ok/30! bg-ok-soft! text-ok!">
           <Check size={12} /> Planted bug caught
         </span>
         <h1 className="mt-4 text-[32px] leading-[1.12] font-[590] tracking-[-0.022em]">You caught it{state.read > 1 ? `, on read ${state.read}` : ''}.</h1>
-        <p className="mt-4 mb-6 text-[15.5px] leading-[1.6] text-fg2">This line was changed for your read only. The branch never had it, and the tour now shows the real code again.</p>
-        <RevealCard r={state.caught} stopTitle={titleOf(state.caught.stopId)} tone="caught" />
+        <p className="mt-4 mb-6 text-[15.5px] leading-[1.6] text-fg2">Readback changed this line for your read only. The agent never wrote it, and the tour now shows the real code again.</p>
+        <RevealCard r={state.caught} where={titleOf(state.caught.stopId)} shownAs="What you were shown, and flagged" />
         {others.length > 0 && (
           <p className="mt-5 text-[14px] leading-[1.6] text-fg2">
             You flagged {others.length} more {others.length === 1 ? 'line' : 'lines'}. {others.length === 1 ? 'It was' : 'They were'} not planted, so {others.length === 1 ? 'it goes' : 'they go'} back to the author as {others.length === 1 ? 'a question' : 'questions'}.
@@ -258,19 +247,31 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, r
 
   /* ---- ready to hand in ---- */
   const tooMany = state.flags.length > tour.maxFlags;
+  const open = tour.stops.map((st) => ({ st, n: st.questions.filter((q) => !state.answers[q.id]?.right).length })).filter((x) => x.n > 0);
+  const openCount = open.reduce((a, x) => a + x.n, 0);
   return (
-    <div className="rise mx-auto max-w-[720px] px-6 pt-14 pb-24">
+    <div className="rise mx-auto max-w-[720px] px-4 pt-10 pb-24 sm:px-6 sm:pt-14">
       <p className="text-[12.5px] font-[510] text-accent-hi">{state.read > 1 ? `Read ${state.read}` : 'Last step'}</p>
-      <h1 className="mt-3 text-[32px] leading-[1.12] font-[590] tracking-[-0.022em]">Hand in the read</h1>
-      <p className="mt-4 text-[15.5px] leading-[1.6] text-fg2">One of the lines you read was changed on purpose. If it is among the lines you flagged, the read counts. If it is not, you will see what you missed and read again.</p>
+      <h1 className="mt-3 text-[26px] leading-[1.15] font-[590] tracking-[-0.022em] sm:text-[32px]">Hand in your review</h1>
+      <p className="mt-4 text-[15.5px] leading-[1.6] text-fg2">One of the lines you read was changed on purpose. If it is among the lines you flagged, the review counts. If it is not, you will see what you missed and review again.</p>
 
       <div className="card mt-7 divide-y divide-line">
-        <div className="flex items-center gap-3 px-4 py-3">
-          <Check size={14} className="flex-none text-ok" />
-          <span className="text-[13.5px] text-fg">
-            {tour.stops.length} stops read, {all.length} of {all.length} questions right
-          </span>
-          <span className="ml-auto text-[12.5px] text-fg4">{misses ? `${misses} wrong ${misses === 1 ? 'try' : 'tries'}` : 'no wrong tries'}</span>
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-3">
+            {openCount ? <span className="size-[14px] flex-none rounded-full border-[1.5px] border-fg4" /> : <Check size={14} className="flex-none text-ok" />}
+            <span className="text-[13.5px] text-fg">
+              {all.length - openCount} of {all.length} questions right
+            </span>
+            <span className="ml-auto text-[12.5px] text-fg4">{misses ? `${misses} wrong ${misses === 1 ? 'try' : 'tries'}` : 'no wrong tries'}</span>
+          </div>
+          {open.map(({ st, n }) => (
+            <button key={st.id} className="mt-2 ml-[26px] flex items-center gap-2 text-left text-[13px] text-fg3 hover:text-fg" onClick={() => go(st.id)}>
+              <ArrowRight size={12} className="flex-none" />
+              <span>
+                {st.title}: {n} open
+              </span>
+            </button>
+          ))}
         </div>
         <div className="px-4 py-3">
           <div className="flex items-center gap-3">
@@ -278,7 +279,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, r
             <span className="text-[13.5px] text-fg">{state.flags.length === 0 ? 'No line flagged yet' : `${state.flags.length} ${state.flags.length === 1 ? 'line' : 'lines'} flagged`}</span>
             <span className={`ml-auto text-[12.5px] ${tooMany ? 'text-bad' : 'text-fg4'}`}>at most {tour.maxFlags}</span>
           </div>
-          {state.flags.length === 0 && <p className="mt-2 pl-[26px] text-[13px] leading-[1.5] text-fg3">Go back through the stops. On the line that does not do what its stop says, press Flag.</p>}
+          {state.flags.length === 0 && <p className="mt-2 pl-[26px] text-[13px] leading-[1.5] text-fg3">Go back through the stops. Click the line that does not do what its stop says, and flag it.</p>}
           {state.flags.map((f) => {
             const l = lineOf(f);
             return (
@@ -305,14 +306,14 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, r
 
       {state.missed.length > 0 && (
         <p className="mt-4 text-[13px] text-fg3">
-          Missed before: {state.missed.map((m) => `${m.file.split('/').pop()}:${m.line}`).join(', ')}.
+          Missed before: {state.missed.map((m) => `${m.file.split('/').pop()}:${m.line}`).join(', ')}. These are not planted again.
         </p>
       )}
       <div className="mt-7 flex flex-wrap items-center gap-4">
-        <button className="btn btn-primary btn-lg" disabled={busy || state.flags.length === 0 || tooMany} onClick={handin}>
+        <button className="btn btn-primary btn-lg" disabled={busy || openCount > 0 || state.flags.length === 0 || tooMany} onClick={handin}>
           Hand in <ArrowRight size={15} />
         </button>
-        {err ? <span className="text-[13px] text-bad">{err}</span> : tooMany ? <span className="text-[13px] text-bad">Remove {state.flags.length - tour.maxFlags} to hand in.</span> : null}
+        {err ? <span className="text-[13px] text-bad">{err}</span> : tooMany ? <span className="text-[13px] text-bad">Remove {state.flags.length - tour.maxFlags} to hand in.</span> : openCount ? <span className="text-[13px] text-fg3">Answer the open questions first.</span> : null}
       </div>
     </div>
   );
