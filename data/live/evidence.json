@@ -1,0 +1,536 @@
+{
+ "schema": 1,
+ "headSha": "55559f75e42757817126fb003058b7ae404ac72b",
+ "criteria": [
+  {
+   "n": 1,
+   "text": "On the invoice list I can search by client name or invoice number. Search combines with the status filter, and both survive paging."
+  },
+  {
+   "n": 2,
+   "text": "Each row of the invoice list also shows how many line items the invoice has."
+  },
+  {
+   "n": 3,
+   "text": "An invoice has a free-text notes field. I can edit it; it shows on the invoice page."
+  },
+  {
+   "n": 4,
+   "text": "I can create a public share link for an invoice. Anyone with the link sees a read-only page of that invoice (client, line items, total, notes) without signing in. I can revoke the link, after which it shows \"not found\"."
+  },
+  {
+   "n": 5,
+   "text": "I can export the invoices I am looking at (current search and filter) as a CSV file."
+  },
+  {
+   "n": 6,
+   "text": "Everything that worked before still works."
+  }
+ ],
+ "tests": {
+  "passed": 74,
+  "failed": 0,
+  "at": "2026-11-14T17:57:21.775Z"
+ },
+ "stops": {
+  "schema-upgrade": {
+   "criteria": [
+    1,
+    3,
+    4,
+    6
+   ],
+   "tests": [
+    "schema upgrade > a database from before notes and share links gets the new columns"
+   ],
+   "changes": {
+    "tried": 5,
+    "caught": 4,
+    "survived": [
+     {
+      "file": "src/db.ts",
+      "line": 237,
+      "original": "  for (const t of [\"workspace_versions\", \"line_items\", \"invoices\", \"clients\", \"sessions\", \"users\", \"workspaces\"]) {",
+      "changed": "  for (const t of [\"workspace_versions\", \"invoices\", \"clients\", \"sessions\", \"users\", \"workspaces\"]) {",
+      "effect": "After the demo data is loaded again over an existing database, invoices show leftover line items from before and their totals are too high."
+     }
+    ]
+   },
+   "risk": [
+    "data"
+   ],
+   "riskWhy": "A mistake in `ALTER TABLE ${table} ADD COLUMN ${ddl}` or in the check before it can stop an old database from opening or leave its invoices table without the new columns.",
+   "route": "read",
+   "routeWhy": [
+    "Adds columns to a database that has rows",
+    "1 of 5 changes went unnoticed by the tests"
+   ]
+  },
+  "search-filter-sql": {
+   "criteria": [
+    1,
+    2,
+    5,
+    6
+   ],
+   "tests": [
+    "CSV export > exports every invoice matching the current search and filter, across pages",
+    "CSV export > totals and line counts match the data",
+    "invoice search > LIKE wildcards are matched literally",
+    "invoice search > search and filter survive paging",
+    "invoices > list shows 25 per page with a pager",
+    "invoices > status filter narrows the list",
+    "line item count > each list row shows how many line items the invoice has",
+    "workspace isolation > lists only show the own workspace"
+   ],
+   "changes": {
+    "tried": 8,
+    "caught": 6,
+    "survived": [
+     {
+      "file": "src/lib/invoices.ts",
+      "line": 85,
+      "original": "  if (status === \"overdue\") return r.status === \"sent\" && r.due_date < now;",
+      "changed": "  if (status === \"overdue\") return r.status === \"sent\" && r.due_date <= now;",
+      "effect": "In a search, the Overdue tab lists sent invoices that are due today and not yet overdue, and the list no longer agrees with the count."
+     },
+     {
+      "file": "src/lib/invoices.ts",
+      "line": 114,
+      "original": "  const counts: Record<StatusFilter, number> = { all: c.all_n, draft: c.draft, sent: c.sent, overdue: c.overdue, paid: c.paid };",
+      "changed": "  const counts: Record<StatusFilter, number> = { all: c.all_n, draft: c.sent, sent: c.draft, overdue: c.overdue, paid: c.paid };",
+      "effect": "The Drafts and Outstanding tabs show each other's counts, and the pager on those tabs shows a wrong total and a wrong number of pages."
+     }
+    ]
+   },
+   "risk": [
+    "access",
+    "money"
+   ],
+   "riskWhy": "The list and the export both start their filter with `let sql = \"i.workspace_id = ?\";` so a mistake here shows invoices of other workspaces, and the same helpers sum the total shown on each row.",
+   "route": "read",
+   "routeWhy": [
+    "Limits rows to one workspace, sums totals",
+    "2 of 8 changes went unnoticed by the tests"
+   ]
+  },
+  "searched-list": {
+   "criteria": [
+    1
+   ],
+   "tests": [
+    "invoice search > LIKE wildcards are matched literally",
+    "invoice search > combines with the status filter, and tab counts follow the search",
+    "invoice search > finds an invoice by its number",
+    "invoice search > finds invoices by client name, case-insensitively",
+    "invoice search > search and filter survive paging",
+    "invoice search > the JSON API accepts q too",
+    "invoice search > the search term is escaped and never shows other workspaces"
+   ],
+   "changes": {
+    "tried": 9,
+    "caught": 5,
+    "survived": [
+     {
+      "file": "src/lib/invoices.ts",
+      "line": 159,
+      "original": "      if (m.due_date < now) counts.overdue++;",
+      "changed": "      if (m.due_date <= now) counts.overdue++;",
+      "effect": "In a search, the Overdue count includes sent invoices that are due today, so the number is higher than the invoices the tab lists."
+     },
+     {
+      "file": "src/lib/invoices.ts",
+      "line": 162,
+      "original": "  const total = counts[status];",
+      "changed": "  const total = counts.all;",
+      "effect": "In a search on a status tab, the pager shows the total of all matches and offers extra pages that are empty."
+     },
+     {
+      "file": "src/lib/invoices.ts",
+      "line": 165,
+      "original": "  const ids = inTab.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((m) => m.id);",
+      "changed": "  const ids = inTab.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1).map((m) => m.id);",
+      "effect": "In a search with more than one page, the last invoice of each full page is missing from the results."
+     },
+     {
+      "file": "src/lib/invoices.ts",
+      "line": 173,
+      "original": "           ORDER BY i.issue_date DESC, i.id DESC`,",
+      "changed": "           ORDER BY i.issue_date ASC, i.id DESC`,",
+      "effect": "Search results on a page are shown oldest first, unlike the normal list, which shows newest first."
+     }
+    ]
+   },
+   "risk": [
+    "access"
+   ],
+   "riskWhy": "The search finds ids with `WHERE workspace_id = ?` and then loads full rows by id only, so a mistake in the first query shows invoices of another workspace.",
+   "route": "read",
+   "routeWhy": [
+    "Limits search results to the user's workspace",
+    "4 of 9 changes went unnoticed by the tests"
+   ]
+  },
+  "list-page": {
+   "criteria": [
+    1,
+    2,
+    5,
+    6
+   ],
+   "tests": [
+    "CSV export > the list page links to the export with the current search and filter",
+    "invoice search > LIKE wildcards are matched literally",
+    "invoice search > combines with the status filter, and tab counts follow the search",
+    "invoice search > finds an invoice by its number",
+    "invoice search > finds invoices by client name, case-insensitively",
+    "invoice search > search and filter survive paging",
+    "invoice search > the JSON API accepts q too",
+    "invoice search > the search term is escaped and never shows other workspaces"
+   ],
+   "changes": {
+    "tried": 10,
+    "caught": 7,
+    "survived": [
+     {
+      "file": "src/routes/api.ts",
+      "line": 40,
+      "original": "    parseStatusFilter(c.req.query(\"status\")),",
+      "changed": "    parseStatusFilter(c.req.query(\"state\")),",
+      "effect": "The JSON API ignores the status filter and returns invoices of every status."
+     },
+     {
+      "file": "src/routes/invoices.ts",
+      "line": 74,
+      "original": "      `<a href=\"${esc(listHref(s, q, 1))}\" class=\"tab${s === status ? \" active\" : \"\"}\"${s === status ? ' aria-current=\"true\"' : \"\"}>${FILTER_LABEL[s]} <span class=\"tab-count\">${res.counts[s]}</span></a>`,",
+      "changed": "      `<a href=\"${esc(listHref(status, q, 1))}\" class=\"tab${s === status ? \" active\" : \"\"}\"${s === status ? ' aria-current=\"true\"' : \"\"}>${FILTER_LABEL[s]} <span class=\"tab-count\">${res.counts[s]}</span></a>`,",
+      "effect": "Every status tab links to the tab that is already open, so the user cannot switch between All, Drafts, Outstanding, Overdue and Paid."
+     },
+     {
+      "file": "src/routes/invoices.ts",
+      "line": 97,
+      "original": "  const to = Math.min(res.page * PAGE_SIZE, res.total);",
+      "changed": "  const to = Math.max(res.page * PAGE_SIZE, res.total);",
+      "effect": "The pager shows a wrong range, for example \"26 to 50 of 42\" on the last page."
+     }
+    ]
+   },
+   "risk": [],
+   "riskWhy": "",
+   "route": "read",
+   "routeWhy": [
+    "3 of 10 changes went unnoticed by the tests"
+   ]
+  },
+  "notes": {
+   "criteria": [
+    3,
+    6
+   ],
+   "tests": [
+    "notes > an API update without notes keeps them; with notes replaces them",
+    "notes > can be set on create and edited, and show on the invoice page"
+   ],
+   "changes": {
+    "tried": 9,
+    "caught": 8,
+    "survived": [
+     {
+      "file": "src/lib/invoices.ts",
+      "line": 229,
+      "original": "  return typeof v === \"string\" ? v.replace(/\\r\\n?/g, \"\\n\").trim().slice(0, MAX_NOTES) : \"\";",
+      "changed": "  return typeof v === \"string\" ? v.replace(/\\r\\n?/g, \"\\n\").trim() : \"\";",
+      "effect": "Notes longer than 2000 characters are stored in full when the request does not come from the browser form, and then show on the invoice and the share page."
+     }
+    ]
+   },
+   "risk": [
+    "data"
+   ],
+   "riskWhy": "If the check in `if (input.notes !== null) setNotes(invoiceId, input.notes);` is wrong, an update that sends no notes replaces the stored notes with empty text.",
+   "route": "read",
+   "routeWhy": [
+    "Replaces the stored notes of an invoice",
+    "1 of 9 changes went unnoticed by the tests"
+   ]
+  },
+  "share-token": {
+   "criteria": [
+    4,
+    6
+   ],
+   "tests": [
+    "share links > another workspace cannot share or revoke my invoice",
+    "share links > create, view without signing in, revoke",
+    "share links > creating twice keeps the same link; revoking and re-creating makes a new one"
+   ],
+   "changes": {
+    "tried": 8,
+    "caught": 5,
+    "survived": [
+     {
+      "file": "public/app.js",
+      "line": 57,
+      "original": "      navigator.clipboard.writeText(input.value).then(done, function () {});",
+      "changed": "      navigator.clipboard.writeText(input.id).then(done, function () {});",
+      "effect": "The Copy button says Copied but puts a meaningless word on the clipboard, not the share link."
+     },
+     {
+      "file": "src/lib/invoices.ts",
+      "line": 385,
+      "original": "  return getDb().query<Invoice, [string]>(\"SELECT * FROM invoices WHERE share_token = ?\").get(token);",
+      "changed": "  return getDb().query<Invoice, [string]>(\"SELECT * FROM invoices WHERE share_token LIKE ?\").get(token);",
+      "effect": "Anyone can open a shared invoice without knowing its link, by using a link made only of underscores."
+     },
+     {
+      "file": "src/routes/invoices.ts",
+      "line": 318,
+      "original": "        <form method=\"post\" action=\"/invoices/${invoice.id}/share/revoke\">",
+      "changed": "        <form method=\"post\" action=\"/invoices/${invoice.id}/share\">",
+      "effect": "The Revoke button does not turn the share link off, so the owner cannot stop access from the page."
+     }
+    ]
+   },
+   "risk": [
+    "access"
+   ],
+   "riskWhy": "If `if (invoice.workspace_id !== user.workspace_id) {` is wrong, a user of another workspace can create or revoke a public link for an invoice, and the token made here is the only key to the public page.",
+   "route": "read",
+   "routeWhy": [
+    "Decides who may open or close a share link",
+    "3 of 8 changes went unnoticed by the tests"
+   ]
+  },
+  "public-page": {
+   "criteria": [
+    3,
+    4,
+    6
+   ],
+   "tests": [
+    "notes > can be set on create and edited, and show on the invoice page",
+    "share links > create, view without signing in, revoke",
+    "share links > creating twice keeps the same link; revoking and re-creating makes a new one",
+    "share links > unknown, malformed and deleted links are not found"
+   ],
+   "changes": {
+    "tried": 8,
+    "caught": 3,
+    "survived": [
+     {
+      "file": "src/routes/share.ts",
+      "line": 25,
+      "original": "    ${invoicePaper({ invoice, client, workspace: ws, items: lineItems(invoice.id), total: invoiceTotal(invoice.id) })}",
+      "changed": "    ${invoicePaper({ invoice, client, workspace: ws, items: lineItems(invoice.id), total: invoiceTotal(invoice.client_id) })}",
+      "effect": "The public invoice page shows the total of a different invoice, so the client is told to pay the wrong amount."
+     },
+     {
+      "file": "src/views/invoice.ts",
+      "line": 13,
+      "original": "      <td class=\"num\">${esc(money(Math.round(li.quantity * li.unit_price)))}</td>",
+      "changed": "      <td class=\"num\">${esc(money(Math.round(li.unit_price)))}</td>",
+      "effect": "Each line's amount shows only the unit price and ignores the quantity, so the lines do not add up to the total."
+     },
+     {
+      "file": "src/views/invoice.ts",
+      "line": 34,
+      "original": "        ${client.vat_id ? `<div class=\"muted small\">VAT ${esc(client.vat_id)}</div>` : \"\"}",
+      "changed": "        ${client.vat_id ? `<div class=\"muted small\">VAT ${esc(ws.vat_id)}</div>` : \"\"}",
+      "effect": "The Billed to block shows the sender's own VAT number in place of the client's."
+     },
+     {
+      "file": "src/views/invoice.ts",
+      "line": 38,
+      "original": "        <div><dt>Due</dt><dd>${esc(fmtDate(invoice.due_date))}</dd></div>",
+      "changed": "        <div><dt>Due</dt><dd>${esc(fmtDate(invoice.issue_date))}</dd></div>",
+      "effect": "The invoice document shows the issue date as the due date, so the client sees a due date that is too early."
+     },
+     {
+      "file": "src/views/invoice.ts",
+      "line": 49,
+      "original": "    ${ws.iban ? `<div class=\"paper-foot muted small\">Pay to ${esc(ws.iban)} · reference ${esc(invoice.number)}</div>` : \"\"}",
+      "changed": "    ${ws.iban ? `<div class=\"paper-foot muted small\">Pay to ${esc(ws.iban)} · reference ${esc(invoice.reference)}</div>` : \"\"}",
+      "effect": "The payment line tells the client to pay with the free-text reference, which is often empty, not with the invoice number."
+     }
+    ]
+   },
+   "risk": [
+    "access",
+    "money"
+   ],
+   "riskWhy": "This page needs no sign-in, so `const invoice = invoiceByShareToken(c.req.param(\"token\"));` is the only check on who sees the invoice, and the same document prints the line amounts and the total.",
+   "route": "read",
+   "routeWhy": [
+    "Shows an invoice and amounts without sign-in",
+    "5 of 8 changes went unnoticed by the tests"
+   ]
+  },
+  "csv-export": {
+   "criteria": [
+    5
+   ],
+   "tests": [
+    "CSV export > exports every invoice matching the current search and filter, across pages",
+    "CSV export > only exports the own workspace and needs a session",
+    "CSV export > totals and line counts match the data",
+    "CSV export > user text cannot become a spreadsheet formula"
+   ],
+   "changes": {
+    "tried": 12,
+    "caught": 6,
+    "survived": [
+     {
+      "file": "src/db.ts",
+      "line": 170,
+      "original": "       ON CONFLICT (workspace_id) DO UPDATE SET version = version + 1;`;",
+      "changed": "       ON CONFLICT (workspace_id) DO UPDATE SET version = 1;`;",
+      "effect": "After the first change in a workspace, later edits do not refresh the CSV export, so users download old data for the rest of the day."
+     },
+     {
+      "file": "src/lib/csv.ts",
+      "line": 12,
+      "original": "  return /[\",\\r\\n]/.test(s) ? `\"${s.replace(/\"/g, '\"\"')}\"` : s;",
+      "changed": "  return /[\"\\r\\n]/.test(s) ? `\"${s.replace(/\"/g, '\"\"')}\"` : s;",
+      "effect": "In the CSV file, a client name or note with a comma splits into extra columns and moves the rest of that row over."
+     },
+     {
+      "file": "src/lib/invoices.ts",
+      "line": 203,
+      "original": "       ORDER BY i.issue_date DESC, i.id DESC`,",
+      "changed": "       ORDER BY i.issue_date ASC, i.id DESC`,",
+      "effect": "The CSV file lists invoices oldest first, not newest first like the list on screen."
+     },
+     {
+      "file": "src/routes/invoices.ts",
+      "line": 145,
+      "original": "  const key = JSON.stringify([workspaceId, status, q, now]);",
+      "changed": "  const key = JSON.stringify([status, q, now]);",
+      "effect": "A user can download a CSV file that holds another workspace's invoices."
+     },
+     {
+      "file": "src/routes/invoices.ts",
+      "line": 149,
+      "original": "  if (hit && hit.generation === generation && hit.version === version) {",
+      "changed": "  if (hit && hit.generation === generation) {",
+      "effect": "After invoices change, the CSV export still gives the old file for the rest of the day."
+     },
+     {
+      "file": "src/routes/invoices.ts",
+      "line": 160,
+      "original": "      displayStatus(r, now),",
+      "changed": "      r.status,",
+      "effect": "In the CSV file, invoices that are past their due date show as sent, not overdue, so the file and the screen disagree."
+     }
+    ]
+   },
+   "risk": [
+    "access",
+    "money"
+   ],
+   "riskWhy": "A stored file is used again when `const key = JSON.stringify([workspaceId, status, q, now]);` matches, so a mistake here gives one workspace the file of another, and the same code turns cents into the exported euro amount.",
+   "route": "read",
+   "routeWhy": [
+    "Keeps export files per workspace, exports amounts",
+    "6 of 12 changes went unnoticed by the tests"
+   ]
+  },
+  "tests": {
+   "criteria": [
+    1,
+    3,
+    4,
+    5,
+    6
+   ],
+   "tests": [],
+   "changes": {
+    "tried": 0,
+    "caught": 0,
+    "survived": []
+   },
+   "risk": [],
+   "riskWhy": "",
+   "route": "read",
+   "routeWhy": [
+    "These are the tests everything else rests on"
+   ]
+  }
+ },
+ "rulings": [
+  {
+   "id": "export-cache-triggers",
+   "kind": "unasked",
+   "stopId": "csv-export",
+   "file": "src/db.ts",
+   "from": 160,
+   "to": 187,
+   "found": "The code adds a table named workspace_versions and nine database triggers that raise a counter on every write to invoices, clients and line items, and the CSV export uses this counter to keep up to 200 built files in memory and give them out again. The issue does not ask for any of this.",
+   "question": "Do you accept a counter table, nine database triggers and an in-memory store of CSV files that the issue does not ask for?"
+  },
+  {
+   "id": "search-index",
+   "kind": "unasked",
+   "stopId": "schema-upgrade",
+   "file": "src/db.ts",
+   "from": 151,
+   "to": 152,
+   "found": "The code creates a second index on the invoices table, named invoices_workspace_search, with seven columns, and the search query is forced to use it. The issue does not ask for an index.",
+   "question": "Do you accept a seven-column index on the invoices table that the issue does not ask for?"
+  },
+  {
+   "id": "notes-length-limit",
+   "kind": "open",
+   "stopId": "notes",
+   "file": "src/lib/invoices.ts",
+   "from": 229,
+   "to": 229,
+   "found": "The issue says an invoice has a free-text notes field and gives no limit. The code cuts notes to 2000 characters before they are stored, and it shows no message when it cuts.",
+   "question": "Do you accept 2000 characters as the limit for a note, cut without a message?"
+  },
+  {
+   "id": "share-link-lifetime",
+   "kind": "open",
+   "stopId": "share-token",
+   "file": "src/lib/invoices.ts",
+   "from": 372,
+   "to": 377,
+   "found": "The issue says a share link can be created and revoked, and does not say how long a link lives or what a second create does. The code gives the link no end date, so it works until the owner revokes it, and a second create keeps the same link.",
+   "question": "Do you accept a share link that never expires and stays the same until the owner revokes it?"
+  },
+  {
+   "id": "share-token-lookup",
+   "kind": "untested",
+   "stopId": "share-token",
+   "file": "src/lib/invoices.ts",
+   "from": 385,
+   "to": 385,
+   "found": "This line finds the shared invoice by an exact match on its token. When the exact match was changed to a pattern match, a link made only of underscores opened a shared invoice, and every test still passed.",
+   "question": "Do you accept this line, which decides who can open a shared invoice, without a test that checks it?"
+  },
+  {
+   "id": "public-page-total",
+   "kind": "untested",
+   "stopId": "public-page",
+   "file": "src/routes/share.ts",
+   "from": 25,
+   "to": 25,
+   "found": "This line puts the invoice total on the public page. When it was changed to take the total of a different invoice, the client saw a wrong amount to pay, and every test still passed.",
+   "question": "Do you accept the total on the public invoice page without a test that checks it?"
+  },
+  {
+   "id": "export-key-workspace",
+   "kind": "untested",
+   "stopId": "csv-export",
+   "file": "src/routes/invoices.ts",
+   "from": 145,
+   "to": 145,
+   "found": "This line makes the workspace part of the key under which a built CSV file is kept. When the workspace was taken out of the key, a user could download a file that holds the invoices of another workspace, and every test still passed.",
+   "question": "Do you accept this line, which keeps the CSV files of different workspaces apart, without a test that checks it?"
+  }
+ ],
+ "madeBy": {
+  "model": "claude-opus-5-5, claude-fable-5-2",
+  "costUsd": 7.1703,
+  "at": "2026-11-14T17:57:21.829Z"
+ }
+}
