@@ -1,0 +1,1286 @@
+{
+ "schema": 1,
+ "pr": {
+  "repo": "ToukoUrsin/junction26-kuitti",
+  "number": 2,
+  "title": "Invoice search, share link, notes and CSV export",
+  "url": "https://github.com/ToukoUrsin/junction26-kuitti/pull/2",
+  "author": "Crashtest author agent",
+  "authorIsAgent": true,
+  "baseSha": "c9d4f4bd080e451ccd7292e28b2156dc7eb6c10f",
+  "headSha": "8b1f563384e52b3fec9a501da741798b6d57398d",
+  "additions": 785,
+  "deletions": 88,
+  "files": 12,
+  "issue": {
+   "number": 1,
+   "title": "Invoice search, share link, notes and CSV export",
+   "url": "https://github.com/ToukoUrsin/junction26-kuitti/issues/1",
+   "body": "As someone who sends a lot of invoices, I want to find invoices quickly, share one with a client without making them sign up, keep a note on an invoice, and take my list into a spreadsheet, so I spend less time hunting through pages and answering \"can you send that again?\" emails.\n\n## Acceptance criteria\n\n1. On the invoice list I can search by client name or invoice number. Search combines with the status filter, and both survive paging.\n2. Each row of the invoice list also shows how many line items the invoice has.\n3. An invoice has a free-text notes field. I can edit it; it shows on the invoice page.\n4. I can create a public share link for an invoice. Anyone with the link sees a read-only page of that invoice (client, line items, total, notes) without signing in. I can revoke the link, after which it shows \"not found\".\n5. I can export the invoices I am looking at (current search and filter) as a CSV file.\n6. Everything that worked before still works."
+  }
+ },
+ "intro": "This change adds four things to invoices: search on the list page, a free-text notes field, a public share link that can be revoked, and a CSV export of the current list. Each list row also shows how many line items the invoice has. Two new database columns hold the notes and the share token, and older databases get them when they are opened.",
+ "stops": [
+  {
+   "id": "schema-columns",
+   "title": "Invoices get two new columns, and old databases are upgraded on open",
+   "why": "Notes and share links both need a place on the invoice row. A database created before this change already has an `invoices` table, so the code adds the columns to it when the database is opened.",
+   "blocks": [
+    {
+     "type": "prose",
+     "text": "Two new fields on `Invoice` carry the notes and the share link. Look at their types: one is always a string, the other can be null."
+    },
+    {
+     "type": "code",
+     "file": "src/db.ts",
+     "from": 40,
+     "to": 54,
+     "notes": [
+      {
+       "line": 52,
+       "text": "null means the invoice has no share link."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "A new database gets the columns directly from the `CREATE TABLE` statement."
+    },
+    {
+     "type": "code",
+     "file": "src/db.ts",
+     "from": 106,
+     "to": 121
+    },
+    {
+     "type": "prose",
+     "text": "For an existing database `CREATE TABLE IF NOT EXISTS` does nothing, because the table is already there. **`applySchema` handles that case.** Read what it checks before each `ALTER TABLE`."
+    },
+    {
+     "type": "code",
+     "file": "src/db.ts",
+     "from": 142,
+     "to": 176,
+     "notes": [
+      {
+       "line": 150,
+       "text": "A partial index: only rows that have a token are in it."
+      },
+      {
+       "line": 159,
+       "text": "Runs after the loop, because the index needs the `share_token` column."
+      },
+      {
+       "line": 174,
+       "text": "Before this change the line was `db.exec(SCHEMA)`."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "`resetSchema` drops all tables and builds them again. The seed script calls it. It now uses the same function."
+    },
+    {
+     "type": "code",
+     "file": "src/db.ts",
+     "from": 182,
+     "to": 190
+    }
+   ],
+   "questions": [
+    {
+     "id": "schema-columns-q1",
+     "prompt": "An old database is upgraded. What do the invoices that were already in it have in the two new columns?",
+     "options": [
+      "`notes` is NULL and `share_token` is NULL",
+      "`notes` is an empty string and `share_token` is NULL",
+      "`notes` is an empty string and each invoice gets a new token",
+      "`notes` is NULL and `share_token` is an empty string"
+     ],
+     "answer": 1,
+     "explain": "Lines 144 and 145 hold the column definitions. `notes` is NOT NULL with default '' and `share_token` has no default, so existing rows read '' and NULL.",
+     "reread": {
+      "file": "src/db.ts",
+      "from": 143,
+      "to": 146
+     }
+    },
+    {
+     "id": "schema-columns-q2",
+     "prompt": "`openDb` runs on a database that already has the `notes` column. Does `applySchema` run `ALTER TABLE` for it again?",
+     "options": [
+      "Yes, and SQLite ignores the duplicate column",
+      "Yes, inside a try/catch that hides the error",
+      "No. A stored schema version number tells it to stop",
+      "No. It reads `PRAGMA table_info` and finds the column already there"
+     ],
+     "answer": 3,
+     "explain": "Line 156 lists the columns of the table and line 157 runs `ALTER TABLE` only when the column name is not in that list.",
+     "reread": {
+      "file": "src/db.ts",
+      "from": 153,
+      "to": 160
+     }
+    }
+   ]
+  },
+  {
+   "id": "search-clause",
+   "title": "The search text is cleaned, then bound as a LIKE parameter",
+   "why": "The issue asks for search by client name or invoice number that combines with the status filter. One helper builds the search part of the WHERE clause and a second helper joins it with the status part, so every query can use the same filter.",
+   "blocks": [
+    {
+     "type": "prose",
+     "text": "Every route passes the raw `q` value from the URL through `parseSearch` first. The import list at the top was only reformatted, with one new type added."
+    },
+    {
+     "type": "code",
+     "file": "src/lib/invoices.ts",
+     "from": 1,
+     "to": 29,
+     "notes": [
+      {
+       "line": 8,
+       "text": "The `Invoice` type is used by the share-link lookup later in this file."
+      },
+      {
+       "line": 23,
+       "text": "`MAX_NOTES` belongs to the notes feature, shown in a later stop."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "`searchClause` turns the cleaned text into a piece of SQL and its parameters. **The user text never becomes part of the SQL string.** Look at what is done with `%` and `_` before the pattern is built. Then see how `filterClause` puts workspace, status and search together."
+    },
+    {
+     "type": "code",
+     "file": "src/lib/invoices.ts",
+     "from": 50,
+     "to": 72,
+     "notes": [
+      {
+       "line": 54,
+       "text": "An empty search adds nothing, so the query stays as it was before."
+      },
+      {
+       "line": 56,
+       "text": "The same pattern is bound twice: once for the client name and once for the invoice number."
+      }
+     ]
+    }
+   ],
+   "questions": [
+    {
+     "id": "search-clause-q1",
+     "prompt": "A user searches for `50%`. Which invoices can match?",
+     "options": [
+      "Those whose client name or number contains the text `50%`",
+      "Those that contain `50` anywhere, because `%` matches any text",
+      "Those whose client name or number starts with `50`",
+      "None, because the query fails on the `%` sign"
+     ],
+     "answer": 0,
+     "explain": "Line 55 puts a backslash before `%`, `_` and backslash, and line 56 declares the backslash as the ESCAPE character. So `%` in the user text matches only a real percent sign.",
+     "reread": {
+      "file": "src/lib/invoices.ts",
+      "from": 53,
+      "to": 57
+     }
+    },
+    {
+     "id": "search-clause-q2",
+     "prompt": "The status is `overdue` and the search is `acme`. Which parameter list does `filterClause` return?",
+     "options": [
+      "[workspaceId, 'overdue', '%acme%', '%acme%']",
+      "[workspaceId, '%acme%', '%acme%', now]",
+      "[workspaceId, now, '%acme%', '%acme%']",
+      "[workspaceId, 'sent', now, '%acme%', '%acme%']"
+     ],
+     "answer": 2,
+     "explain": "Lines 63 to 65 write 'sent' into the SQL text and push only `now`. Line 71 then appends the two search patterns after the status parameters.",
+     "reread": {
+      "file": "src/lib/invoices.ts",
+      "from": 60,
+      "to": 72
+     }
+    }
+   ]
+  },
+  {
+   "id": "list-query",
+   "title": "The list query counts line items and narrows the tab counts by search",
+   "why": "The list needs a line item count per row, and it needs page numbers and tab counts that agree with the search. `listInvoices` already produced the rows and the counts, so both queries inside it were extended.",
+   "blocks": [
+    {
+     "type": "prose",
+     "text": "Each list row gets one new field. Find it in `ListRow`. `ListResult` did not change, but you need it to read the function that follows."
+    },
+    {
+     "type": "code",
+     "file": "src/lib/invoices.ts",
+     "from": 30,
+     "to": 48
+    },
+    {
+     "type": "prose",
+     "text": "`listInvoices` runs two queries. The first counts invoices for the tabs, the second fetches one page of rows. Check which parts of the filter each query uses, and **where `total` comes from**."
+    },
+    {
+     "type": "code",
+     "file": "src/lib/invoices.ts",
+     "from": 74,
+     "to": 118,
+     "notes": [
+      {
+       "line": 89,
+       "text": "The join is added only when there is a search, because only the search clause reads `c.name`."
+      },
+      {
+       "line": 92,
+       "text": "The order follows the `?` marks in the SQL: date, workspace, then the patterns."
+      },
+      {
+       "line": 115,
+       "text": "Filter parameters come first, then page size and offset."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "The JSON API uses the same function. It needs one more import."
+    },
+    {
+     "type": "code",
+     "file": "src/routes/api.ts",
+     "from": 4,
+     "to": 14
+    },
+    {
+     "type": "prose",
+     "text": "The API list reads `q` in the same way as the page and returns the count with each invoice."
+    },
+    {
+     "type": "code",
+     "file": "src/routes/api.ts",
+     "from": 36,
+     "to": 59,
+     "notes": [
+      {
+       "line": 55,
+       "text": "The API calls the field `line_items`. The value is the same count."
+      }
+     ]
+    }
+   ],
+   "questions": [
+    {
+     "id": "list-query-q1",
+     "prompt": "The Paid tab is open. The search matches 30 invoices and 12 of them are paid. What is `total` in the result?",
+     "options": [
+      "30",
+      "25",
+      "12",
+      "The number of all paid invoices in the workspace"
+     ],
+     "answer": 2,
+     "explain": "The count query on lines 82 to 92 is narrowed by the search, and line 100 takes `counts[status]`. For the Paid tab that is the number of paid matches.",
+     "reread": {
+      "file": "src/lib/invoices.ts",
+      "from": 93,
+      "to": 102
+     }
+    },
+    {
+     "id": "list-query-q2",
+     "prompt": "What is `line_count` for an invoice that has no rows in `line_items`?",
+     "options": [
+      "0",
+      "NULL",
+      "The invoice is left out of the list"
+     ],
+     "answer": 0,
+     "explain": "Line 108 counts in a subquery and not through a join. The invoice row stays in the result and `COUNT(*)` over no rows gives 0.",
+     "reread": {
+      "file": "src/lib/invoices.ts",
+      "from": 104,
+      "to": 114
+     }
+    }
+   ]
+  },
+  {
+   "id": "list-page",
+   "title": "Every link on the list page carries the search and the status",
+   "why": "The issue says search must combine with the status filter and both must survive paging. The page builds all its links through one helper, so tabs, pager, search form and export link stay in step.",
+   "blocks": [
+    {
+     "type": "prose",
+     "text": "The invoice routes file needs more helpers now. This import list also brings in names for the export, notes and share features of later stops."
+    },
+    {
+     "type": "code",
+     "file": "src/routes/invoices.ts",
+     "from": 1,
+     "to": 26,
+     "notes": [
+      {
+       "line": 1,
+       "text": "`Context` is the type of the argument of the `ownInvoice` helper in a later stop."
+      },
+      {
+       "line": 13,
+       "text": "`PAGE_SIZE` replaces the number 25 that was written directly in the pager maths."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "Three small functions build the links. **`listQuery` is the one place that decides which parameters go into a URL.**"
+    },
+    {
+     "type": "code",
+     "file": "src/routes/invoices.ts",
+     "from": 46,
+     "to": 63,
+     "notes": [
+      {
+       "line": 50,
+       "text": "Page 1 is left out, so the first page has the shortest URL."
+      },
+      {
+       "line": 60,
+       "text": "No page number is passed here, so an export link never has a `page` parameter."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "The handler reads `q`, passes it to `listInvoices`, and uses it in the tabs, in the message for an empty result and in the rows. Look at the arguments of `listHref` in the tab links."
+    },
+    {
+     "type": "code",
+     "file": "src/routes/invoices.ts",
+     "from": 64,
+     "to": 94,
+     "notes": [
+      {
+       "line": 74,
+       "text": "`esc` is new here. The URL can now contain `&` and user text, and it is placed inside an HTML attribute."
+      },
+      {
+       "line": 86,
+       "text": "On small screens the Items column is hidden, so the count is shown next to the number."
+      },
+      {
+       "line": 94,
+       "text": "The table has one more column, so the empty row spans 6 cells."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "The pager links pass `q` as well."
+    },
+    {
+     "type": "code",
+     "file": "src/routes/invoices.ts",
+     "from": 96,
+     "to": 105
+    },
+    {
+     "type": "prose",
+     "text": "The search box is a plain GET form, so the browser builds the URL. Look at how the status gets into that URL, and at which count the line under the heading prints."
+    },
+    {
+     "type": "code",
+     "file": "src/routes/invoices.ts",
+     "from": 107,
+     "to": 132,
+     "notes": [
+      {
+       "line": 108,
+       "text": "A GET form sends only its own fields, so the status has to be a hidden field."
+      },
+      {
+       "line": 112,
+       "text": "The export link gets the same search and status as the list on screen."
+      }
+     ]
+    }
+   ],
+   "questions": [
+    {
+     "id": "list-page-q1",
+     "prompt": "The user is on page 3 of the Paid tab with an active search and clicks the Drafts tab. What does that link keep?",
+     "options": [
+      "The search text and the current page number",
+      "The search text, and it starts again at page 1",
+      "Nothing from the current view except the new status",
+      "The current page number, but not the search text"
+     ],
+     "answer": 1,
+     "explain": "Line 74 builds each tab link with `listHref(s, q, 1)`: the tab's own status, the current search, and page 1.",
+     "reread": {
+      "file": "src/routes/invoices.ts",
+      "from": 72,
+      "to": 75
+     }
+    },
+    {
+     "id": "list-page-q2",
+     "prompt": "The Paid tab is open with the search `acme`. Which number does the line under the heading show?",
+     "options": [
+      "Paid invoices that match `acme`",
+      "All invoices in the workspace",
+      "Invoices that match `acme`, in any status",
+      "Invoices on the current page"
+     ],
+     "answer": 2,
+     "explain": "Line 118 prints `res.counts.all` in both cases. With a search, that count is narrowed by the search but not by the status tab.",
+     "reread": {
+      "file": "src/routes/invoices.ts",
+      "from": 116,
+      "to": 120
+     }
+    }
+   ]
+  },
+  {
+   "id": "csv-export",
+   "title": "The CSV export reuses the list filter and makes formula text harmless",
+   "why": "The issue asks for an export of the invoices the user is looking at. The route uses the same filter builder as the list, and the CSV writer treats client names, references and notes as untrusted text that a spreadsheet could run.",
+   "blocks": [
+    {
+     "type": "prose",
+     "text": "The Export CSV link on the list page leads here. The path is under `/invoices/*`, which `requirePage` already protects, so the route has a signed-in user. It parses `status` and `q` in the same way as the list page."
+    },
+    {
+     "type": "diagram",
+     "title": "From the export link to the downloaded file",
+     "nodes": [
+      {
+       "id": "a",
+       "label": "Export CSV link",
+       "sub": "on the list page",
+       "role": "new"
+      },
+      {
+       "id": "b",
+       "label": "GET /invoices/export.csv",
+       "role": "new"
+      },
+      {
+       "id": "c",
+       "label": "exportInvoices",
+       "sub": "uses filterClause",
+       "role": "new"
+      },
+      {
+       "id": "d",
+       "label": "toCsv",
+       "sub": "csvField per value",
+       "role": "new"
+      },
+      {
+       "id": "e",
+       "label": "CSV download",
+       "sub": "opened in a spreadsheet",
+       "role": "outside"
+      }
+     ],
+     "edges": [
+      {
+       "from": "a",
+       "to": "b",
+       "label": "status and q"
+      },
+      {
+       "from": "b",
+       "to": "c"
+      },
+      {
+       "from": "c",
+       "to": "d",
+       "label": "rows"
+      },
+      {
+       "from": "d",
+       "to": "e",
+       "label": "attachment"
+      }
+     ]
+    },
+    {
+     "type": "code",
+     "file": "src/routes/invoices.ts",
+     "from": 134,
+     "to": 161,
+     "notes": [
+      {
+       "line": 145,
+       "text": "The same `displayStatus` as the list, so a sent invoice past its due date is exported as overdue."
+      },
+      {
+       "line": 158,
+       "text": "`attachment` tells the browser to save the file and not to show it."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "`exportInvoices` selects a few more columns than the list. Compare the end of this query with the end of the list query from the earlier stop."
+    },
+    {
+     "type": "code",
+     "file": "src/lib/invoices.ts",
+     "from": 120,
+     "to": 142,
+     "notes": [
+      {
+       "line": 128,
+       "text": "The same filter builder as `listInvoices`, so list and export agree on what matches."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "`toCsv` turns the rows into text and sends each value through `csvField`. **Client names, references and notes are user text, and a spreadsheet may run text as a formula.** See what the function does about that."
+    },
+    {
+     "type": "code",
+     "file": "src/lib/csv.ts",
+     "from": 1,
+     "to": 18,
+     "notes": [
+      {
+       "line": 9,
+       "text": "Numbers skip both checks that follow. The line item count is passed as a number."
+      },
+      {
+       "line": 12,
+       "text": "A field with a comma, a quote or a line break is wrapped in quotes, and quotes inside it are doubled."
+      }
+     ]
+    }
+   ],
+   "questions": [
+    {
+     "id": "csv-export-q1",
+     "prompt": "A client is named `=SUM(A1)`. How does this name appear in the CSV file?",
+     "options": [
+      "`=SUM(A1)`, unchanged",
+      "`=SUM(A1)` wrapped in double quotes",
+      "As an empty field",
+      "`'=SUM(A1)`, with an apostrophe in front"
+     ],
+     "answer": 3,
+     "explain": "Line 11 puts an apostrophe before text that starts with `=`, `+`, `-`, `@`, a tab or a CR. The name has no comma, quote or line break, so line 12 adds no quotes.",
+     "reread": {
+      "file": "src/lib/csv.ts",
+      "from": 7,
+      "to": 13
+     }
+    },
+    {
+     "id": "csv-export-q2",
+     "prompt": "The search matches 42 invoices and the list shows 25 per page. How many invoice rows does `exportInvoices` return?",
+     "options": [
+      "42, because the query has no LIMIT",
+      "25, the first page only",
+      "25 or 17, depending on the `page` parameter"
+     ],
+     "answer": 0,
+     "explain": "The query on lines 131 to 138 ends with ORDER BY and has no LIMIT or OFFSET. The function also takes no page number.",
+     "reread": {
+      "file": "src/lib/invoices.ts",
+      "from": 127,
+      "to": 141
+     }
+    }
+   ]
+  },
+  {
+   "id": "notes-input",
+   "title": "Notes are replaced only when the request includes a notes field",
+   "why": "The issue asks for a notes field that can be edited. The same update code serves the HTML form and the JSON API, and an API client may send an update with no notes key, so the input type uses null for \"not sent\".",
+   "blocks": [
+    {
+     "type": "prose",
+     "text": "Notes travel from a form or a JSON body to the `notes` column. Both input types allow null as well as a string. `readNotes` cleans the text."
+    },
+    {
+     "type": "code",
+     "file": "src/lib/invoices.ts",
+     "from": 143,
+     "to": 166,
+     "notes": [
+      {
+       "line": 164,
+       "text": "Windows line ends (CR LF) and a single CR both become LF before the text is trimmed and cut."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "This is the end of `readInvoiceForm`, which turns a form body or a JSON body into one shape. `body` is the parsed request body. Look at the new `notes` line."
+    },
+    {
+     "type": "code",
+     "file": "src/lib/invoices.ts",
+     "from": 192,
+     "to": 199
+    },
+    {
+     "type": "prose",
+     "text": "Validation passes the value on unchanged. A blank form for a new invoice starts with empty notes."
+    },
+    {
+     "type": "code",
+     "file": "src/lib/invoices.ts",
+     "from": 229,
+     "to": 252
+    },
+    {
+     "type": "prose",
+     "text": "Create and update handle a missing value in different ways. First the insert: it has one more column and one more parameter."
+    },
+    {
+     "type": "code",
+     "file": "src/lib/invoices.ts",
+     "from": 254,
+     "to": 281
+    },
+    {
+     "type": "prose",
+     "text": "On update the notes are written by a separate statement, **and only in one case**."
+    },
+    {
+     "type": "code",
+     "file": "src/lib/invoices.ts",
+     "from": 283,
+     "to": 301,
+     "notes": [
+      {
+       "line": 293,
+       "text": "This runs inside the same transaction as the statement before it."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "The invoice form gets a textarea with the same length limit."
+    },
+    {
+     "type": "code",
+     "file": "src/routes/invoices.ts",
+     "from": 198,
+     "to": 206
+    },
+    {
+     "type": "prose",
+     "text": "The edit page fills the form from the stored invoice."
+    },
+    {
+     "type": "code",
+     "file": "src/routes/invoices.ts",
+     "from": 368,
+     "to": 379
+    },
+    {
+     "type": "prose",
+     "text": "The JSON API returns the notes with the invoice. How the notes are shown on the invoice document comes in a later stop."
+    },
+    {
+     "type": "code",
+     "file": "src/routes/api.ts",
+     "from": 78,
+     "to": 94
+    }
+   ],
+   "questions": [
+    {
+     "id": "notes-input-q1",
+     "prompt": "A new invoice is created through the JSON API and the body has no `notes` key. What is stored in the `notes` column?",
+     "options": [
+      "NULL",
+      "An empty string",
+      "Nothing, because the insert fails on the NOT NULL column",
+      "The text `null`"
+     ],
+     "answer": 1,
+     "explain": "Without the key, `readInvoiceForm` gives null. Line 276 passes `input.notes ?? \"\"`, so the insert gets an empty string.",
+     "reread": {
+      "file": "src/lib/invoices.ts",
+      "from": 263,
+      "to": 277
+     }
+    },
+    {
+     "id": "notes-input-q2",
+     "prompt": "A request sends notes that are 2500 characters long. `MAX_NOTES` is 2000. What does `readNotes` return?",
+     "options": [
+      "All 2500 characters",
+      "An empty string",
+      "The trimmed text cut to 2000 characters",
+      "Nothing, because it throws a validation error"
+     ],
+     "answer": 2,
+     "explain": "Line 164 trims the text and then calls `slice(0, MAX_NOTES)`. It never rejects the input.",
+     "reread": {
+      "file": "src/lib/invoices.ts",
+      "from": 162,
+      "to": 165
+     }
+    }
+   ]
+  },
+  {
+   "id": "share-lifecycle",
+   "title": "Only the owning workspace can create or revoke a share token",
+   "why": "The issue asks for a share link that the user can create and revoke. The link is a random token stored on the invoice row, and two POST routes set it and clear it after they check who owns the invoice.",
+   "blocks": [
+    {
+     "type": "prose",
+     "text": "The invoice page now has a share card. It shows one of two forms: one when the invoice has a token and one when it has none. Both are plain POST forms that carry the CSRF token."
+    },
+    {
+     "type": "code",
+     "file": "src/routes/invoices.ts",
+     "from": 267,
+     "to": 303,
+     "notes": [
+      {
+       "line": 280,
+       "text": "The token is read once here because the share forms and the page shell both use it."
+      },
+      {
+       "line": 282,
+       "text": "The link uses the origin of the current request, so it points at the host the user is on."
+      },
+      {
+       "line": 289,
+       "text": "`data-copy` holds a CSS selector. The script in `app.js` reads it."
+      }
+     ]
+    },
+    {
+     "type": "diagram",
+     "title": "What happens when the user creates a share link",
+     "nodes": [
+      {
+       "id": "a",
+       "label": "Create share link",
+       "sub": "form on invoice page",
+       "role": "new"
+      },
+      {
+       "id": "b",
+       "label": "requirePage",
+       "sub": "session and CSRF",
+       "role": "existing"
+      },
+      {
+       "id": "c",
+       "label": "POST /invoices/:id/share",
+       "role": "new"
+      },
+      {
+       "id": "d",
+       "label": "ownInvoice",
+       "sub": "404 or 403",
+       "role": "new"
+      },
+      {
+       "id": "e",
+       "label": "enableShare",
+       "role": "new"
+      },
+      {
+       "id": "f",
+       "label": "invoices.share_token",
+       "role": "new"
+      }
+     ],
+     "edges": [
+      {
+       "from": "a",
+       "to": "b",
+       "label": "POST with _csrf"
+      },
+      {
+       "from": "b",
+       "to": "c"
+      },
+      {
+       "from": "c",
+       "to": "d"
+      },
+      {
+       "from": "d",
+       "to": "e",
+       "label": "own invoice"
+      },
+      {
+       "from": "e",
+       "to": "f",
+       "label": "UPDATE"
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "Both POST routes are under `/invoices/*`, so `requirePage` has checked the session and the CSRF token before they run. `ownInvoice` then loads the invoice and compares workspaces."
+    },
+    {
+     "type": "code",
+     "file": "src/routes/invoices.ts",
+     "from": 334,
+     "to": 358,
+     "notes": [
+      {
+       "line": 350,
+       "text": "`#share` makes the browser scroll back to the share card after the redirect."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "The token logic is three small functions. **Read the WHERE clause in `enableShare` closely.**"
+    },
+    {
+     "type": "code",
+     "file": "src/lib/invoices.ts",
+     "from": 302,
+     "to": 322,
+     "notes": [
+      {
+       "line": 308,
+       "text": "32 random bytes written as base64url are 43 characters, the length `SHARE_TOKEN_RE` expects."
+      },
+      {
+       "line": 319,
+       "text": "A value with the wrong shape is rejected before any query runs."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "Two new messages confirm the actions after the redirect."
+    },
+    {
+     "type": "code",
+     "file": "src/routes/invoices.ts",
+     "from": 38,
+     "to": 44
+    },
+    {
+     "type": "prose",
+     "text": "A small script makes the Copy button work. The page also works without it, because the link sits in a read-only input."
+    },
+    {
+     "type": "code",
+     "file": "public/app.js",
+     "from": 45,
+     "to": 62,
+     "notes": [
+      {
+       "line": 51,
+       "text": "The text is selected first, so the user can still copy it by hand."
+      },
+      {
+       "line": 57,
+       "text": "If the browser refuses the clipboard write, nothing changes on the page."
+      },
+      {
+       "line": 58,
+       "text": "Fallback for browsers without the clipboard API."
+      }
+     ]
+    }
+   ],
+   "questions": [
+    {
+     "id": "share-lifecycle-q1",
+     "prompt": "An invoice already has a share link. The owner posts to `/invoices/:id/share` again. Which token does the invoice have afterwards?",
+     "options": [
+      "The same token as before",
+      "A new token, and the old link stops working",
+      "A new token, and the old link also keeps working",
+      "No token, because the second call turns sharing off"
+     ],
+     "answer": 0,
+     "explain": "The UPDATE on line 310 only matches rows where `share_token IS NULL`, so it changes nothing here. Line 311 then reads back the stored token.",
+     "reread": {
+      "file": "src/lib/invoices.ts",
+      "from": 306,
+      "to": 312
+     }
+    },
+    {
+     "id": "share-lifecycle-q2",
+     "prompt": "A signed-in user from another workspace posts to `/invoices/:id/share/revoke` with a valid CSRF token. What does the route do?",
+     "options": [
+      "It revokes the link and redirects to the invoice",
+      "It returns a 404 page, as if the invoice did not exist",
+      "It redirects to the sign-in page",
+      "It returns a 403 page and leaves the token as it is"
+     ],
+     "answer": 3,
+     "explain": "Lines 340 to 342 return a 403 error page when the invoice belongs to another workspace. The route returns that error before `revokeShare` is called.",
+     "reread": {
+      "file": "src/routes/invoices.ts",
+      "from": 335,
+      "to": 344
+     }
+    }
+   ]
+  },
+  {
+   "id": "public-share-page",
+   "title": "The share page needs no session and renders the same invoice document",
+   "why": "The issue asks that anyone with the link sees a read-only invoice without signing in. The invoice markup was moved into one function so the public page and the signed-in page show the same document.",
+   "blocks": [
+    {
+     "type": "prose",
+     "text": "The public route has its own router. The app imports it here."
+    },
+    {
+     "type": "code",
+     "file": "src/app.ts",
+     "from": 1,
+     "to": 12
+    },
+    {
+     "type": "prose",
+     "text": "Look at where the router is mounted and at the paths that `requirePage` is applied to."
+    },
+    {
+     "type": "code",
+     "file": "src/app.ts",
+     "from": 57,
+     "to": 72,
+     "notes": [
+      {
+       "line": 59,
+       "text": "Mounted before the `requirePage` lines, and none of those paths matches `/share/...`."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "The handler has no user. **Everything it shows comes from the invoice row that the token finds.**"
+    },
+    {
+     "type": "code",
+     "file": "src/routes/share.ts",
+     "from": 1,
+     "to": 28,
+     "notes": [
+      {
+       "line": 9,
+       "text": "A plain `Hono` without `Env`: the handler has no `user` and no `csrf` value."
+      },
+      {
+       "line": 13,
+       "text": "Set before the lookup, so the 404 answer has this header too."
+      },
+      {
+       "line": 19,
+       "text": "The workspace comes from the invoice, not from a session."
+      },
+      {
+       "line": 27,
+       "text": "`bare` renders a page without the sidebar and without a CSRF meta tag."
+      }
+     ]
+    },
+    {
+     "type": "diagram",
+     "title": "A request for a share link",
+     "nodes": [
+      {
+       "id": "a",
+       "label": "Client browser",
+       "sub": "no session",
+       "role": "outside"
+      },
+      {
+       "id": "b",
+       "label": "GET /share/:token",
+       "role": "new"
+      },
+      {
+       "id": "c",
+       "label": "invoiceByShareToken",
+       "role": "new"
+      },
+      {
+       "id": "d",
+       "label": "errorPage 404",
+       "role": "existing"
+      },
+      {
+       "id": "e",
+       "label": "invoicePaper",
+       "role": "new"
+      },
+      {
+       "id": "f",
+       "label": "bare",
+       "sub": "page without sidebar",
+       "role": "existing"
+      }
+     ],
+     "edges": [
+      {
+       "from": "a",
+       "to": "b"
+      },
+      {
+       "from": "b",
+       "to": "c"
+      },
+      {
+       "from": "c",
+       "to": "d",
+       "label": "no match"
+      },
+      {
+       "from": "c",
+       "to": "e",
+       "label": "invoice found"
+      },
+      {
+       "from": "e",
+       "to": "f"
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "`invoicePaper` is the invoice document. Most of this markup was moved here from the invoice page without change. One block near the end is new: the notes."
+    },
+    {
+     "type": "code",
+     "file": "src/views/invoice.ts",
+     "from": 1,
+     "to": 51,
+     "notes": [
+      {
+       "line": 48,
+       "text": "The `pre-wrap` class keeps the line breaks the user typed."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "The signed-in invoice page now calls the same function and puts the share card under it."
+    },
+    {
+     "type": "code",
+     "file": "src/routes/invoices.ts",
+     "from": 316,
+     "to": 333,
+     "notes": [
+      {
+       "line": 329,
+       "text": "The share card is added by this route, so it is not part of the public page."
+      }
+     ]
+    }
+   ],
+   "questions": [
+    {
+     "id": "public-share-page-q1",
+     "prompt": "What decides whether `GET /share/:token` shows an invoice?",
+     "options": [
+      "The token and a valid session",
+      "The token and an invoice status other than draft",
+      "Only whether an invoice row is found for this token",
+      "The token and a workspace id in the URL"
+     ],
+     "answer": 2,
+     "explain": "Line 14 looks the invoice up by token and lines 15 to 17 return 404 when nothing is found. The handler checks no session, status or workspace.",
+     "reread": {
+      "file": "src/routes/share.ts",
+      "from": 11,
+      "to": 17
+     }
+    },
+    {
+     "id": "public-share-page-q2",
+     "prompt": "An invoice has empty notes. What does the document show in the place of the notes?",
+     "options": [
+      "A Notes heading with an empty box",
+      "Nothing, because the notes block is left out",
+      "A Notes heading with the text `No notes`"
+     ],
+     "answer": 1,
+     "explain": "Line 48 renders the notes block only when `invoice.notes` is not empty. Otherwise it adds an empty string.",
+     "reread": {
+      "file": "src/views/invoice.ts",
+      "from": 46,
+      "to": 49
+     }
+    }
+   ]
+  },
+  {
+   "id": "tests",
+   "title": "Tests call each feature over HTTP; the copy script has no test",
+   "why": "One new test file checks the acceptance criteria of the issue against the seeded test database. It signs in as two users from two workspaces and sends requests like a browser would.",
+   "blocks": [
+    {
+     "type": "prose",
+     "text": "The file has six groups: search, line item count, notes, share links, CSV export and schema upgrade. This search test checks that pager links keep `q` and `status`."
+    },
+    {
+     "type": "code",
+     "file": "test/features.test.ts",
+     "from": 91,
+     "to": 111,
+     "notes": [
+      {
+       "line": 95,
+       "text": "`&amp;` is the HTML-escaped `&` inside the href."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "The main share test walks through the full life of a link: create, open without a session, revoke. Other share tests check CSRF, a second workspace, and unknown or malformed tokens."
+    },
+    {
+     "type": "code",
+     "file": "test/features.test.ts",
+     "from": 192,
+     "to": 228,
+     "notes": [
+      {
+       "line": 204,
+       "text": "A fresh `Client` has no cookies, so its requests have no session."
+      },
+      {
+       "line": 218,
+       "text": "The public page must not contain a CSRF token or any action."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "The export tests check the row count across pages, totals, workspace isolation and this formula case."
+    },
+    {
+     "type": "code",
+     "file": "test/features.test.ts",
+     "from": 303,
+     "to": 314,
+     "notes": [
+      {
+       "line": 305,
+       "text": "These notes start with `+` and hold a comma, quotes and a line break, so the quoting is tested too."
+      }
+     ]
+    },
+    {
+     "type": "prose",
+     "text": "The last test builds a database with the old table and opens it. **Not tested:** the copy button script in `app.js`, notes or search text longer than the limits, and export rows for the overdue filter (only the link is checked)."
+    },
+    {
+     "type": "code",
+     "file": "test/features.test.ts",
+     "from": 326,
+     "to": 350,
+     "notes": [
+      {
+       "line": 344,
+       "text": "A second open must not fail on columns that already exist."
+      }
+     ]
+    }
+   ],
+   "questions": [
+    {
+     "id": "tests-q1",
+     "prompt": "In the main share test, what does the client without a session get after Alice revokes the link?",
+     "options": [
+      "Status 404 and a page that contains `not found`",
+      "A redirect to `/login`",
+      "Status 403",
+      "Status 200 with an empty invoice"
+     ],
+     "answer": 0,
+     "explain": "Lines 225 to 227 request the old link again and expect status 404 and the text `not found` in the body.",
+     "reread": {
+      "file": "test/features.test.ts",
+      "from": 223,
+      "to": 227
+     }
+    },
+    {
+     "id": "tests-q2",
+     "prompt": "How does the schema upgrade test get a database from before this change?",
+     "options": [
+      "It removes the two columns from the seeded test database",
+      "It creates a file with the old `invoices` table by hand and opens it with `openDb`",
+      "It loads a saved database file from the repository"
+     ],
+     "answer": 1,
+     "explain": "Lines 331 to 337 create a new file with an `invoices` table that lacks both columns and insert one row. Line 339 then opens that file with `openDb`.",
+     "reread": {
+      "file": "test/features.test.ts",
+      "from": 331,
+      "to": 339
+     }
+    }
+   ]
+  }
+ ],
+ "plants": [
+  {
+   "id": "plant-invoices-299",
+   "file": "src/lib/invoices.ts",
+   "line": 299,
+   "original": "  getDb().query(\"UPDATE invoices SET notes = ? WHERE id = ?\").run(notes, invoiceId);",
+   "planted": "  getDb().query(\"UPDATE invoices SET notes = ? WHERE id = ?\").run(invoiceId, notes);",
+   "what": "The two parameters are bound in the wrong order. The statement looks for an invoice whose id is the notes text, finds none, and so editing the notes of an invoice never saves anything.",
+   "failedTests": [
+    "notes > can be set on create and edited, and show on the invoice page",
+    "notes > an API update without notes keeps them; with notes replaces them"
+   ]
+  },
+  {
+   "id": "plant-invoices-49",
+   "file": "src/routes/invoices.ts",
+   "line": 49,
+   "original": "  if (status !== \"all\") p.set(\"status\", status);",
+   "planted": "  if (status === \"all\") p.set(\"status\", status);",
+   "what": "The negation is lost. Links for the Paid, Drafts, Outstanding and Overdue tabs lose their status, so paging, the tabs and the export link fall back to all invoices.",
+   "failedTests": [
+    "invoice search > search and filter survive paging",
+    "CSV export > the list page links to the export with the current search and filter"
+   ]
+  },
+  {
+   "id": "plant-csv-17",
+   "file": "src/lib/csv.ts",
+   "line": 17,
+   "original": "  return \"﻿\" + rows.map((r) => r.map(csvField).join(\",\")).join(\"\\r\\n\") + \"\\r\\n\";",
+   "planted": "  return \"﻿\" + rows.map((r) => r.map(csvField).join(\",\")).join(\"\\n\") + \"\\r\\n\";",
+   "what": "Rows are joined with LF only, while the comment and the last line use CRLF. A reader that expects CRLF line ends sees the whole file as one row.",
+   "failedTests": [
+    "CSV export > exports every invoice matching the current search and filter, across pages",
+    "CSV export > totals and line counts match the data",
+    "CSV export > user text cannot become a spreadsheet formula",
+    "CSV export > only exports the own workspace and needs a session"
+   ]
+  }
+ ],
+ "madeBy": {
+  "model": "claude-fable-5-2",
+  "costUsd": 4.8846,
+  "at": "2026-11-14T14:40:02.872Z",
+  "plantModel": "claude-opus-5-5"
+ }
+}

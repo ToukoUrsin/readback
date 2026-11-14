@@ -1,0 +1,177 @@
+{
+ "schema": 1,
+ "pr": {
+  "repo": "ToukoUrsin/junction26-kuitti",
+  "number": 2,
+  "title": "Invoice search, share link, notes and CSV export",
+  "url": "https://github.com/ToukoUrsin/junction26-kuitti/pull/2",
+  "author": "Crashtest author agent",
+  "authorIsAgent": true,
+  "baseSha": "c9d4f4bd080e451ccd7292e28b2156dc7eb6c10f",
+  "headSha": "8b1f563384e52b3fec9a501da741798b6d57398d",
+  "additions": 785,
+  "deletions": 119,
+  "files": 13,
+  "issue": {
+   "number": 1,
+   "title": "Invoice search, share link, notes and CSV export",
+   "url": "https://github.com/ToukoUrsin/junction26-kuitti/issues/1",
+   "body": "dev fixture"
+  }
+ },
+ "intro": "DEV FIXTURE, not a generated plan. Two stops to build the page against.",
+ "stops": [
+  {
+   "id": "share-page",
+   "title": "A share link opens one invoice without a session",
+   "why": "Clients should see an invoice without signing up. The token in the link is the only key.",
+   "blocks": [
+    {
+     "type": "prose",
+     "text": "The route looks the invoice up by its token with `invoiceByShareToken`. **No session is read anywhere in this file.**"
+    },
+    {
+     "type": "diagram",
+     "title": "Opening a share link",
+     "nodes": [
+      {
+       "id": "a",
+       "label": "GET /share/:token",
+       "sub": "anyone with the link",
+       "role": "outside"
+      },
+      {
+       "id": "b",
+       "label": "invoiceByShareToken",
+       "sub": "looks up by token",
+       "role": "new"
+      },
+      {
+       "id": "c",
+       "label": "invoicePaper",
+       "sub": "read-only page",
+       "role": "new"
+      },
+      {
+       "id": "d",
+       "label": "404 page",
+       "sub": "revoked or mistyped",
+       "role": "existing"
+      }
+     ],
+     "edges": [
+      {
+       "from": "a",
+       "to": "b"
+      },
+      {
+       "from": "b",
+       "to": "c",
+       "label": "found"
+      },
+      {
+       "from": "b",
+       "to": "d",
+       "label": "not found"
+      }
+     ]
+    },
+    {
+     "type": "code",
+     "file": "src/routes/share.ts",
+     "from": 1,
+     "to": 28,
+     "notes": [
+      {
+       "line": 13,
+       "text": "Keeps shared invoices out of search engines."
+      },
+      {
+       "line": 15,
+       "text": "A revoked token and a mistyped one look the same from outside."
+      }
+     ]
+    }
+   ],
+   "questions": [
+    {
+     "id": "q1",
+     "prompt": "What does a revoked share link return?",
+     "options": [
+      "A 403 page that says the link was revoked",
+      "A 404 page, the same as for a mistyped link",
+      "A redirect to the sign-in page"
+     ],
+     "answer": 1,
+     "explain": "Lines 15 to 17: any token that finds no invoice gets the same 404.",
+     "reread": {
+      "file": "src/routes/share.ts",
+      "from": 14,
+      "to": 17
+     }
+    }
+   ]
+  },
+  {
+   "id": "csv",
+   "title": "CSV fields cannot run as formulas",
+   "why": "A client name such as =HYPERLINK(...) would run when the export is opened in a spreadsheet.",
+   "blocks": [
+    {
+     "type": "code",
+     "file": "src/lib/csv.ts",
+     "from": 1,
+     "to": 18
+    }
+   ],
+   "questions": [
+    {
+     "id": "q2",
+     "prompt": "A client is named \"=SUM(A1)\". What is written to the CSV?",
+     "options": [
+      "=SUM(A1)",
+      "'=SUM(A1)",
+      "\"=SUM(A1)\"",
+      "An empty field"
+     ],
+     "answer": 1,
+     "explain": "Line 11 puts an apostrophe in front.",
+     "reread": {
+      "file": "src/lib/csv.ts",
+      "from": 7,
+      "to": 13
+     }
+    }
+   ]
+  }
+ ],
+ "plants": [
+  {
+   "id": "p1",
+   "file": "src/lib/csv.ts",
+   "line": 9,
+   "original": "  if (typeof value === \"number\") return String(value);",
+   "planted": "  if (typeof value === \"number\") return String(-value);",
+   "what": "dev",
+   "failedTests": [
+    "dev"
+   ]
+  },
+  {
+   "id": "p2",
+   "file": "src/routes/share.ts",
+   "line": 18,
+   "original": "  const client = getClient(invoice.client_id)!;",
+   "planted": "  const client = getClient(invoice.id)!;",
+   "what": "dev",
+   "failedTests": [
+    "dev"
+   ]
+  }
+ ],
+ "madeBy": {
+  "model": "dev fixture",
+  "costUsd": 0,
+  "at": "2026-11-14T14:10:00Z"
+ }
+}
