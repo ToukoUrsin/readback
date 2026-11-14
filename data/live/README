@@ -4,3 +4,20 @@ What the public copy serves. Copies, made by hand:
 The short read is made by:
   bun gen/short.ts --plan data/kuitti-3-full/plan.json --stops share-token,searched-list --cold "src/lib/invoices.ts:50-87" --cold-plants plant-invoices-61 --no-plants plant-invoices-147 --out data/kuitti-3-short/plan.json
   bun gen/materialize.ts --repo /bulk3/runs/readback/kuitti-live --plan data/kuitti-3-short/plan.json
+
+evidence.json  <- data/kuitti-3-full/evidence.json (the Evidence interface in shared/tour.ts), made by:
+  bun gen/evidence.ts --repo /bulk3/runs/readback/kuitti-live --plan data/kuitti-3-full/plan.json --out data/kuitti-3-full --copy data/live --earlier /bulk3/runs/readback/kuitti-2-head-55559f7/steps --resume
+What is in it and where it comes from:
+  tests      one run of `bun test` on head 55559f7, in Docker (oven/bun:1), no network
+  changes    one-line changes, each run alone against all tests the same way. claude-opus-5-5 proposes about 7 per stop
+             in a copy of the head commit without the test files; the 11 planted lines of plan.json and the candidates
+             of the earlier plant steps (--earlier) are tried too. A change whose run broke without a failing test,
+             timed out, or failed more than 40% of the tests (the app no longer starts) is not counted.
+             claude-fable-5-2 then checks every change the tests did not notice and drops the ones that do the same
+             as the original line.
+  criteria, risk   claude-fable-5-2 reads the stops and the issue; code checks that the code quoted in riskWhy is in the stop
+  route      decided in code from the fields above, no model
+  rulings    claude-fable-5-2 proposes; code checks every cited range, and that an "untested" item cites a line
+             where a change went unnoticed by the tests
+Model answers, every test run, all tried changes (changes.json) and the step log (evidence.log.jsonl) are kept in
+/bulk3/runs/readback/evidence/kuitti-3-full-55559f7/ (no backups). --resume reuses them, so a rerun asks no model again.

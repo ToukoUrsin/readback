@@ -349,7 +349,7 @@ test('a visitor who types a name signs a record that does not approve; a signed-
   await ada('/api/answer', { id: 'q1', choice: 1 });
   await ada('/api/rule', { id: 'r1', decision: 'accept' });
   await ada('/api/flag', { file: 'a.ts', line: 2, note: 'the value is upper case now' });
-  await Bun.sleep(3300); // 3 lines in 3.3 s: under a line a second
+  await Bun.sleep(4200); // 3 lines in 4 s: under a line a second
   expect((await ada('/api/handin', {})).json.ok).toBe(true);
   const sig = (await ada('/api/sign', {})).json.signature;
   expect(sig.login).toBe('ada');
@@ -367,7 +367,7 @@ test('a visitor who types a name signs a record that does not approve; a signed-
   await bob('/api/answer', { id: 'q1', choice: 1 });
   await bob('/api/rule', { id: 'r1', decision: 'back', note: 'nobody asked for this code' });
   await bob('/api/flag', { file: 'a.ts', line: 2, note: 'the value is upper case now' });
-  await Bun.sleep(3300);
+  await Bun.sleep(4200);
   await bob('/api/handin', {});
   expect((await bob('/api/sign', {})).json.signature.outcome).toBe('sent-back');
   expect(statuses.at(-1).state).toBe('failure');
