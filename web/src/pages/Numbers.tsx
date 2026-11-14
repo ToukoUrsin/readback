@@ -116,14 +116,16 @@ export default function Numbers() {
 
 const big = (x: number) => x.toLocaleString('en-US');
 
+/** one look for every list of a label and its value on this page */
+const row = 'flex items-baseline justify-between gap-5 py-[7px]';
+const dt = 'min-w-0 text-[13px] leading-[1.45] text-fg3';
+const dd = 'flex-none text-right text-[13.5px] font-[510] tabular-nums text-fg';
+
 function History({ n }: { n: Data }) {
   const h = n.history;
   const q = n.questionCheck;
   if (!h && !q) return null;
   const c = h?.callers;
-  const row = 'flex items-baseline justify-between gap-5 py-[7px]';
-  const dt = 'min-w-0 text-[13px] leading-[1.45] text-fg3';
-  const dd = 'flex-none text-right text-[13.5px] font-[510] tabular-nums text-fg';
   return (
     <Section id="history" title="Tokens and checks">
       <p className={STATEMENT}>What the agent spent writing the change, what it costs to know what a line reaches, and how the questions were checked. None of this is counted from readers: it is measured once per pull request.</p>
@@ -458,12 +460,15 @@ function Share({ n }: { n: Data }) {
                     ['Lines the second reader marked', n.second.theirs],
                     ['Marked by both', n.second.both],
                     ['Only ours', n.second.oursOnly],
-                    ['Only the second reader, and on no close-read list (shown in the review with a grey mark, not counted)', n.second.theirsOnly],
-                  ] as [string, number][]
-                ).map(([k, v]) => (
-                  <div key={k} className="flex items-baseline justify-between gap-6 py-2 text-[13.5px]">
-                    <dt className="text-fg2">{k}</dt>
-                    <dd className="font-[590] text-fg tabular-nums">{v}</dd>
+                    ['Only the second reader, and on no close-read list', n.second.theirsOnly, 'Shown in the review with a grey mark, not counted.'],
+                  ] as [string, number, string?][]
+                ).map(([k, v, more]) => (
+                  <div key={k} className={row}>
+                    <dt className={dt}>
+                      {k}
+                      {more && <span className="block text-[12px] text-fg4">{more}</span>}
+                    </dt>
+                    <dd className={dd}>{v}</dd>
                   </div>
                 ))}
               </dl>

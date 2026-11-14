@@ -305,6 +305,11 @@
   .row.del .src {
     opacity: 0.62;
   }
+  /* a line only the second reader would send to a person: a grey edge, lighter than ours.
+     It stands before the flag and selection rules, so a flagged or selected line keeps its own edge. */
+  .row.also {
+    border-left-color: var(--fg4);
+  }
   .row:hover {
     background: var(--hover);
   }
@@ -343,10 +348,6 @@
     color: var(--flag);
   }
   /* lines the guide marked: read these closely */
-  /* a line only the second reader would send to a person: marked, lighter than ours */
-  .row.also {
-    border-left-color: var(--fg4);
-  }
   .row.focus {
     border-left-color: var(--warn);
     background: rgba(242, 201, 76, 0.05);
@@ -528,5 +529,15 @@
   * {
     animation-duration: 1ms !important;
     transition-duration: 1ms !important;
+  }
+}
+
+/* Safari's `pretty` breaks the whole paragraph again and leaves lines that end early in a narrow column.
+   Chrome only mends the last lines, so it keeps `pretty`. hanging-punctuation is the one feature only Safari has.
+   Outside the layers, so it also holds for the text-pretty utility. */
+@supports (hanging-punctuation: first) {
+  p,
+  .text-pretty {
+    text-wrap: wrap;
   }
 }

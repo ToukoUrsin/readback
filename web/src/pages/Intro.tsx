@@ -283,13 +283,6 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
               </div>
             ))}
           </dl>
-          <p className="mt-2.5 text-[12.5px] text-fg3">
-            The whole concept, with its trade-offs and limits:{' '}
-            <a href="/concept" className="text-accent-hi underline-offset-2 hover:underline">
-              Concept
-            </a>
-            .
-          </p>
         </>
       )}
 
@@ -347,7 +340,7 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
           The concept, its trade-offs and limits
         </a>{' '}
         ·{' '}
-        <a className="text-fg3 underline-offset-2 hover:text-fg hover:underline" href="/numbers">
+        <a className="whitespace-nowrap text-fg3 underline-offset-2 hover:text-fg hover:underline" href="/numbers">
           What this copy has measured
         </a>
         <br />

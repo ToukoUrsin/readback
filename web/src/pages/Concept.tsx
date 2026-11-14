@@ -72,11 +72,11 @@ export default function Concept() {
           </p>
           {r && <Tiers r={r} points={n?.points.length} />}
           <p className={`${PROSE} mt-4`}>
-            Who sets the tier: the test runs decide “no test notices a bug here”, a model marks what a line can harm, and the reviewer can flag any line in any tier. A team’s own always-read paths (sign-in, payments, patient data) belong in a file in the repository that the tech lead owns. That file is not built yet: today the marks come from the model and the tests alone.
+            <strong className="font-[590] text-fg">Who sets the tier:</strong> the test runs decide “no test notices a bug here”, a model marks what a line can harm, and the reviewer can flag any line in any tier. A team’s own always-read paths (sign-in, payments, patient data) belong in a file in the repository that the tech lead owns. That file is not built yet: today the marks come from the model and the tests alone.
           </p>
           {n?.second && (
             <p className={`${PROSE} mt-3`}>
-              Who checks the model’s marks: a second model from another vendor ({n.second.model}) got the same code with no marks and no notes, and marked <N v={n.second.theirs} /> lines on its own, against <N v={n.second.ours} /> of ours. <N v={n.second.both} /> lines are on both lists. <N v={n.second.theirsOnly} /> of its lines are on no list of ours: the review shows them with a grey mark, not counted, and under each of our marks it says whether the second reader marked the line too. Two models can share a blind spot. <span className="text-warn">That part is open.</span>
+              <strong className="font-[590] text-fg">Who checks the model’s marks:</strong> a second model from another vendor (<span className="whitespace-nowrap">{n.second.model}</span>) got the same code with no marks and no notes, and marked <B v={n.second.theirs} /> lines on its own, against <B v={n.second.ours} /> of ours. <B v={n.second.both} /> lines are on both lists. <B v={n.second.theirsOnly} /> of its lines are on no list of ours: the review shows them with a grey mark, not counted, and under each of our marks it says whether the second reader marked the line too. Two models can share a blind spot. <span className="text-warn">That part is open.</span>
             </p>
           )}
         </Section>

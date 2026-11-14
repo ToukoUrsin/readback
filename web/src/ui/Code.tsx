@@ -1,4 +1,4 @@
-import { type CSSProperties, memo, type TextareaHTMLAttributes, useState } from 'react';
+import { type CSSProperties, Fragment, memo, type ReactElement, type TextareaHTMLAttributes, useState } from 'react';
 import type { CodeBlock, Entire, Flag, Ruling, RulingItem, StopEvidence, StopSecond, Token } from '../../../shared/tour';
 import { reachOf, Reached, sessionOf, Why } from './Entire';
 import { Chat, Check, Eye, Flag as FlagIcon, FlagFill, Warn, X } from './icons';
@@ -11,16 +11,49 @@ export const MIN_NOTE = 8;
 export const MIN_RULING = 12;
 export const POINT_KIND: Record<RulingItem['kind'], string> = { unasked: 'Nobody asked for this', open: 'The issue leaves this open', untested: 'No test checks this', answer: 'A reviewer sent this back' };
 
+/**
+ * Where a line may break on a phone. A run of code with no space in it that is longer than half a phone line
+ * (a route string, a call with its arguments) used to break wherever the line ran out, in the middle of a name.
+ * It may now break after punctuation that is followed by a name or a string, and a name stays whole.
+ */
+function softBreaks(tokens: Token[]) {
+  let line = '';
+  for (const [text] of tokens) line += text;
+  let at: Set<number> | null = null;
+  for (const m of line.matchAll(/\S{25,}/g))
+    for (let i = 1; i < m[0].length; i++) if (/[(,/:;=?&[{|]/.test(m[0][i - 1]!) && /[\w$"'`]/.test(m[0][i]!)) (at ??= new Set()).add(m.index + i);
+  return at;
+}
+
 export function Tokens({ tokens }: { tokens: Token[] }) {
+  const at = softBreaks(tokens);
+  let pos = 0;
+  /** the token's text, with a break opportunity where one falls inside it. Phone only: a wider screen wraps at spaces as before */
+  const cut = (text: string) => {
+    const from = pos;
+    pos += text.length;
+    if (!at) return text;
+    const parts: (string | ReactElement)[] = [];
+    let last = 0;
+    for (let i = 0; i < text.length; i++)
+      if (at.has(from + i)) {
+        if (i > last) parts.push(text.slice(last, i));
+        parts.push(<wbr key={i} className="sm:hidden" />);
+        last = i;
+      }
+    if (!parts.length) return text;
+    parts.push(text.slice(last));
+    return parts;
+  };
   return (
     <>
       {tokens.map(([text, c], i) =>
         c ? (
           <span key={i} className={`tk-${c}`}>
-            {text}
+            {cut(text)}
           </span>
         ) : (
-          text
+          <Fragment key={i}>{cut(text)}</Fragment>
         ),
       )}
     </>
@@ -237,6 +270,10 @@ export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, on
   const extra = (second?.also ?? []).filter((a) => a.file === block.file && a.from <= block.to && a.to >= block.from);
   const also = new Set<number>();
   for (const a of extra) for (let n = Math.max(a.from, block.from); n <= Math.min(a.to, block.to); n++) if (!closely.has(n)) also.add(n);
+  // its notes in this block, in order. The first says that these lines are not counted; a later one does not say it again,
+  // and a note with the same words as an earlier one (one range of the second reader, cut in two by a mark of ours) points back to it
+  const greys = extra.filter((a) => also.has(Math.max(a.from, block.from)));
+  const lines = (a: { from: number; to: number }) => (a.to > a.from ? `lines ${a.from}–${a.to}` : `line ${a.from}`);
   const second2 = (f: { from: number; to: number }) => {
     if (!second) return null;
     const all = f.to - f.from + 1;
@@ -322,21 +359,26 @@ export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, on
                       <span className="font-[590] text-warn">Read closely{f.to > f.from ? `, lines ${f.from}–${f.to}` : ''}. </span>
                       {inline(f.why)}
                       {entire && firstIn(f.from) && <Reached en={entire} file={block.file} line={f.from} />}
-                      {second2(f) && <span className="block text-[12px] text-fg4">{second2(f)}</span>}
+                      {second2(f) && <span className="block text-[12px] leading-[17px] text-fg3">{second2(f)}</span>}
                     </span>
                   </div>
                 ))}
-                {extra
-                  .filter((a) => Math.max(a.from, block.from) === n && also.has(n))
-                  .map((a) => (
-                    <div key={`s${a.from}`} className={`${under} items-start gap-2 py-1.5 pr-4 pl-[14px] ${i > 0 ? 'mt-1' : ''}`}>
-                      <Eye size={13} className="mt-[2px] flex-none text-fg4" />
-                      <span className="text-[12.5px] leading-[18px] whitespace-normal text-fg3">
-                        <span className="font-[590] text-fg2">Second reader only{a.to > a.from ? `, lines ${a.from}–${a.to}` : ''}. </span>
-                        {inline(a.why)} <span className="text-fg4">Our marks do not send this to you, so it is not counted in the lines to read closely.</span>
-                      </span>
-                    </div>
-                  ))}
+                {greys
+                  .filter((a) => Math.max(a.from, block.from) === n)
+                  .map((a) => {
+                    const same = greys.find((b) => b.from < a.from && b.why === a.why);
+                    return (
+                      // a grey note is a step smaller and dimmer than a yellow one: it is there to be seen, not to be acted on
+                      <div key={`s${a.from}`} className={`${under} items-start gap-2 py-1 pr-4 pl-[14px] ${i > 0 ? 'mt-1' : ''}`}>
+                        <Eye size={13} className="mt-[2px] flex-none text-fg4" />
+                        <span className="text-[12px] leading-[17px] whitespace-normal text-fg3">
+                          <span className="font-[510]">Second reader only{a.to > a.from ? `, lines ${a.from}–${a.to}` : ''}. </span>
+                          {same ? `Same reason as ${lines(same)}.` : inline(a.why)}
+                          {a === greys[0] && ' Our marks do not send this to you, so it is not counted in the lines to read closely.'}
+                        </span>
+                      </div>
+                    );
+                  })}
                 <div
                   id={lineId(block.file, n)}
                   className={`row ${act ? 'pick' : ''} ${l.kind === 'add' ? 'add' : ''} ${closely.has(n) ? 'focus' : also.has(n) ? 'also' : ''} ${flag ? 'flagged' : ''} ${open ? 'sel' : ''} ${pulsing ? 'pulse' : ''}`}
