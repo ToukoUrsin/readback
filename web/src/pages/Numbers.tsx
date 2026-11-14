@@ -101,12 +101,20 @@ function Measures({ n }: { n: Data }) {
   const missed = p.pace.reduce((k, b) => k + b.missed, 0);
   const ruled = p.rulings.accepted + p.rulings.sentBack;
   const none = <span className="text-fg3">no person yet</span>;
+  const quiet = (text: string) => <span className="text-fg3">{text}</span>;
   const rows: { measure: string; now: ReactNode; live: string; alarm: string; to: string }[] = [
     {
       measure: 'Reverts and incidents do not rise as review time falls',
       now: (
         <>
-          Stand-in: a known bug in every review. Missed by people: {met ? <b className="font-[590] text-fg">{missed} of {met}</b> : none}. Before Readback, in the cold test: {p.cold.shown ? <b className="font-[590] text-fg">{p.cold.approved} of {p.cold.shown} approved the bug</b> : none}.
+          Stand-in: a known bug in every review.{' '}
+          {met || p.cold.shown ? (
+            <>
+              Missed by people: {met ? <b className="font-[590] text-fg">{missed} of {met}</b> : none}. Before Readback, in the cold test: {p.cold.shown ? <b className="font-[590] text-fg">{p.cold.approved} of {p.cold.shown} approved the bug</b> : none}.
+            </>
+          ) : (
+            quiet('No person has met one on this copy yet.')
+          )}
         </>
       ),
       live: 'Reverts and incident tickets of merged changes, set against the minutes and pace on the signature of each.',
@@ -117,7 +125,14 @@ function Measures({ n }: { n: Data }) {
       measure: 'AI findings are real and accepted',
       now: (
         <>
-          <b className="font-[590] text-fg">{route.unnoticed} of {route.unnoticed}</b> untested-line findings come from a run that can be repeated. <b className="font-[590] text-fg">{n.points.length}</b> open points; ruled on by people: {ruled ? <b className="font-[590] text-fg">{p.rulings.accepted} accepted, {p.rulings.sentBack} sent back</b> : none}.
+          <b className="font-[590] text-fg">{route.unnoticed} of {route.unnoticed}</b> untested-line findings come from a run that can be repeated. <b className="font-[590] text-fg">{n.points.length}</b> open points
+          {ruled ? (
+            <>
+              ; ruled on by people: <b className="font-[590] text-fg">{p.rulings.accepted} accepted, {p.rulings.sentBack} sent back</b>.
+            </>
+          ) : (
+            <>. {quiet('No person has ruled on one yet.')}</>
+          )}
         </>
       ),
       live: 'Per kind of point: how many were sent back and then changed by the author.',
@@ -128,7 +143,13 @@ function Measures({ n }: { n: Data }) {
       measure: 'Time to merge',
       now: (
         <>
-          Start of the full review to the signature, median: <b className="font-[590] text-fg">{full.medianSecondsToSignature === null ? none : fmtSeconds(full.medianSecondsToSignature)}</b>. Cold test decision: {p.cold.medianSeconds === null ? none : <b className="font-[590] text-fg">{fmtSeconds(p.cold.medianSeconds)}</b>}.
+          {full.medianSecondsToSignature === null && p.cold.medianSeconds === null ? (
+            <>Start of the full review to the signature, and the cold test decision, median. {quiet('No person has finished either yet.')}</>
+          ) : (
+            <>
+              Start of the full review to the signature, median: {full.medianSecondsToSignature === null ? none : <b className="font-[590] text-fg">{fmtSeconds(full.medianSecondsToSignature)}</b>}. Cold test decision: {p.cold.medianSeconds === null ? none : <b className="font-[590] text-fg">{fmtSeconds(p.cold.medianSeconds)}</b>}.
+            </>
+          )}
         </>
       ),
       live: 'Pull request opened to merged, split into waiting for a reviewer and minutes in the review.',
@@ -549,9 +570,9 @@ function Time({ n }: { n: Data }) {
           const f = review(g, 'full');
           const s = review(g, 'short');
           const nothing = !f.started && !s.started && !g.cold.shown;
+          if (nothing) return <None>{who === 'people' ? 'No person has started a review on this copy yet.' : 'No agent run has started a review yet.'}</None>;
           return (
             <>
-              {nothing && <None>{who === 'people' ? 'No person has started a review on this copy yet.' : 'No agent run has started a review yet.'}</None>}
               <Stats
                 who={who}
                 rows={[

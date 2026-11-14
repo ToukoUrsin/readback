@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { CodeBlock, ColdResult, PublicTour } from '../../../shared/tour';
 import { api, type ColdStats } from '../api';
-import { Tokens } from '../ui/Code';
-import { ArrowRight, Bot, Check, Eye, FlagFill, Logo, X } from '../ui/icons';
+import { hang, Tokens } from '../ui/Code';
+import { ArrowRight, Bot, Check, Eye, FlagFill, Logo, Pull, X } from '../ui/icons';
 import { RevealCard } from '../ui/Reveal';
 import { Title } from '../ui/Title';
 
@@ -56,6 +56,13 @@ export function Cold({ tour, setTour }: { tour: PublicTour; setTour: (t: PublicT
               <span>{pr.files} files</span>
             </span>
           </div>
+          <p className="mt-3 flex items-start gap-2 text-[13px] leading-[1.5] text-fg3">
+            <Pull size={13} className="mt-[3px] flex-none text-fg4" />
+            <span>
+              <span className="font-[510] text-fg2">{pr.author}</span> wants to merge commit <span className="font-mono text-[12px] text-fg2">{pr.headSha.slice(0, 7)}</span>
+              {pr.issue && <> for issue #{pr.issue.number}</>}
+            </span>
+          </p>
           <h1 className="mt-4 text-[26px] leading-[1.15] font-[590] tracking-[-0.022em] text-fg sm:text-[34px]">An AI agent wrote this pull request. You are the reviewer.</h1>
           <p className="mt-3 text-[15px] leading-[1.6] text-fg2">
             “{pr.title}”. This is one part of it. Approve it, or click the line you want changed.
@@ -75,14 +82,14 @@ export function Cold({ tour, setTour }: { tour: PublicTour; setTour: (t: PublicT
                     <span className="text-bad">−{b.lines.filter((l) => l.kind === 'del').length}</span>
                   </span>
                 </div>
-                <div className="overflow-x-auto">
-                  <div className="code w-max min-w-full py-2">
+                <div>
+                  <div className="code py-2">
                     {b.lines.map((l, i) => {
                       const on = l.n !== null && pick?.file === b.file && pick.line === l.n;
                       return (
                         <div key={i} className={`row ${l.kind === 'add' ? 'add' : l.kind === 'del' ? 'del' : ''} ${l.n !== null ? 'pick' : ''} ${on ? 'sel' : ''}`} onClick={() => l.n !== null && !window.getSelection()?.toString() && setPick(on ? null : { file: b.file, line: l.n })}>
                           <span className="num">{l.n ?? '−'}</span>
-                          <span className="src">
+                          <span className="src" style={hang(l.tokens)}>
                             <Tokens tokens={l.tokens} />
                           </span>
                         </div>

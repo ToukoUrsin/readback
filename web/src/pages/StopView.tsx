@@ -131,19 +131,31 @@ export function StopView({ stop, answers, flags, locked, canAsk, pulse, evidence
           <span className="flex flex-none items-center gap-1.5 font-[590] text-warn">
             <Eye size={13} /> Read closely
           </span>
-          {marks.map((f) => (
-            <button
-              key={`${f.file}:${f.from}`}
-              className={`flex flex-none items-center gap-1 rounded-md border px-2 py-[3px] font-mono text-[11.5px] transition-colors hover:text-fg ${f.kind === 'point' ? 'border-accent/45 text-accent-hi hover:border-accent' : 'border-line-strong text-fg3 hover:border-warn/45'}`}
-              title={f.why}
-              onClick={() => onReread(f)}
-            >
-              {f.kind === 'untested' && <Warn size={11} className="text-warn" />}
-              {files.length > 1 ? `${f.file.split('/').pop()}:` : f.to > f.from ? 'lines ' : 'line '}
-              {f.from}
-              {f.to > f.from ? `–${f.to}` : ''}
-            </button>
-          ))}
+          {files.map((file) => {
+            const here = marks.filter((m) => m.file === file);
+            const base = file.split('/').pop();
+            // two files of one name (lib/invoices.ts, routes/invoices.ts) are told apart by their folder
+            const name = files.filter((x) => x.split('/').pop() === base).length > 1 ? file.split('/').slice(-2).join('/') : base;
+            return here.length ? (
+              <span key={file} className="flex flex-none items-center gap-1.5">
+                {files.length > 1 && <span className="flex-none pl-1 font-mono text-[11.5px] text-fg4">{name}</span>}
+                {here.map((f) => (
+                  <button
+                    key={`${f.file}:${f.from}`}
+                    className={`flex flex-none items-center gap-1 rounded-md border px-2 py-[3px] font-mono text-[11.5px] tabular-nums transition-colors hover:text-fg ${f.kind === 'point' ? 'border-accent/45 text-accent-hi hover:border-accent' : 'border-line-strong text-fg3 hover:border-warn/45'}`}
+                    title={f.why}
+                    aria-label={`${name}, ${f.to > f.from ? `lines ${f.from} to ${f.to}` : `line ${f.from}`}`}
+                    onClick={() => onReread(f)}
+                  >
+                    {f.kind === 'untested' && <Warn size={11} className="text-warn" />}
+                    {files.length > 1 ? '' : f.to > f.from ? 'lines ' : 'line '}
+                    {f.from}
+                    {f.to > f.from ? `–${f.to}` : ''}
+                  </button>
+                ))}
+              </span>
+            ) : null;
+          })}
         </div>
       )}
 

@@ -259,7 +259,7 @@
   .row {
     display: flex;
     position: relative;
-    min-width: max-content;
+    min-width: 0;
     border-left: 2px solid transparent;
   }
   .row .num {
@@ -271,11 +271,28 @@
     user-select: none;
     cursor: pointer;
   }
+  /* A long line wraps instead of running off the card: a reviewer has to see all of it.
+     The inline style on .src (ui/Code.tsx hang) indents the wrapped part past the line's own indent. */
   .row .src {
     flex: 1;
-    padding-right: 24px;
-    white-space: pre;
+    min-width: 0;
+    padding-right: 16px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
     color: var(--fg2);
+  }
+  @media (max-width: 639px) {
+    .code {
+      font-size: 12px;
+      line-height: 20px;
+    }
+    .row .num {
+      width: 38px;
+      padding-right: 10px;
+    }
+    .row .src {
+      padding-right: 10px;
+    }
   }
   .row.add {
     border-left-color: rgba(76, 183, 130, 0.55);
@@ -327,7 +344,7 @@
   }
   /* lines the guide marked: read these closely */
   .row.focus {
-    box-shadow: inset 3px 0 0 -1px var(--warn);
+    border-left-color: var(--warn);
     background: rgba(242, 201, 76, 0.05);
   }
   .row.focus.add {
@@ -338,14 +355,17 @@
   }
   .row.focus.flagged,
   .row.focus.flagged:hover {
+    border-left-color: var(--flag);
     background: var(--flag-soft);
   }
   .row.focus.sel,
   .row.focus.sel:hover {
+    border-left-color: var(--accent);
     background: rgba(94, 106, 210, 0.16);
   }
   .row.focus.flagged.sel,
   .row.focus.flagged.sel:hover {
+    border-left-color: var(--flag);
     background: var(--flag-soft);
   }
   .tool {

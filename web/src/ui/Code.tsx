@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { type CSSProperties, memo, useState } from 'react';
 import type { CodeBlock, Flag, Ruling, RulingItem, StopEvidence, Token } from '../../../shared/tour';
 import { Chat, Check, Eye, Flag as FlagIcon, FlagFill, Warn, X } from './icons';
 import { inline } from './Prose';
@@ -22,6 +22,22 @@ export function Tokens({ tokens }: { tokens: Token[] }) {
       )}
     </>
   );
+}
+
+/**
+ * A long line wraps (index.css .row .src). The wrapped part hangs two characters past the line's own indent,
+ * so it never reads as a new line of code.
+ */
+export function hang(tokens: Token[]): CSSProperties {
+  let n = 0;
+  scan: for (const [text] of tokens)
+    for (const ch of text) {
+      if (ch === ' ') n++;
+      else if (ch === '\t') n += 2;
+      else break scan;
+    }
+  const by = Math.min(n, 10) + 2;
+  return { paddingLeft: `${by}ch`, textIndent: `-${by}ch` };
 }
 
 type Unnoticed = StopEvidence['changes']['survived'][number];
@@ -63,8 +79,8 @@ interface Props {
   onRule?: (id: string, decision: Ruling['decision'], note: string) => Promise<string | null>;
 }
 
-/** a bar under a line, as wide as the card however far the code is scrolled sideways */
-const under = 'sticky left-0 flex w-[100cqw] font-sans';
+/** a bar under a line, in the reading font */
+const under = 'flex font-sans';
 
 function Point({ p, ruling, locked, onRule }: { p: RulingItem; ruling?: Ruling; locked: boolean; onRule?: Props['onRule'] }) {
   const [back, setBack] = useState(false);
@@ -187,14 +203,14 @@ export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, on
           )}
         </span>
       </div>
-      <div className="overflow-x-auto [container-type:inline-size]">
-        <div className="code w-max min-w-full py-2">
+      <div>
+        <div className="code py-2">
           {block.lines.map((l, i) => {
             if (l.n === null)
               return showRemoved ? (
                 <div key={`d${i}`} className="row del">
                   <span className="num cursor-default!">−</span>
-                  <span className="src">
+                  <span className="src" style={hang(l.tokens)}>
                     <Tokens tokens={l.tokens} />
                   </span>
                 </div>
@@ -229,7 +245,7 @@ export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, on
                   onClick={() => act && !window.getSelection()?.toString() && setSel(open ? null : n)}
                 >
                   <span className="num">{n}</span>
-                  <span className="src">
+                  <span className="src" style={hang(l.tokens)}>
                     <Tokens tokens={l.tokens} />
                   </span>
                 </div>
@@ -247,8 +263,10 @@ export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, on
                   );
                 })}
                 {note && (
-                  <div className={`${under} gap-2.5 py-1.5 pr-4 pl-[46px]`}>
-                    <span className="mt-[3px] w-0.5 flex-none self-stretch rounded bg-accent" />
+                  <div className={`${under} items-start gap-2 py-1.5 pr-4 pl-[46px]`}>
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mt-[2px] flex-none text-fg4" aria-hidden>
+                      <path d="M3.5 3v4.5a1 1 0 0 0 1 1h8M9.5 5.5l3 3-3 3" />
+                    </svg>
                     <span className="text-[12.5px] leading-[18px] whitespace-normal text-fg2">{inline(note)}</span>
                   </div>
                 )}

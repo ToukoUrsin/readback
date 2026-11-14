@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
 import type { PublicTour } from '../../../shared/tour';
 import { ArrowRight, Bot, Check, Eye, FlagFill, Lock, Pull, Warn, X } from '../ui/icons';
 import { inline } from '../ui/Prose';
@@ -52,8 +52,12 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
     { mark: <Check size={13} className="text-ok" />, title: `Answer ${questions} questions`, body: `Each one can only be answered from the code of its stop. A wrong answer closes the question for ${rule.lockSeconds} seconds and stays on the record.` },
     ...(points.length ? [{ mark: <span className="text-[12px] font-[590] text-accent-hi">?</span>, title: `Rule on ${points.length} open ${points.length === 1 ? 'point' : 'points'}`, body: 'Accept it as it is, or send it back to the author with what has to change.' }] : []),
     { mark: <FlagFill size={13} className="text-flag" />, title: 'Catch the planted bug', body: 'One of the lines to read closely was changed for you only. It is a real bug: the project’s tests fail on it. Flag it and say what it does wrong. The reason is checked.' },
-    { mark: <Bot size={13} className="text-accent-hi" />, title: 'Ask the guide', body: 'Click any line to ask about it. The guide explains the code as the agent wrote it. It will not tell you what is wrong.' },
+    ...(tour.ask ? [{ mark: <Bot size={13} className="text-accent-hi" />, title: 'Ask the guide', body: 'Click any line to ask about it. The guide explains the code as the agent wrote it. It will not tell you what is wrong.' }] : []),
   ];
+
+  // Enter starts the review, but the page must open at its top: autoFocus would scroll down to the button.
+  const start = useRef<HTMLButtonElement>(null);
+  useEffect(() => start.current?.focus({ preventScroll: true }), []);
 
   const gate = [
     'You are signed in with GitHub. A typed name is recorded and never approves.',
@@ -72,13 +76,13 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
         </span>
         {pr.authorIsAgent && (
           <>
-            <span className="text-fg4">·</span>
+            <span className="text-fg4 max-sm:hidden">·</span>
             <span className="inline-flex items-center gap-1.5 text-accent-hi">
               <Bot size={13} /> Written by an AI agent
             </span>
           </>
         )}
-        <span className="text-fg4">·</span>
+        <span className="text-fg4 max-sm:hidden">·</span>
         <span className="tabular-nums">
           <span className="text-ok">+{pr.additions}</span> <span className="text-bad">−{pr.deletions}</span> <span className="text-fg4">in</span> {pr.files} files
         </span>
@@ -157,7 +161,7 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
             </button>
           </>
         ) : (
-          <button className="btn btn-primary btn-lg" onClick={onStart} autoFocus>
+          <button ref={start} className="btn btn-primary btn-lg" onClick={onStart}>
             {state.startedAt ? 'Continue the review' : 'Start the review'} <ArrowRight size={15} />
           </button>
         )}

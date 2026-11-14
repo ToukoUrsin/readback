@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
 import type { Flag, PublicTour } from '../../../shared/tour';
 import { Eye, FlagFill, Logo, Minus, Pull, StatusDone, StatusNow, StatusTodo, X } from './icons';
 
@@ -22,20 +22,37 @@ export function Sidebar({ tour, at, done, go, jump, unflag }: Props) {
   const ruled = points.filter((r) => state.rulings?.[r.id]).length;
   const started = !!state.startedAt;
 
-  const item = (key: At, label: string, mark: ReactNode, sub?: ReactNode) => {
+  // The list has to fit a laptop screen with nine stops, Hand in and the flagged lines under it:
+  // only the stop you are on shows its whole title and what is left there. The others take one line.
+  const list = useRef<HTMLDivElement>(null);
+  const current = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const box = list.current?.getBoundingClientRect();
+    const row = current.current?.getBoundingClientRect();
+    if (!box || !row || !list.current) return;
+    if (row.top < box.top) list.current.scrollTop -= box.top - row.top + 8;
+    else if (row.bottom > box.bottom) list.current.scrollTop += row.bottom - box.bottom + 8;
+  }, [at]);
+
+  const item = (key: At, label: string, mark: ReactNode, sub?: ReactNode, tail?: ReactNode) => {
     const open = key === 'intro' || started;
+    const on = at === key;
     return (
       <button
         key={key}
+        ref={on ? current : undefined}
         disabled={!open}
         onClick={() => go(key)}
-        className={`group flex w-full items-start gap-2.5 rounded-md px-2 py-[6px] text-left text-[13px] leading-[1.35] transition-colors ${at === key ? 'bg-active text-fg' : open ? 'text-fg2 hover:bg-hover hover:text-fg' : 'text-fg4'}`}
+        title={on ? undefined : label}
+        aria-current={on ? 'step' : undefined}
+        className={`group flex w-full items-start gap-2.5 rounded-md px-2 py-[6px] text-left text-[13px] leading-[1.35] transition-colors ${on ? 'bg-active text-fg' : open ? 'text-fg2 hover:bg-hover hover:text-fg' : 'text-fg4'}`}
       >
         <span className="mt-[2px] flex-none">{mark}</span>
-        <span className="min-w-0 flex-1">
+        <span className={`min-w-0 flex-1 ${on ? 'text-pretty' : 'truncate'}`}>
           {label}
-          {sub && <span className="mt-0.5 flex flex-wrap items-center gap-x-2.5 text-[11px] text-fg4">{sub}</span>}
+          {on && sub && <span className="mt-0.5 flex flex-wrap items-center gap-x-2.5 text-[11px] text-fg4">{sub}</span>}
         </span>
+        {!on && tail}
       </button>
     );
   };
@@ -59,7 +76,7 @@ export function Sidebar({ tour, at, done, go, jump, unflag }: Props) {
         <p className="mt-1 text-[12.5px] leading-[1.4] font-[510] text-fg">{tour.pr.title}</p>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+      <div ref={list} className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         <p className="px-2 pt-1 pb-1.5 text-[11.5px] font-[510] text-fg4">Review</p>
         {item('intro', 'Before you start', started ? <StatusDone /> : <StatusNow />)}
         {tour.stops.map((s) => {
@@ -96,6 +113,11 @@ export function Sidebar({ tour, at, done, go, jump, unflag }: Props) {
                   </span>
                 )}
               </>
+            ) : undefined,
+            flagged > 0 ? (
+              <span className="mt-px flex flex-none items-center gap-1 text-[11px] text-flag" aria-label={`${flagged} flagged`}>
+                <FlagFill size={10} /> {flagged}
+              </span>
             ) : undefined,
           );
         })}

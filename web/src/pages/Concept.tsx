@@ -280,7 +280,7 @@ function Hero({ n }: { n: Numbers | null }) {
   ];
 
   return (
-    <section id="recommendation" className="rise scroll-mt-[64px]">
+    <section id="recommendation" className="rise scroll-mt-[104px] lg:scroll-mt-[64px]">
       <h1 className="text-[27px] leading-[1.14] font-[590] tracking-[-0.024em] text-fg sm:text-[36px] sm:leading-[1.1]">
         Review the lines that need a person. <br className="hidden sm:block" />
         Check that the person did.

@@ -208,7 +208,16 @@ export interface SectionRef {
  */
 export function Shell({ current, sections, wide, children }: { current: Where; sections: SectionRef[]; wide?: boolean; children: ReactNode }) {
   const scroller = useRef<HTMLDivElement>(null);
+  const strip = useRef<HTMLUListElement>(null);
   const [active, setActive] = useState(sections[0]?.id);
+
+  // narrow screens: keep the section you are in visible in the row of sections
+  useEffect(() => {
+    const row = strip.current;
+    const on = row?.querySelector<HTMLElement>('[aria-current]');
+    if (!row || !on || !row.clientWidth) return;
+    row.scrollTo({ left: on.offsetLeft - (row.clientWidth - on.offsetWidth) / 2, behavior: 'smooth' });
+  }, [active]);
 
   useEffect(() => {
     document.title = `${current === 'concept' ? 'Concept' : 'Numbers'} · Readback`;
@@ -242,6 +251,21 @@ export function Shell({ current, sections, wide, children }: { current: Where; s
   return (
     <div ref={scroller} className="h-full overflow-x-hidden overflow-y-auto scroll-smooth motion-reduce:scroll-auto">
       <TopBar current={current} />
+      <nav aria-label="On this page" className="sticky top-[48px] z-10 border-b border-line bg-bg lg:hidden">
+        <ul ref={strip} className="relative flex gap-[2px] overflow-x-auto [mask-image:linear-gradient(to_right,black_calc(100%-28px),transparent)] px-[10px] py-[6px] [scrollbar-width:none] sm:px-[18px] [&::-webkit-scrollbar]:hidden">
+          {sections.map((s) => (
+            <li key={s.id} className="flex-none last:pr-6">
+              <a
+                href={`#${s.id}`}
+                aria-current={active === s.id ? 'location' : undefined}
+                className={`flex h-[28px] items-center rounded-md px-[9px] text-[12.5px] whitespace-nowrap transition-colors ${active === s.id ? 'bg-active font-[510] text-fg' : 'text-fg3 hover:text-fg'}`}
+              >
+                {s.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
       <div className="mx-auto flex max-w-[1160px] px-4 sm:px-6 lg:gap-[56px]">
         <nav aria-label="On this page" className="sticky top-[48px] hidden max-h-[calc(100dvh-48px)] w-[176px] flex-none self-start overflow-y-auto pt-[60px] pb-10 lg:block">
           <ul className="border-l border-line">
@@ -267,7 +291,7 @@ export function Shell({ current, sections, wide, children }: { current: Where; s
 /** A section of a page. `id` is what the section list points at. */
 export function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
-    <section id={id} className="mt-[48px] scroll-mt-[64px] border-t border-line pt-[32px] sm:mt-[56px] sm:pt-[36px]">
+    <section id={id} className="mt-[48px] scroll-mt-[104px] border-t border-line pt-[32px] sm:mt-[56px] lg:scroll-mt-[64px] sm:pt-[36px]">
       <h2 className="text-[20px] leading-[1.25] font-[590] tracking-[-0.016em] text-fg sm:text-[22px]">{title}</h2>
       {children}
     </section>

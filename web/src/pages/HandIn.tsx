@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Flag, GateCheck, PublicTour, Reveal } from '../../../shared/tour';
 import { api } from '../api';
-import { MIN_NOTE, POINT_KIND, Tokens } from '../ui/Code';
+import { hang, MIN_NOTE, POINT_KIND, Tokens } from '../ui/Code';
 import { ArrowRight, Check, FlagFill, Warn, X } from '../ui/icons';
 import { RevealCard } from '../ui/Reveal';
 import { Title } from '../ui/Title';
@@ -198,7 +198,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
             <div key={k} className="px-4 py-3.5">
               <p className="text-[12px] text-fg4">{k}</p>
               <p className="mt-1 text-[16px] font-[590] tracking-[-0.01em] text-fg">{v}</p>
-              {sub && <p className="mt-0.5 text-[12px] text-fg4">{sub}</p>}
+              {sub && <p className="mt-0.5 text-[12px] leading-[1.4] text-balance text-fg4">{sub}</p>}
             </div>
           ))}
         </div>
@@ -452,7 +452,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
                   </button>
                 </div>
                 {l && (
-                  <div className="code overflow-x-auto border-t border-line bg-bg px-3 py-1.5 whitespace-pre text-fg2">
+                  <div className="code border-t border-line bg-bg px-3 py-1.5 [overflow-wrap:anywhere] whitespace-pre-wrap text-fg2" style={hang(l.tokens)}>
                     <Tokens tokens={l.tokens} />
                   </div>
                 )}
