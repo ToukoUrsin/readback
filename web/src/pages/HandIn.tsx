@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Flag, GateCheck, PublicTour, Reveal } from '../../../shared/tour';
 import { api } from '../api';
-import { hang, MIN_NOTE, POINT_KIND, Tokens } from '../ui/Code';
+import { Grow, hang, MIN_NOTE, POINT_KIND, Tokens } from '../ui/Code';
 import { ArrowRight, Check, FlagFill, Warn, X } from '../ui/icons';
 import { RevealCard } from '../ui/Reveal';
 import { Title } from '../ui/Title';
@@ -34,7 +34,7 @@ function Checks({ checks }: { checks: GateCheck[] }) {
   return (
     <ul className="card divide-y divide-line">
       {checks.map((c) => (
-        <li key={c.id} className="flex items-start gap-3 px-4 py-2.5 text-[13.5px] leading-[1.45]">
+        <li key={c.id} className={`flex items-start gap-3 px-4 py-2.5 text-[13.5px] leading-[1.45] ${c.ok ? '' : 'bg-bad/[0.05]'}`}>
           {c.ok ? <Check size={14} className="mt-[3px] flex-none text-ok" /> : <X size={13} className="mt-[3px] flex-none text-bad" />}
           <span className={c.ok ? 'text-fg2' : 'text-fg'}>{c.text}</span>
         </li>
@@ -57,7 +57,11 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
   const rulings = state.rulings ?? {};
   const sentBack = points.filter((p) => rulings[p.id]?.decision === 'back');
   const titleOf = (id: string) => tour.stops.find((s) => s.id === id)?.title ?? '';
-  const lineOf = (f: Flag) => tour.stops.flatMap((s) => s.blocks).flatMap((b) => (b.type === 'code' && b.file === f.file ? b.lines : [])).find((l) => l.n === f.line);
+  const lineOf = (f: Flag) =>
+    tour.stops
+      .flatMap((s) => s.blocks)
+      .flatMap((b) => (b.type === 'code' && b.file === f.file ? b.lines : []))
+      .find((l) => l.n === f.line);
 
   const handin = async () => {
     setBusy(true);
@@ -147,7 +151,8 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
         ) : (
           <>
             <p className="mt-6 text-[15px] leading-[1.6] text-fg2">
-              The line above is back to what the agent wrote and is never changed for you again. For your next read one other line is changed, somewhere in the lines to read closely. Your answers and rulings are kept.{!short && ` A review can approve up to read ${tour.rule.maxReads}; after that it is recorded and does not approve.`}
+              The line above is back to what the agent wrote and is never changed for you again. For your next read one other line is changed, somewhere in the lines to read closely. Your answers and rulings are kept.
+              {!short && ` A review can approve up to read ${tour.rule.maxReads}; after that it is recorded and does not approve.`}
             </p>
             <button
               className="btn btn-primary btn-lg mt-5"
@@ -214,9 +219,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
             <Check size={12} /> {short ? 'Short review done' : 'Read and approved'}
           </span>
         )}
-        <Title text={s.name}>
-          {short ? `${s.name} reviewed ${short.stops} of ${short.of} stops.` : o === 'sent-back' ? `${s.name} sent this change back.` : o === 'not-counted' ? `${s.name} read this change. The signature does not approve it.` : `${s.name} approved this commit.`}
-        </Title>
+        <Title text={s.name}>{short ? `${s.name} reviewed ${short.stops} of ${short.of} stops.` : o === 'sent-back' ? `${s.name} sent this change back.` : o === 'not-counted' ? `${s.name} read this change. The signature does not approve it.` : `${s.name} approved this commit.`}</Title>
         <p className="mt-3 text-[15px] text-fg3">
           {new Date(s.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} · commit <span className="font-mono text-[13px]">{sha}</span>
           {s.via === 'invite' ? ' · invited judge, name typed' : s.login ? <> · signed in with GitHub as @{s.login}</> : tour.test ? ' · our own test browser' : ' · typed name, not verified'}
@@ -237,6 +240,29 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
             </div>
           ))}
         </div>
+        {!short && o && o !== 'not-counted' && tour.githubSoon && (
+          <div className="mt-5">
+            <p className="mb-2 text-[13px] font-[590] text-fg">Where this signature went</p>
+            <div className="card divide-y divide-line">
+              {(
+                [['GitHub', s.github, `Writing the commit status readback/read for ${sha}`], ...(tour.entire?.trail ? [['Entire', s.entire, `Writing your rulings to trail #${tour.entire.trail.number}, ${o === 'approved' ? 'and approving it' : 'and asking for changes'}`] as const] : [])] as [
+                  string,
+                  { ok: boolean; note: string } | undefined,
+                  string,
+                ][]
+              ).map(([k, v, wait]) => (
+                <div key={k} className="flex items-start gap-3 px-4 py-2.5 text-[13px] leading-[1.45]">
+                  {v ? v.ok ? <Check size={14} className="mt-[3px] flex-none text-ok" /> : <X size={13} className="mt-[3px] flex-none text-bad" /> : <span className="mt-[5px] size-[10px] flex-none animate-pulse rounded-full bg-fg4" />}
+                  <span className="w-[52px] flex-none font-[590] text-fg">{k}</span>
+                  <span className={`min-w-0 [overflow-wrap:anywhere] ${v ? 'text-fg2' : 'text-fg4'}`}>{v ? v.note : `${wait}…`}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {!short && s.via === 'invite' && o === 'approved' && tour.demoMinutes ? (
+          <p className="mt-2.5 text-[13px] leading-[1.6] text-fg3">This is a demo copy: {tour.demoMinutes} minutes after an invited judge approves, the status and the trail go back to blocked, so the next judge finds the commit unapproved. The record keeps your review.</p>
+        ) : null}
         {s.checks && (
           <div className="mt-5">
             <p className="mb-2 text-[13px] font-[590] text-fg">{failed.length ? 'The rule, and where this review did not meet it' : 'The rule this review met'}</p>
@@ -253,17 +279,25 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
           </p>
         )}
         {points.some((p) => rulings[p.id]) && (
-          <div className="card mt-5 px-4 py-3.5">
-            <p className="text-[13px] font-[590] text-fg">{sentBack.length ? `${sentBack.length} ${sentBack.length === 1 ? 'point' : 'points'} for the author, ${accepted} accepted` : `What ${s.name} ruled on the open points`}</p>
-            {[...sentBack, ...points.filter((p) => rulings[p.id]?.decision === 'accept')].map((p) => (
-              <p key={p.id} className="mt-2 text-[13px] leading-[1.5] text-fg3">
-                <span className="font-mono text-[12px] text-fg2">
-                  {p.file.split('/').pop()}:{p.from}
-                  {p.to > p.from ? `–${p.to}` : ''}
-                </span>{' '}
-                <span className={`font-[590] ${rulings[p.id]!.decision === 'back' ? 'text-flag' : 'text-ok'}`}>{rulings[p.id]!.decision === 'back' ? 'Sent back.' : 'Accepted.'}</span> <span className="text-fg2">{rulings[p.id]!.note || 'No reason given.'}</span>
-              </p>
-            ))}
+          <div className="mt-5">
+            <p className="mb-2 text-[13px] font-[590] text-fg">{sentBack.length ? `${sentBack.length} ${sentBack.length === 1 ? 'point' : 'points'} for the author, ${accepted} accepted` : `What ${s.name} ruled on the open points`}</p>
+            <ul className="card divide-y divide-line">
+              {[...sentBack, ...points.filter((p) => rulings[p.id]?.decision === 'accept')].map((p) => {
+                const back = rulings[p.id]!.decision === 'back';
+                return (
+                  <li key={p.id} className="flex flex-col gap-x-4 gap-y-0.5 px-4 py-2.5 text-[13px] leading-[1.5] sm:flex-row sm:items-baseline">
+                    <span className="flex flex-none items-baseline gap-2 sm:w-[218px]">
+                      <span className={`w-[62px] flex-none font-[590] ${back ? 'text-flag' : 'text-ok'}`}>{back ? 'Sent back' : 'Accepted'}</span>
+                      <span className="min-w-0 truncate font-mono text-[12px] text-fg3" title={p.file}>
+                        {p.file.split('/').pop()}:{p.from}
+                        {p.to > p.from ? `–${p.to}` : ''}
+                      </span>
+                    </span>
+                    <span className={`min-w-0 flex-1 ${rulings[p.id]!.note ? 'text-fg2' : 'text-fg4'}`}>{rulings[p.id]!.note || 'No reason given.'}</span>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         )}
         {state.caught && (
@@ -286,28 +320,6 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
             ))}
           </div>
         )}
-        {!short && o && o !== 'not-counted' && tour.githubSoon && (
-          <div className="card mt-5 divide-y divide-line">
-            <p className="px-4 py-2 text-[11.5px] font-[510] text-fg4">Where this signature went</p>
-            {(
-              [
-                ['GitHub', s.github, `Writing the commit status readback/read for ${sha}`],
-                ...(tour.entire?.trail ? [['Entire', s.entire, `Writing your rulings to trail #${tour.entire.trail.number}, ${o === 'approved' ? 'and approving it' : 'and asking for changes'}`] as const] : []),
-              ] as [string, { ok: boolean; note: string } | undefined, string][]
-            ).map(([k, v, wait]) => (
-              <div key={k} className="flex items-start gap-3 px-4 py-2.5 text-[13px] leading-[1.45]">
-                {v ? v.ok ? <Check size={14} className="mt-[3px] flex-none text-ok" /> : <X size={13} className="mt-[3px] flex-none text-bad" /> : <span className="mt-[5px] size-[10px] flex-none animate-pulse rounded-full bg-fg4" />}
-                <span className="w-[52px] flex-none font-[590] text-fg">{k}</span>
-                <span className={`min-w-0 [overflow-wrap:anywhere] ${v ? 'text-fg2' : 'text-fg4'}`}>{v ? v.note : `${wait}…`}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        {!short && s.via === 'invite' && o === 'approved' && tour.demoMinutes ? (
-          <p className="mt-3 text-[13px] leading-[1.6] text-fg3">
-            This is a demo copy: {tour.demoMinutes} minutes after an invited judge approves, the status and the trail go back to blocked, so the next judge finds the commit unapproved. The record keeps your review.
-          </p>
-        ) : null}
         <p className="mt-6 text-[13px] leading-[1.6] text-fg3">
           {short ? (
             <>
@@ -350,8 +362,8 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
               Start over as a new reviewer
             </button>
           )}
-          <a className="btn btn-ghost" href="/numbers">
-            What this copy has measured
+          <a className={`btn ${tour.me && !tour.test ? '' : 'btn-ghost'}`} href="/numbers">
+            What this copy has measured <ArrowRight size={14} />
           </a>
           {tour.test && (
             <button className="btn btn-ghost" onClick={async () => setTour({ ...tour, state: await api.unsign() })} title="Test reads only: back to the step before the signature">
@@ -407,7 +419,13 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
           <label className="text-[13px] font-[590] text-fg" htmlFor="name">
             Sign the review
           </label>
-          <p className="mt-0.5 text-[13px] text-fg3">{short ? 'Your name goes on this short review. It does not approve the change.' : tour.via === 'invite' ? 'You came in with the judge link. Type your name: it goes on this commit, on GitHub and on the Entire trail, with the record of how you reviewed it.' : 'Your name goes on this commit, with the record of how you reviewed it.'}</p>
+          <p className="mt-0.5 text-[13px] text-fg3">
+            {short
+              ? 'Your name goes on this short review. It does not approve the change.'
+              : tour.via === 'invite'
+                ? 'You came in with the judge link. Type your name: it goes on this commit, on GitHub and on the Entire trail, with the record of how you reviewed it.'
+                : 'Your name goes on this commit, with the record of how you reviewed it.'}
+          </p>
           {tour.me && tour.via !== 'invite' ? (
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <button className="btn btn-primary btn-lg" disabled={busy}>
@@ -425,7 +443,15 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
                 </div>
               )}
               <div className="mt-3 flex flex-wrap gap-2">
-                <input id="name" autoFocus={!tour.signIn || !!short || !needsWho} value={name} onChange={(e) => setName(e.target.value)} placeholder={!short && tour.signIn && needsWho ? 'Or type a name: recorded, does not approve' : 'Your name'} maxLength={80} className="h-[38px] min-w-0 flex-1 rounded-lg border border-line-strong bg-raised px-3 text-[14px] placeholder:text-fg4 focus:border-accent" />
+                <input
+                  id="name"
+                  autoFocus={!tour.signIn || !!short || !needsWho}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={!short && tour.signIn && needsWho ? 'Or type a name: recorded, does not approve' : 'Your name'}
+                  maxLength={80}
+                  className="h-[38px] min-w-[180px] flex-1 rounded-lg border border-line-strong bg-raised px-3 text-[14px] placeholder:text-fg4 focus:border-accent"
+                />
                 <button className={`btn btn-lg ${!short && tour.signIn && needsWho ? '' : 'btn-primary'}`} disabled={!name.trim() || busy}>
                   {short ? 'Sign' : will === 'approved' ? 'Sign and approve' : will === 'sent-back' ? 'Sign and send back' : 'Sign, without approving'}
                 </button>
@@ -507,17 +533,24 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
                   </button>
                 </div>
                 {l && (
-                  <div className="code border-t border-line bg-bg px-3 py-1.5 [overflow-wrap:anywhere] whitespace-pre-wrap text-fg2" style={hang(l.tokens)}>
-                    <Tokens tokens={l.tokens} />
+                  <div className="code border-t border-line bg-bg px-3 py-1.5 text-fg2">
+                    {/* the hanging indent sits inside the padding, or the line starts at the card's edge */}
+                    <div className="[overflow-wrap:anywhere] whitespace-pre-wrap" style={hang(l.tokens)}>
+                      <Tokens tokens={l.tokens} />
+                    </div>
                   </div>
                 )}
-                <input
-                  className={`h-8 w-full border-t px-3 text-[12.5px] text-fg placeholder:text-flag ${f.note.trim().length < MIN_NOTE ? 'border-flag/40 bg-flag-soft' : 'border-line'}`}
+                <Grow
+                  className={`w-full border-t px-3 py-[7px] text-[12.5px] leading-[18px] text-fg placeholder:text-flag ${f.note.trim().length < MIN_NOTE ? 'border-flag/40 bg-flag-soft' : 'border-line'}`}
                   placeholder="What goes wrong on this line? Needed before you hand in."
                   defaultValue={f.note}
                   maxLength={400}
                   onBlur={(e) => e.target.value !== f.note && onFlag({ ...f, note: e.target.value })}
-                  onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter') return;
+                    e.preventDefault();
+                    e.currentTarget.blur();
+                  }}
                 />
               </div>
             );
@@ -525,11 +558,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
         </div>
       </div>
 
-      {state.missed.length > 0 && (
-        <p className="mt-4 text-[13px] text-fg3">
-          Missed before: {state.missed.map((m) => `${m.file.split('/').pop()}:${m.line}`).join(', ')}. These are not planted again.
-        </p>
-      )}
+      {state.missed.length > 0 && <p className="mt-4 text-[13px] text-fg3">Missed before: {state.missed.map((m) => `${m.file.split('/').pop()}:${m.line}`).join(', ')}. These are not planted again.</p>}
       <div className="mt-7 flex flex-wrap items-center gap-4">
         <button className="btn btn-primary btn-lg" disabled={busy || openCount > 0 || unruled.length > 0 || state.flags.length === 0 || tooMany || bare > 0} onClick={handin}>
           {busy ? 'Checking your reason' : 'Hand in'} <ArrowRight size={15} />

@@ -1,13 +1,13 @@
-import { type CSSProperties, memo, useState } from 'react';
+import { type CSSProperties, memo, type TextareaHTMLAttributes, useState } from 'react';
 import type { CodeBlock, Entire, Flag, Ruling, RulingItem, StopEvidence, Token } from '../../../shared/tour';
-import { Reached, Why } from './Entire';
+import { reachOf, Reached, sessionOf, Why } from './Entire';
 import { Chat, Check, Eye, Flag as FlagIcon, FlagFill, Warn, X } from './icons';
 import { inline } from './Prose';
 
 export const lineId = (file: string, n: number) => `L:${file}:${n}`;
 /** a flag needs this many characters of reason before the review can be handed in (server/app.ts MIN_NOTE) */
 export const MIN_NOTE = 8;
-export const POINT_KIND: Record<RulingItem['kind'], string> = { unasked: 'Nobody asked for this', open: 'The issue leaves this open', untested: 'No test checks this' };
+export const POINT_KIND: Record<RulingItem['kind'], string> = { unasked: 'Nobody asked for this', open: 'The issue leaves this open', untested: 'No test checks this', answer: 'The author answered this' };
 
 export function Tokens({ tokens }: { tokens: Token[] }) {
   return (
@@ -39,6 +39,27 @@ export function hang(tokens: Token[]): CSSProperties {
     }
   const by = Math.min(n, 10) + 2;
   return { paddingLeft: `${by}ch`, textIndent: `-${by}ch` };
+}
+
+/** A text box as tall as what is typed in it: a reason is read back whole, on a phone too. */
+export function Grow({ className = '', onInput, ...p }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const fit = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`;
+  };
+  return (
+    <textarea
+      rows={1}
+      {...p}
+      ref={fit}
+      onInput={(e) => {
+        fit(e.currentTarget);
+        onInput?.(e);
+      }}
+      className={`block resize-none overflow-hidden ${className}`}
+    />
+  );
 }
 
 type Unnoticed = StopEvidence['changes']['survived'][number];
@@ -94,6 +115,8 @@ function Point({ p, ruling, locked, onRule, entire }: { p: RulingItem; ruling?: 
   const [note, setNote] = useState(ruling?.note ?? '');
   const [edit, setEdit] = useState(false);
   const [err, setErr] = useState('');
+  /** the reason is needed and not there yet */
+  const short = (mode === 'back' || needsWhy) && note.trim().length < MIN_NOTE;
   const send = async (decision: Ruling['decision']) => {
     const e = await onRule?.(p.id, decision, note);
     setErr(e ?? '');
@@ -124,20 +147,31 @@ function Point({ p, ruling, locked, onRule, entire }: { p: RulingItem; ruling?: 
                   void send(mode!);
                 }}
               >
-                <input
+                {/* a reason is a sentence or two: it gets room to be read back whole, on a phone too */}
+                <Grow
                   autoFocus
+                  rows={2}
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (!short) void send(mode!);
+                    } else if (e.key === 'Escape') setBack(false);
+                  }}
                   maxLength={400}
+                  aria-label={mode === 'back' ? 'What the author has to change' : 'Why you accept it'}
                   placeholder={mode === 'back' ? 'What does the author have to change?' : needsWhy ? 'Why do you accept it without a test?' : 'Why is it fine as it is? (optional)'}
-                  className={`h-8 min-w-[200px] flex-1 rounded-md border border-line-strong bg-bg px-2.5 text-[13px] placeholder:text-fg4 ${mode === 'back' ? 'focus:border-flag' : 'focus:border-ok'}`}
+                  className={`min-h-[54px] w-full basis-full rounded-md border border-line-strong bg-bg px-2.5 py-1.5 text-[13px] leading-[1.5] transition-colors placeholder:text-fg4 ${mode === 'back' ? 'focus:border-flag' : 'focus:border-ok'}`}
                 />
-                <button className="btn" disabled={(mode === 'back' || needsWhy) && note.trim().length < MIN_NOTE}>
+                <button className="btn" disabled={short}>
+                  {mode === 'back' ? <X size={12} className={short ? '' : 'text-flag'} /> : <Check size={13} className={short ? '' : 'text-ok'} />}
                   {mode === 'back' ? 'Send back' : 'Accept'}
                 </button>
                 <button type="button" className="btn btn-ghost" onClick={() => setBack(false)}>
                   Cancel
                 </button>
+                {short && <span className="text-[12px] text-fg4">{mode === 'back' ? 'Say what has to change.' : 'Say why, in your own words.'}</span>}
               </form>
             ) : (
               <div className="flex flex-wrap items-center gap-2">
@@ -197,6 +231,16 @@ export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, on
   for (const f of focus) for (let n = f.from; n <= f.to; n++) closely.add(n);
   for (const u of here) closely.add(u.line);
   for (const p of pts) for (let n = Math.max(p.from, block.from); n <= Math.min(p.to, block.to); n++) closely.add(n);
+  // what calls a function is said under the first mark inside it, not again under every mark that follows in the same function
+  const told = new Set<string>();
+  const firstIn = (line: number) => {
+    if (!entire) return false;
+    const r = reachOf(entire, block.file, line);
+    const key = r ? `${r.file}:${r.from}` : `s:${sessionOf(entire, block.file, line, line)?.n}`;
+    if (told.has(key)) return false;
+    told.add(key);
+    return true;
+  };
 
   return (
     <div className="card my-5 overflow-hidden">
@@ -255,7 +299,7 @@ export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, on
                     <span className="text-[12.5px] leading-[18px] whitespace-normal text-fg2">
                       <span className="font-[590] text-warn">Read closely{f.to > f.from ? `, lines ${f.from}–${f.to}` : ''}. </span>
                       {inline(f.why)}
-                      {entire && <Reached en={entire} file={block.file} line={f.from} />}
+                      {entire && firstIn(f.from) && <Reached en={entire} file={block.file} line={f.from} />}
                     </span>
                   </div>
                 ))}
@@ -317,19 +361,23 @@ export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, on
                   </div>
                 )}
                 {flag && !locked && (
-                  <div className={`${under} items-center gap-2 bg-flag-soft py-1 pr-3 pl-[14px]`}>
-                    <FlagFill size={12} className="flex-none text-flag" />
-                    <input
-                      className="h-7 min-w-0 flex-1 text-[12.5px] text-fg placeholder:text-fg3"
+                  <div className={`${under} items-start gap-2 bg-flag-soft py-1 pr-3 pl-[14px]`}>
+                    <FlagFill size={12} className="mt-2 flex-none text-flag" />
+                    <Grow
+                      className="min-w-0 flex-1 py-[5px] text-[12.5px] leading-[18px] text-fg placeholder:text-fg3"
                       placeholder="What goes wrong on this line? Needed: the reason is checked."
                       defaultValue={flag.note}
                       autoFocus={!flag.note}
                       maxLength={400}
                       onBlur={(e) => e.target.value !== flag.note && onFlag({ file: block.file, line: n, note: e.target.value })}
-                      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return;
+                        e.preventDefault();
+                        e.currentTarget.blur();
+                      }}
                     />
-                    {bare && <span className="hidden flex-none text-[11.5px] font-[510] text-flag sm:inline">reason needed</span>}
-                    <button className="flex size-6 flex-none items-center justify-center rounded text-fg4 hover:bg-hover hover:text-fg" onClick={toggle} title="Remove the flag">
+                    {bare && <span className="mt-[5px] hidden flex-none text-[11.5px] font-[510] text-flag sm:inline">reason needed</span>}
+                    <button className="mt-0.5 flex size-6 flex-none items-center justify-center rounded text-fg4 hover:bg-hover hover:text-fg" onClick={toggle} title="Remove the flag">
                       <X size={12} />
                     </button>
                   </div>

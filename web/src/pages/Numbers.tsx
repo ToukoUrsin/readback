@@ -117,7 +117,7 @@ function History({ n }: { n: Data }) {
               <div key={s.n} className={row}>
                 <dt className={dt}>
                   <span className="font-[510] text-fg2">Session {s.n}</span> · <span className="font-mono text-[12px]">{s.commit}</span> · {s.asked}
-                  {!s.steps && <span className="text-fg4"> · only the prompt, the report and the token counts were kept</span>}
+                  {!s.steps && <span className="block text-[12px] text-fg4">Only the prompt, the report and the token counts were kept.</span>}
                 </dt>
                 <dd className={dd}>{big(s.tokens)}</dd>
               </div>
@@ -149,14 +149,15 @@ function History({ n }: { n: Data }) {
                 [`What Readback does: the graph first, the model only for the ${c.mixed.asked} functions where the graph lists no caller`, `${big(c.mixed.tokens)} tokens`],
                 ['Saved against asking the model every time', `${big(c.tokens - c.mixed.tokens)} tokens, ${pct(c.tokens - c.mixed.tokens, c.tokens)}`],
               ] as [string, ReactNode][]
-            ).map(([k, v]) => (
-              <div key={k} className={row}>
-                <dt className={dt}>{k}</dt>
-                <dd className={dd}>{v}</dd>
+            ).map(([k, v], i, all) => (
+              // the last two rows are the answer: what Readback does and what that saves
+              <div key={k} className={`${row} ${i >= all.length - 2 ? 'flex-wrap gap-y-0.5' : ''}`}>
+                <dt className={`${dt} ${i >= all.length - 2 ? 'font-[510] text-fg' : ''}`}>{k}</dt>
+                <dd className={`${dd} ${i === all.length - 1 ? 'text-ok' : ''} ml-auto`}>{v}</dd>
               </div>
             ))}
           </dl>
-          <p className={NOTE}>The callers the graph missed are calls from route handlers that have no name. One repository, one question: it is a measurement of this change, not a benchmark.</p>
+          <p className={`${NOTE} mt-2.5`}>The callers the graph missed are calls from route handlers that have no name. One repository, one question: it is a measurement of this change, not a benchmark.</p>
         </>
       )}
 
