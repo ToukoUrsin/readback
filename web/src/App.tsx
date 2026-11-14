@@ -49,7 +49,19 @@ export default function App() {
       q.delete('new');
       history.replaceState(null, '', location.pathname + (q.size ? `?${q}` : ''));
     }
-    (fresh ? api.reset() : api.tour()).then(setTour, (e) => setFailed((e as Error).message));
+    // "?prep=<key>&leave=<stop>": for a recording, the questions are answered ahead (test readers with the key only)
+    const prep = q.get('prep');
+    const leave = q.get('leave') ?? '';
+    if (prep) {
+      q.delete('prep');
+      q.delete('leave');
+      q.delete('test');
+      history.replaceState(null, '', location.pathname + (q.size ? `?${q}` : '') + (leave ? `#/${leave}` : ''));
+      if (leave) setAt(leave);
+    }
+    (fresh ? api.reset() : api.tour())
+      .then((t) => (prep ? api.prep(prep, leave).catch(() => t) : t))
+      .then(setTour, (e) => setFailed((e as Error).message));
     const on = () => setAt(fromHash());
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);

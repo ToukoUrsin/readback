@@ -13,7 +13,10 @@ export const BASE = /^\/(short|full)(\/|$)/.exec(location.pathname)?.[0].replace
 
 // our own test reads carry a mark, so they stay out of the counts
 try {
-  if (new URLSearchParams(location.search).get('test') === '1') document.cookie = 'rb_test=1; path=/; max-age=2592000; samesite=lax';
+  const t = new URLSearchParams(location.search).get('test');
+  if (t === '1') document.cookie = 'rb_test=1; path=/; max-age=2592000; samesite=lax';
+  // "?test=0" makes this browser count again, for a device that goes to visitors
+  if (t === '0') document.cookie = 'rb_test=; path=/; max-age=0; samesite=lax';
 } catch {
   /* no cookies: the read is counted */
 }
@@ -34,6 +37,7 @@ export const api = {
   sign: (name: string) => call<ReaderState>('/api/sign', { name }),
   reset: () => call<PublicTour>('/api/reset', {}),
   unsign: () => call<ReaderState>('/api/unsign', {}),
+  prep: (key: string, leave: string) => call<PublicTour>('/api/prep', { key, leave }),
   cold: (b: { action: 'approve' | 'flag' | 'skip'; file?: string; line?: number }) => call<PublicTour>('/api/cold', b),
   seen: (stop: string) => call<{ ok: boolean }>('/api/seen', { stop }).catch(() => undefined),
   stats: () => call<{ cold?: ColdStats }>('/api/stats'),

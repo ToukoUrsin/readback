@@ -4,6 +4,7 @@
  *   RB_TOUR         default data/live/tour.json
  *   RB_GITHUB=1     a signature also sets the commit status readback/read (through this box's gh)
  *   GEMINI_API_KEY  turns on the guide (RB_ASK_MODEL, default gemini-4-hydrogen)
+ *   RB_PREP_KEY        with /full?test=1&prep=<key>&leave=<stop id> the questions are answered ahead, for a recording
  *   RB_GITHUB_WATCH=1  says on the page that a signed full read reaches GitHub within seconds (deploy/watch-github.ts does it)
  *   RB_PUBLIC_URL   address people reach this server at, used as the link on the GitHub status
  *   HOST            default 127.0.0.1
@@ -32,7 +33,7 @@ const distDir = resolve(ROOT, 'web/dist');
 const ask = key ? { key, model: process.env.RB_ASK_MODEL || 'gemini-4-hydrogen', budget: Number(process.env.RB_ASK_BUDGET || 2000) } : undefined;
 
 const shown = createShown(store);
-const full = createApp({ tour, key: 'full', store, shown, distDir, ask, githubSoon: process.env.RB_GITHUB_WATCH === '1', setStatus: github ? setStatus : undefined, publicUrl: process.env.RB_PUBLIC_URL, other: shortTour ? { kind: 'short', href: '/', stops: shortTour.stops.length } : undefined });
+const full = createApp({ tour, key: 'full', store, shown, distDir, ask, githubSoon: process.env.RB_GITHUB_WATCH === '1', prepKey: process.env.RB_PREP_KEY || undefined, setStatus: github ? setStatus : undefined, publicUrl: process.env.RB_PUBLIC_URL, other: shortTour ? { kind: 'short', href: '/', stops: shortTour.stops.length } : undefined });
 // the short read never writes to GitHub: it does not approve anything
 const short = shortTour ? createApp({ tour: shortTour, key: 'short', cookie: 'rb_short', store, shown, distDir, ask, other: { kind: 'full', href: '/full', stops: tour.stops.length } }) : null;
 

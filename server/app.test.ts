@@ -197,3 +197,42 @@ test('the signature carries how fast the lines went by', async () => {
   expect(sig.lines).toBe(3);
   expect(typeof sig.linesPerMinute).toBe('number');
 });
+
+test('answering ahead needs the key and a test reader, and such a read claims no pace', async () => {
+  const visitor = reader(undefined, false, { prepKey: 'k' });
+  expect((await visitor('/api/prep', { key: 'k' })).status).toBe(404);
+  const noKey = reader(undefined, true);
+  expect((await noKey('/api/prep', { key: '' })).status).toBe(404);
+  const call = reader(undefined, true, { prepKey: 'k' });
+  expect((await call('/api/prep', { key: 'wrong' })).status).toBe(404);
+  const t = (await call('/api/prep', { key: 'k' })).json;
+  expect(t.state.answers.q1.right).toBeTruthy();
+  expect((await call('/api/handin', {})).status).toBe(400); // the planted line still has to be flagged
+});
+
+test('a first visit that starts over is one session, with its cold test recorded as shown', async () => {
+  const store = createStore(null);
+  const call = reader(store, false, { tour: coldTour });
+  const t = (await call('/api/reset', {})).json;
+  expect(t.cold.blocks.length).toBe(1);
+  await call('/api/cold', { action: 'approve' });
+  const cold = store.stats().cold;
+  expect(cold.shown).toBe(1);
+  expect(cold.approved).toBe(1);
+  // the session the page was given is the one the next call reaches
+  expect((await call('/api/tour')).json.state.cold.action).toBe('approve');
+});
+
+test('goes marked as ours afterwards are left out, and the rows stay', async () => {
+  const store = createStore(null);
+  const call = reader(store);
+  await call('/api/start', {});
+  expect(store.stats().all.started).toBe(1);
+  const seen: string[] = [];
+  const record = store.record.bind(store);
+  store.record = (e) => (seen.push(e.rid), record(e));
+  await call('/api/seen', { stop: 's1' });
+  store.record({ type: 'mark', at: new Date().toISOString(), rid: seen[0]!, tour: 'full', headSha: '', test: true, why: 'ours' });
+  expect(store.stats().all.started).toBe(0);
+  expect(store.stats().testReadersLeftOut).toBe(1);
+});

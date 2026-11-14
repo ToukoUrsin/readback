@@ -6,7 +6,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeF
 import { resolve } from 'node:path';
 
 export interface ReadEvent {
-  type: 'start' | 'answer' | 'handin' | 'sign' | 'ask' | 'reset' | 'cold-shown' | 'cold' | 'stop' | 'failed' | 'unsign';
+  type: 'start' | 'answer' | 'handin' | 'sign' | 'ask' | 'reset' | 'cold-shown' | 'cold' | 'stop' | 'failed' | 'unsign' | 'prep' | 'mark';
   at: string;
   /** one reader's one go at a tour; a new one after "Start over" */
   rid: string;
@@ -112,8 +112,9 @@ function countCold(events: ReadEvent[]): ColdCounts {
   const c: ColdCounts = { shown: 0, approved: 0, flaggedPlanted: 0, flaggedOther: 0, skipped: 0, medianSeconds: null, thenGuided: { reads: 0, caughtFirstRead: 0 } };
   const secs: number[] = [];
   for (const es of by.values()) {
-    if (es.some((e) => e.type === 'cold-shown')) c.shown++;
     const d = es.find((e) => e.type === 'cold');
+    // a decision means it was shown, also in rows from before a start-over wrote its own "shown"
+    if (d || es.some((e) => e.type === 'cold-shown')) c.shown++;
     if (!d) continue;
     if (d.action === 'skip') {
       c.skipped++;
@@ -122,7 +123,7 @@ function countCold(events: ReadEvent[]): ColdCounts {
     if (d.action === 'approve') c.approved++;
     else if (d.caught) c.flaggedPlanted++;
     else c.flaggedOther++;
-    if (typeof d.seconds === 'number') secs.push(d.seconds);
+    if (typeof d.seconds === 'number' && es.some((e) => e.type === 'cold-shown')) secs.push(d.seconds);
     const first = es.find((e) => e.type === 'handin');
     if (first) {
       c.thenGuided.reads++;
@@ -158,7 +159,8 @@ export function createStore(dir: string | null): Store {
     },
     stats() {
       // rows written before non-browser clients were marked: a go that named a client that is not a browser is not a person
-      const scripts = new Set(events.filter((e) => typeof e.agent === 'string' && e.agent && (!e.agent.includes('Mozilla') || e.agent.includes('rb-agent'))).map((e) => e.rid));
+      // also left out: our own agents' browsers (ours, or rb-agent in the client's name), and goes marked as ours afterwards (a "mark" row; nothing is deleted)
+      const scripts = new Set(events.filter((e) => e.ours === true || e.type === 'mark' || (typeof e.agent === 'string' && e.agent && (!e.agent.includes('Mozilla') || e.agent.includes('rb-agent')))).map((e) => e.rid));
       const real = events.filter((e) => !e.test && !scripts.has(e.rid));
       const tours: Record<string, Counts> = {};
       for (const t of new Set(real.map((e) => e.tour))) tours[t] = count(real.filter((e) => e.tour === t));

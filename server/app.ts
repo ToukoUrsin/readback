@@ -39,6 +39,8 @@ export interface Deps {
   other?: PublicTour['other'];
   /** a watcher outside this server turns signatures into the GitHub status (deploy/watch-github.ts) */
   githubSoon?: boolean;
+  /** with this key a test reader can have the questions answered ahead, for a recording (POST /api/prep) */
+  prepKey?: string;
   /** planted lines each person has been shown, shared by every read on this host: a line shown in the short read is not planted again in the full one */
   shown?: Shown;
 }
@@ -77,6 +79,10 @@ interface Session extends ReaderState {
   coldPlant: string | null;
   coldShownAt: string | null;
   cold: ColdResult | null;
+  /** an agent of ours looking at the page (its browser names itself rb-agent): it sees what a visitor sees, and is left out of every count */
+  ours?: boolean;
+  /** questions were answered ahead for a recording (POST /api/prep): no pace is claimed for this read */
+  prepared?: boolean;
 }
 
 const shuffle = (n: number) => {
@@ -105,7 +111,7 @@ export function createApp(d: Deps) {
   const seconds = (s: Session) => (s.startedAt ? Math.round((Date.now() - Date.parse(s.startedAt)) / 1000) : 0);
   const wrong = (s: Session) => Object.values(s.answers).reduce((a, x) => a + x.misses, 0);
   const speed = (secs: number) => (secs > 0 ? Math.round((lines / secs) * 60) : 0);
-  const record = (s: Session, type: ReadEvent['type'], more: Record<string, unknown> = {}) => d.store?.record({ type, at: new Date().toISOString(), rid: s.rid, tour: key, headSha: tour.pr.headSha, test: s.test, ...more });
+  const record = (s: Session, type: ReadEvent['type'], more: Record<string, unknown> = {}) => d.store?.record({ type, at: new Date().toISOString(), rid: s.rid, tour: key, headSha: tour.pr.headSha, test: s.test, ...(s.ours ? { ours: true } : {}), ...more });
 
   const rank = (i: number) => KIND_RANK[tour.plants[i]!.kind ?? ''] ?? 4;
   // our own test reads get the same order every time, so a filmed run does not depend on luck
@@ -174,7 +180,7 @@ export function createApp(d: Deps) {
     };
   };
 
-  const app = new Hono<{ Variables: { s: Session } }>();
+  const app = new Hono<{ Variables: { s: Session; id: string } }>();
 
   // counts only: no names, no lines. Before the reader check, so asking for it starts no read.
   app.get('/api/stats', (c) => (d.store ? c.json(d.store.stats()) : c.json({ error: 'Nothing is kept on this server.' }, 404)));
@@ -197,20 +203,26 @@ export function createApp(d: Deps) {
     }
     const s = sessions.get(id)!;
     if (test) s.test = true;
+    if (ua?.includes('rb-agent')) s.ours = true;
     s.who ??= who;
     s.shown ??= [];
     c.set('s', s);
+    c.set('id', id);
     await next();
     if (c.req.method === 'POST') keep();
   });
 
+  /** the cold test goes to the browser now: its clock starts, and the record says it was shown */
+  const coldShown = (s: Session, agent: string | undefined) => {
+    if (!coldOpen(s) || s.coldShownAt) return;
+    s.coldShownAt = new Date().toISOString();
+    record(s, 'cold-shown', { plant: s.coldPlant, agent: (agent ?? '').slice(0, 200) });
+    keep();
+  };
+
   app.get('/api/tour', (c) => {
     const s = c.get('s');
-    if (coldOpen(s) && !s.coldShownAt) {
-      s.coldShownAt = new Date().toISOString();
-      record(s, 'cold-shown', { plant: s.coldPlant, agent: (c.req.header('user-agent') ?? '').slice(0, 200) });
-      keep();
-    }
+    coldShown(s, c.req.header('user-agent'));
     return c.json(view(s));
   });
 
@@ -241,6 +253,35 @@ export function createApp(d: Deps) {
       record(s, 'start', { agent: (c.req.header('user-agent') ?? '').slice(0, 200), afterCold: s.cold?.action ?? '' });
     }
     return c.json(state(s));
+  });
+
+  /**
+   * For a recording: a test reader who has the key gets the questions answered ahead, all but those of one stop.
+   * The planted line still has to be found and flagged, and the record says the read was prepared.
+   */
+  app.post('/api/prep', async (c) => {
+    const s = c.get('s');
+    const { key, leave } = (await c.req.json().catch(() => ({}))) as { key?: string; leave?: string };
+    if (!d.prepKey || key !== d.prepKey || !s.test) return c.json({ error: 'Not found.' }, 404);
+    if (s.signature || s.caught) return c.json(view(s));
+    if (!s.startedAt) {
+      s.startedAt = new Date().toISOString();
+      record(s, 'start', { agent: (c.req.header('user-agent') ?? '').slice(0, 200), afterCold: s.cold?.action ?? '' });
+    }
+    let answered = 0;
+    for (const st of tour.stops) {
+      if (st.id === leave) continue;
+      for (const q of st.questions) {
+        const a = (s.answers[q.id] ??= { misses: 0 });
+        if (!a.right) {
+          a.right = { choice: q.answer, explain: q.explain };
+          answered++;
+        }
+      }
+    }
+    s.prepared = true;
+    record(s, 'prep', { answered, leave: leave ?? '' });
+    return c.json(view(s));
   });
 
   /** which stop the reader opened: time per stop comes from these */
@@ -324,9 +365,7 @@ export function createApp(d: Deps) {
       questions: questions.size,
       misses: wrong(s),
       flagsForAuthor: s.flags.filter((f) => !(f.file === caught.file && f.line === caught.line)),
-      lines,
-      linesPerMinute: speed(secs),
-      fast: speed(secs) >= FAST_LINES_PER_MINUTE,
+      ...(s.prepared ? {} : { lines, linesPerMinute: speed(secs), fast: speed(secs) >= FAST_LINES_PER_MINUTE }),
     };
     if (d.setStatus) {
       const description = `Read by ${name}: ${sig.questions}/${sig.questions} questions, planted bug caught on read ${sig.reads}`;
@@ -338,7 +377,7 @@ export function createApp(d: Deps) {
       }
     }
     s.signature = sig;
-    record(s, 'sign', { name, reads: sig.reads, wrongAnswers: sig.misses, seconds: sig.seconds, lines, linesPerMinute: sig.linesPerMinute, fast: sig.fast, plant: `${caught.file}:${caught.line}`, flagsForAuthor: sig.flagsForAuthor, ...(sig.github ? { github: sig.github } : {}) });
+    record(s, 'sign', { name, reads: sig.reads, wrongAnswers: sig.misses, seconds: sig.seconds, lines, linesPerMinute: sig.linesPerMinute, fast: sig.fast, ...(s.prepared ? { prepared: true } : {}), plant: `${caught.file}:${caught.line}`, flagsForAuthor: sig.flagsForAuthor, ...(sig.github ? { github: sig.github } : {}) });
     d.onSign?.(sig);
     return c.json(state(s));
   });
@@ -354,14 +393,17 @@ export function createApp(d: Deps) {
   });
 
   app.post('/api/reset', (c) => {
-    const id = getCookie(c, cookie)!;
+    // the id of this request's session: on a first visit the cookie is only on its way to the browser
+    const id = c.get('id');
     const old = c.get('s');
     // "a new reader" is a new person: on this copy a person is a browser, on a real repository it is the GitHub login
     const who = randomBytes(12).toString('hex');
     setCookie(c, 'rb_who', who, { httpOnly: true, sameSite: 'Lax', path: '/', maxAge: 60 * 60 * 24 * 30 });
     const s = fresh(old.test, who);
-    record(old, 'reset', { next: s.rid });
+    if (old.ours) s.ours = true;
+    record(old, 'reset', { next: s.rid, agent: (c.req.header('user-agent') ?? '').slice(0, 200) });
     sessions.set(id, s);
+    coldShown(s, c.req.header('user-agent'));
     return c.json(view(s));
   });
 
