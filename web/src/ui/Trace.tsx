@@ -4,15 +4,14 @@
  * tour and state as the rest of the review: nothing is written in.
  */
 import type { PublicTour, Ruling } from '../../../shared/tour';
-import { Check, X } from './icons';
 
 const n = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
 
-/** "invoices.ts:372, 380 · share.ts:25" */
+/** "invoices.ts:372, 380 · share.ts:25": the dot stays with the file before it when the list wraps */
 const where = (at: { file: string; line: number }[]) => {
   const by = new Map<string, number[]>();
   for (const x of at) by.set(x.file.split('/').pop()!, [...(by.get(x.file.split('/').pop()!) ?? []), x.line]);
-  return [...by].map(([f, ls]) => `${f}:${[...new Set(ls)].sort((a, b) => a - b).join(', ')}`).join(' · ');
+  return [...by].map(([f, ls]) => `${f}:${[...new Set(ls)].sort((a, b) => a - b).join(', ')}`).join('\u00a0· ');
 };
 
 export function Trace({ tour, name }: { tour: PublicTour; name: string }) {
@@ -32,13 +31,15 @@ export function Trace({ tour, name }: { tour: PublicTour; name: string }) {
           const points = ev.rulings.filter((r) => r.stopId === st.id);
           const right = st.questions.filter((q) => answers[q.id]?.right).length;
           return (
-            <div key={st.id} className="px-4 py-3 text-[12.5px] leading-[1.55] lg:grid lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.25fr)] lg:gap-x-5">
-              <div className="min-w-0">
-                <p className="text-[13px] font-[590] text-fg">{st.title}</p>
-                <p className="mt-0.5 text-fg3">
+            <div key={st.id} className="px-4 py-3">
+              <p className="text-[13px] leading-[1.45] font-[590] text-fg">{st.title}</p>
+              {/* one label per question the trace answers, the same four under every part: the eye runs down a column, not through three paragraphs */}
+              <dl className="mt-1.5 grid grid-cols-[96px_minmax(0,1fr)] gap-x-3 gap-y-1 text-[12.5px] leading-[1.5] sm:grid-cols-[116px_minmax(0,1fr)] sm:gap-x-4">
+                <dt className="text-fg3">Asked for by</dt>
+                <dd className="text-fg2">
                   {e.criteria.length ? (
                     <>
-                      Asked for by {e.criteria.length === 1 ? 'criterion' : 'criteria'}{' '}
+                      {e.criteria.length === 1 ? 'Criterion' : 'Criteria'}{' '}
                       {e.criteria.map((k, i) => (
                         <span key={k}>
                           {i ? ', ' : ''}
@@ -51,46 +52,49 @@ export function Trace({ tour, name }: { tour: PublicTour; name: string }) {
                   ) : (
                     <span className="text-warn">No criterion asks for it</span>
                   )}
-                  {e.risk.length ? ` · can harm ${e.risk.join(', ')}` : ''}
-                </p>
-              </div>
-              <div className="mt-1.5 min-w-0 text-fg2 lg:mt-0">
-                <p>
+                  {e.risk.length ? <span className="text-fg3"> · can harm {e.risk.join(', ')}</span> : null}
+                </dd>
+                <dt className="text-fg3">Tests</dt>
+                <dd className="text-fg2">
                   {n(e.tests.length, 'test')} {e.tests.length === 1 ? 'fails' : 'fail'} when it breaks
                   {e.changes.tried ? `; ${e.changes.caught} of ${e.changes.tried} one-line bugs tried here were noticed` : ''}
-                </p>
-                <p className="text-fg3">
-                  {st.required
-                    ? `Left to a person: ${n(st.closely, 'line')} to read closely${e.changes.survived.length ? `, ${e.changes.survived.length} of them where no test notices a bug (${where(e.changes.survived)})` : ''}`
-                    : 'Carried by the tests: nothing here had to be read closely'}
-                </p>
-              </div>
-              <div className="mt-1.5 min-w-0 lg:mt-0">
+                </dd>
+                <dt className="text-fg3">Left to a person</dt>
                 {st.required ? (
-                  <p className="text-fg2">
-                    {st.questions.length ? `${right} of ${n(st.questions.length, 'question')} answered right` : 'No question here'}
-                    {!points.length && ' · no open point'}
-                  </p>
+                  <dd className="text-fg2">
+                    {n(st.closely, 'line')} to read closely
+                    {e.changes.survived.length ? (
+                      <>
+                        , {e.changes.survived.length} of them where no test notices a bug <span className="font-mono text-[11.5px] text-fg3 [overflow-wrap:anywhere]">{where(e.changes.survived)}</span>
+                      </>
+                    ) : null}
+                  </dd>
                 ) : (
-                  <p className="text-fg3">Shown, not signed for line by line</p>
+                  <dd className="text-fg3">Carried by the tests: nothing here had to be read closely</dd>
                 )}
-                {points.map((p) => {
-                  const r = rulings[p.id];
-                  return (
-                    <p key={p.id} className="mt-0.5 flex items-start gap-1.5 text-fg2">
-                      {r?.decision === 'back' ? <X size={11} className="mt-[4px] flex-none text-flag" /> : <Check size={12} className="mt-[3px] flex-none text-ok" />}
-                      <span className="min-w-0 [overflow-wrap:anywhere]">
-                        <span className="font-mono text-[11.5px] text-fg3">
-                          {p.file.split('/').pop()}:{p.from}
-                          {p.to > p.from ? `–${p.to}` : ''}
-                        </span>{' '}
-                        {r ? (r.decision === 'back' ? 'sent back' : 'accepted') : 'not ruled on'}
-                        {r?.note ? `: ${r.note}` : ''}
-                      </span>
-                    </p>
-                  );
-                })}
-              </div>
+                <dt className="text-fg3">Decided</dt>
+                {st.required ? (
+                  <dd className="min-w-0 text-fg2">
+                    {st.questions.length ? `${right} of ${n(st.questions.length, 'question')} answered right` : 'No question here'}
+                    {!points.length && <span className="text-fg3"> · no open point</span>}
+                    {points.map((p) => {
+                      const r = rulings[p.id];
+                      return (
+                        <span key={p.id} className="mt-1 block [overflow-wrap:anywhere]">
+                          <span className={`font-[510] ${r ? (r.decision === 'back' ? 'text-flag' : 'text-ok') : 'text-fg3'}`}>{r ? (r.decision === 'back' ? 'Sent back' : 'Accepted') : 'Not ruled on'}</span>{' '}
+                          <span className="font-mono text-[11.5px] text-fg3">
+                            {p.file.split('/').pop()}:{p.from}
+                            {p.to > p.from ? `–${p.to}` : ''}
+                          </span>
+                          {r?.note ? <span className="block">{r.note}</span> : null}
+                        </span>
+                      );
+                    })}
+                  </dd>
+                ) : (
+                  <dd className="text-fg3">Shown, not signed for line by line</dd>
+                )}
+              </dl>
             </div>
           );
         })}

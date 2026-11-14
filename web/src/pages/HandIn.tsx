@@ -37,10 +37,33 @@ function Checks({ checks }: { checks: GateCheck[] }) {
       {checks.map((c) => (
         <li key={c.id} className={`flex items-start gap-3 px-4 py-2.5 text-[13.5px] leading-[1.45] ${c.ok ? '' : 'bg-bad/[0.05]'}`}>
           {c.ok ? <Check size={14} className="mt-[3px] flex-none text-ok" /> : <X size={13} className="mt-[3px] flex-none text-bad" />}
-          <span className={c.ok ? 'text-fg2' : 'text-fg'}>{c.text}</span>
+          <span className={`min-w-0 flex-1 ${c.ok ? 'text-fg2' : 'text-fg'}`}>{c.ok ? c.text : <Named text={c.text} />}</span>
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * A failed check that names its stops (server/gate.ts: “Title” (open 3 s, scrolling it takes 12 s), ...) is read as a list,
+ * one stop a line, not as one sentence eight stops long. Any other text is shown as it came.
+ */
+function Named({ text }: { text: string }) {
+  const at = text.indexOf(': “');
+  const items = at < 0 ? [] : [...text.slice(at + 2).matchAll(/“([^”]*)” \(([^)]*)\)/g)];
+  if (items.length < 2) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, at)}
+      <span className="mt-1.5 mb-0.5 block text-[12.5px]">
+        {items.map((m, i) => (
+          <span key={i} className="flex flex-col gap-x-4 border-t border-white/[0.06] py-1 sm:flex-row sm:items-baseline sm:justify-between">
+            <span className="min-w-0 text-fg2">{m[1]}</span>
+            <span className="flex-none text-fg3">{m[2]}</span>
+          </span>
+        ))}
+      </span>
+    </>
   );
 }
 
@@ -276,7 +299,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
                 <div key={k} className="flex items-start gap-3 px-4 py-2.5 text-[13px] leading-[1.45]">
                   {v ? v.ok ? <Check size={14} className="mt-[3px] flex-none text-ok" /> : <X size={13} className="mt-[3px] flex-none text-bad" /> : <span className="mt-[5px] size-[10px] flex-none animate-pulse rounded-full bg-fg4" />}
                   <span className="w-[52px] flex-none font-[590] text-fg">{k}</span>
-                  <span className={`min-w-0 [overflow-wrap:anywhere] ${v ? 'text-fg2' : 'text-fg4'}`}>
+                  <span className={`min-w-0 [overflow-wrap:anywhere] ${v ? 'text-fg2' : 'text-fg3'}`}>
                     {v ? v.note : `${wait}…`}
                     {v?.ok && k === 'Entire' && tour.entire?.trail?.url && (
                       <>
@@ -284,7 +307,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
                         <a href={tour.entire.trail.url} target="_blank" rel="noreferrer" className="whitespace-nowrap text-fg underline decoration-line-strong underline-offset-2 hover:decoration-fg3">
                           Open trail #{tour.entire.trail.number}
                         </a>{' '}
-                        <span className="text-fg4">(members of the Entire project)</span>
+                        <span className="whitespace-nowrap text-fg3">(members of the Entire project)</span>
                       </>
                     )}
                     {v?.ok && k === 'GitHub' && tour.pr.url && (
@@ -324,12 +347,13 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
           <div className="mt-5">
             <p className="mb-2 text-[13px] font-[590] text-fg">{sentBack.length ? `${sentBack.length} ${sentBack.length === 1 ? 'point' : 'points'} for the author, ${accepted} accepted` : `What ${s.name} ruled on the open points`}</p>
             <ul className="card divide-y divide-line">
-              {[...sentBack, ...points.filter((p) => rulings[p.id]?.decision === 'accept')].map((p) => {
+              {/* under a trace the accepted points are already said with their reasons, part by part: here only what goes to the author */}
+              {[...sentBack, ...(!short && tour.stops.some((st) => st.evidence) ? [] : points.filter((p) => rulings[p.id]?.decision === 'accept'))].map((p) => {
                 const back = rulings[p.id]!.decision === 'back';
                 return (
                   <li key={p.id} className="flex flex-col gap-x-4 gap-y-0.5 px-4 py-2.5 text-[13px] leading-[1.5] sm:flex-row sm:items-baseline">
-                    <span className="flex flex-none items-baseline gap-2 sm:w-[218px]">
-                      <span className={`w-[62px] flex-none font-[590] ${back ? 'text-flag' : 'text-ok'}`}>{back ? 'Sent back' : 'Accepted'}</span>
+                    <span className="flex flex-none items-baseline gap-2 sm:w-[226px]">
+                      <span className={`w-[70px] flex-none font-[590] whitespace-nowrap ${back ? 'text-flag' : 'text-ok'}`}>{back ? 'Sent back' : 'Accepted'}</span>
                       <span className="min-w-0 truncate font-mono text-[12px] text-fg3" title={p.file}>
                         {p.file.split('/').pop()}:{p.from}
                         {p.to > p.from ? `–${p.to}` : ''}

@@ -338,17 +338,20 @@ function Measures({ n }: { n: Data }) {
 
 function Split({ n, children }: { n: Data; children: (g: G, who: Who) => ReactNode }) {
   return (
-    <div className={`mt-3 grid items-start gap-3 md:grid-cols-2 ${(n as More).judges ? 'xl:grid-cols-3' : ''}`}>
+    <div className={`mt-3 grid items-start gap-3 md:grid-cols-2 ${(n as More).judges ? 'xl:grid-cols-[1fr_1fr_1.2fr]' : ''}`}>
       {(['people', 'judges', 'agents'] as const).map((who) => {
         const g = who === 'judges' ? (n as More).judges : n[who];
         if (!g) return null;
         return (
           <div key={who} className={who === 'agents' ? 'rounded-[10px] border border-dashed border-line-strong px-4 pt-3 pb-3.5' : 'card px-4 pt-3 pb-3.5'}>
+            {/* one line in all three cards, so the rows under them start at the same height. The third column is a little wider because its name is the longest; if it still does not fit, the name gives way and the tag never breaks */}
             <p className={`mb-2 flex items-center gap-[6px] text-[12.5px] font-[590] ${who === 'agents' ? 'text-fg3' : 'text-fg'}`}>
-              {who === 'agents' && <Bot size={13} />}
-              {WHO[who]}
-              {who === 'agents' && <span className="ml-auto font-[450]">not results</span>}
-              {who === 'judges' && <span className="ml-auto font-[450] text-fg3">a person or an AI</span>}
+              {who === 'agents' && <Bot size={13} className="flex-none" />}
+              <span className="min-w-0 truncate" title={WHO[who]}>
+                {WHO[who]}
+              </span>
+              {who === 'agents' && <span className="ml-auto flex-none pl-2 font-[450] whitespace-nowrap">not results</span>}
+              {who === 'judges' && <span className="ml-auto flex-none pl-2 font-[450] whitespace-nowrap text-fg3">a person or an AI</span>}
             </p>
             {children(g, who)}
           </div>
@@ -361,13 +364,14 @@ function Split({ n, children }: { n: Data; children: (g: G, who: Who) => ReactNo
 /** The plain sentence that stands where a group has nothing to show yet. */
 const None = ({ children }: { children: ReactNode }) => <p className="py-1 text-[13.5px] leading-[1.55] text-fg3">{children}</p>;
 
-function Stats({ who, rows }: { who: Who; rows: [label: ReactNode, value: ReactNode][] }) {
+/** `stack`: values that are phrases, not numbers, go under their label on a phone instead of squeezing it into a column three words wide */
+function Stats({ who, rows, stack }: { who: Who; rows: [label: ReactNode, value: ReactNode][]; stack?: boolean }) {
   return (
     <dl className="divide-y divide-line">
       {rows.map(([label, value], i) => (
-        <div key={i} className="flex items-baseline justify-between gap-5 py-[7px]">
+        <div key={i} className={stack ? 'flex flex-col gap-y-0.5 py-2 sm:flex-row sm:items-baseline sm:justify-between sm:gap-5 sm:py-[7px]' : 'flex items-baseline justify-between gap-5 py-[7px]'}>
           <dt className="min-w-0 text-[13px] leading-[1.45] text-fg3">{label}</dt>
-          <dd className={`flex-none text-right text-[13.5px] font-[510] tabular-nums ${who === 'people' ? 'text-fg' : 'text-fg2'}`}>{value}</dd>
+          <dd className={`text-[13.5px] font-[510] tabular-nums ${stack ? 'sm:flex-none sm:text-right' : 'flex-none text-right'} ${who === 'people' ? 'text-fg' : 'text-fg2'}`}>{value}</dd>
         </div>
       ))}
     </dl>
@@ -766,9 +770,9 @@ function AfterSendBack({ n }: { n: Data }) {
         A review that sends points back does not end in a comment. The points become an issue, the author agent answers with one more commit, and the reviewer reads that commit only. The rest of the change stands on the first review. This ran once on this copy, and every value below is read from that run.
       </p>
       <div className="card mt-3 max-w-[760px] px-4 pt-1.5 pb-2">
-        <Stats who="people" rows={rows} />
+        <Stats who="people" rows={rows} stack />
       </div>
-      <p className={NOTE}>
+      <p className={`${NOTE} mt-2.5!`}>
         {l.earlier.ours ? 'The review that was sent back was signed by our own script through the judge link, so that a sent-back review existed to answer. ' : ''}
         The author’s session, its commit and the test runs are real runs, kept by Entire with the commit. One run is one data point, not a rate.
       </p>

@@ -68,14 +68,14 @@ export function Reached({ en, file, line }: { en: Entire; file: string; line: nu
 }
 
 /** Under an open point: which session wrote these lines and what it was asked, so the reviewer rules knowing why the code exists. */
-export function Why({ en, file, from, to, finding }: { en: Entire; file: string; from: number; to: number; finding?: string }) {
+export function Why({ en, file, from, to, finding, brief }: { en: Entire; file: string; from: number; to: number; finding?: string; brief?: boolean }) {
   const w = sessionOf(en, file, from, to);
   if (!w) return null;
   return (
     <div className="mt-3 border-t border-white/[0.07] pt-2.5 text-[12px] leading-[1.5] text-fg3">
       <p>
         <span className="font-[590] text-fg2">Why the agent wrote it. </span>
-        Session {w.n} of {en.sessions.length}, which was asked: “{w.s.asked}”{w.s.detail && w.n > 1 ? ` ${w.s.detail}` : ''}
+        Session {w.n} of {en.sessions.length}, which was asked: “{w.s.asked}”{w.s.detail && w.n > 1 && !brief ? ` ${w.s.detail}` : ''}
       </p>
       {finding && en.trail ? <p className="mt-0.5 text-fg4">Finding on Entire trail #{en.trail.number}: your ruling is written there too.</p> : null}
     </div>

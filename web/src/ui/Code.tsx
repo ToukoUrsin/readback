@@ -108,7 +108,7 @@ interface Props {
 /** a bar under a line, in the reading font */
 const under = 'flex font-sans';
 
-function Point({ p, ruling, locked, onRule, entire }: { p: RulingItem; ruling?: Ruling; locked: boolean; onRule?: Props['onRule']; entire?: Entire }) {
+function Point({ p, ruling, locked, onRule, entire, brief }: { p: RulingItem; ruling?: Ruling; locked: boolean; onRule?: Props['onRule']; entire?: Entire; brief?: boolean }) {
   // one step: the reason first, then one of two buttons. Accepting needs a reason as much as sending back does
   const [note, setNote] = useState(ruling?.note ?? '');
   const [edit, setEdit] = useState(false);
@@ -156,7 +156,8 @@ function Point({ p, ruling, locked, onRule, entire }: { p: RulingItem; ruling?: 
               maxLength={400}
               aria-label="Your reason"
               placeholder="Why is it fine as it is, or what must the author change? Say something that is true of these lines."
-              className="min-h-[54px] w-full rounded-md border border-line-strong bg-bg px-2.5 py-1.5 text-[13px] leading-[1.5] transition-colors placeholder:text-fg4 focus:border-accent"
+              aria-invalid={err ? true : undefined}
+              className={`min-h-[54px] w-full rounded-md border bg-bg px-2.5 py-1.5 text-[13px] leading-[1.5] transition-colors placeholder:text-fg4 focus:border-accent ${err ? 'border-bad/60' : 'border-line-strong'}`}
             />
             {err && (
               <p className="mt-1.5 text-[12.5px] leading-[1.45] text-bad" role="alert">
@@ -168,14 +169,20 @@ function Point({ p, ruling, locked, onRule, entire }: { p: RulingItem; ruling?: 
                 <Check size={13} className={short ? '' : 'text-ok'} /> {p.kind === 'answer' ? 'It is answered' : 'Accept as it is'}
               </button>
               <button type="button" className="btn" disabled={locked || short || busy} onClick={() => void send('back')}>
-                <X size={12} className={short ? '' : 'text-flag'} /> {p.kind === 'answer' ? 'Send back again' : 'Send back to the author'}
+                <X size={12} className={short ? '' : 'text-flag'} /> {p.kind === 'answer' ? (
+                  'Send back again'
+                ) : (
+                  <span>
+                    Send back<span className="max-sm:sr-only"> to the author</span>
+                  </span>
+                )}
               </button>
               {edit && (
                 <button type="button" className="btn btn-ghost" onClick={cancel}>
                   Cancel
                 </button>
               )}
-              <span className="text-[12px] text-fg4">{short ? `Write your reason first, at least ${MIN_RULING} characters.` : 'Your ruling and your reason go on the record under your name.'}</span>
+              <span className="text-[12px] text-fg3">{short ? `Write your reason first, at least ${MIN_RULING} characters.` : 'Your ruling and your reason go on the record under your name.'}</span>
             </div>
           </div>
         ) : (
@@ -201,7 +208,7 @@ function Point({ p, ruling, locked, onRule, entire }: { p: RulingItem; ruling?: 
             )}
           </p>
         )}
-        {entire && <Why en={entire} file={p.file} from={p.from} to={p.to} finding={entire.trail?.findings[p.id]} />}
+        {entire && <Why en={entire} file={p.file} from={p.from} to={p.to} finding={entire.trail?.findings[p.id]} brief={brief} />}
       </div>
     </div>
   );
@@ -232,6 +239,15 @@ export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, on
     if (told.has(key)) return false;
     told.add(key);
     return true;
+  };
+  // the long form of what a session was asked is said under the first open point it wrote, not again under each of the next five
+  const asked = new Set<number>();
+  const saidAbove = (p: RulingItem) => {
+    const w = entire && sessionOf(entire, p.file, p.from, p.to);
+    if (!w) return false;
+    if (asked.has(w.n)) return true;
+    asked.add(w.n);
+    return false;
   };
 
   return (
@@ -283,7 +299,7 @@ export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, on
             return (
               <div key={`${n}${pulsing ? `p${pulse.key}` : ''}`}>
                 {pointsHere.map((p) => (
-                  <Point key={p.id} p={p} ruling={rulings?.[p.id]} locked={locked} onRule={onRule} entire={entire} />
+                  <Point key={p.id} p={p} ruling={rulings?.[p.id]} locked={locked} onRule={onRule} entire={entire} brief={saidAbove(p)} />
                 ))}
                 {starts.map((f) => (
                   <div key={`${f.from}-${f.to}`} className={`${under} items-start gap-2 py-1.5 pr-4 pl-[14px] ${i > 0 ? 'mt-1' : ''}`}>

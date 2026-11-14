@@ -36,12 +36,22 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
   const answers = points.filter((p) => p.kind === 'answer').length;
   const num = (n: number | string) => <span className="text-[12px] font-[590] text-fg2">{n}</span>;
   const here = short ? 'on these stops' : 'in this change';
+  /** 1,372, as every other page writes it */
+  const all = tour.lines.all.toLocaleString('en-US');
 
   const shows = evidence
     ? [
         { mark: num(evidence.criteria.length), title: `${evidence.criteria.length} acceptance criteria, from issue #${pr.issue?.number ?? ''}`, body: 'Every stop names the criteria its code serves. Code that serves none is listed as an open point.' },
         { mark: <Check size={13} className="text-ok" />, title: `${evidence.tests.passed} tests pass${evidence.tests.failed ? `, ${evidence.tests.failed} fail` : ''}`, body: 'The project’s own tests, run offline on this commit.' },
-        ...(tried ? [{ mark: <Warn size={13} className="text-warn" />, title: `${tried} one-line bugs tried ${here}: the tests noticed ${caught}`, body: `${unnoticed} went unnoticed: every test still passed. Those lines are marked, with the change that was tried.` }] : []),
+        ...(tried
+          ? [
+              {
+                mark: unnoticed ? <Warn size={13} className="text-warn" /> : <Check size={13} className="text-ok" />,
+                title: `${tried} one-line ${tried === 1 ? 'bug' : 'bugs'} tried ${here}: the tests noticed ${tried === 1 && caught === 1 ? 'it' : caught}`,
+                body: unnoticed ? `${unnoticed} went unnoticed: every test still passed. ${unnoticed === 1 ? 'That line is' : 'Those lines are'} marked, with the change that was tried.` : 'None went unnoticed, so no line is marked for it.',
+              },
+            ]
+          : []),
         ...(points.length ? [{ mark: <span className="text-[12px] font-[590] text-accent-hi">{points.length}</span>, title: `${points.length} ${points.length === 1 ? 'point' : 'points'} the AI does not decide`, body: [kinds[0] ? `${kinds[0]} nobody asked for` : '', kinds[1] ? `${kinds[1]} the issue leaves open` : '', kinds[2] ? `${kinds[2]} no test checks` : '', answers ? `${answers} sent back by the first reviewer and answered by the author` : ''].filter(Boolean).join(', ') + '. A person rules on each.' }] : []),
         ...(entire && !fu
           ? [
@@ -58,7 +68,7 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
   const yours = [
     {
       mark: <Eye size={13} className="text-warn" />,
-      title: evidence ? `Read ${tour.lines.required} of ${tour.lines.all} lines closely` : `Read ${tour.lines.all} lines`,
+      title: evidence ? `Read ${tour.lines.required} of ${all} lines closely` : `Read ${tour.lines.all} lines`,
       body: evidence ? 'The lines that decide who sees what, move money or change stored data, the lines where a tried bug went unnoticed, and the open points. The rest is shown as context.' : 'This change has no evidence of its own, so every line has to be read.',
     },
     { mark: <Check size={13} className="text-ok" />, title: `Answer ${questions} questions`, body: `Each one can only be answered from the code of its stop. A wrong answer closes the question for ${rule.lockSeconds} seconds and stays on the record.` },
@@ -211,11 +221,14 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
       )}
 
       {!short && after && (
-        <p className="mt-3 rounded-lg border border-line bg-panel px-3.5 py-2.5 text-[13.5px] leading-[1.55] text-fg2">
+        <p className="mt-2 flex items-start gap-2.5 rounded-lg border border-line bg-panel px-3.5 py-2.5 text-[13.5px] leading-[1.5] text-fg2">
+          <Pull size={14} className="mt-[3px] flex-none text-fg3" />
+          <span>
           An earlier review of this commit was sent back by <b className="font-[590] text-fg">{after.who}</b> on {when(after.at)} with {after.points} {after.points === 1 ? 'point' : 'points'}. The author agent answered {after.minutesAfter} minutes later with one more commit. Reviewing that commit is {after.questions} questions on {after.closely} of {after.lines} lines, not this whole change again.{' '}
-          <a className="text-accent-hi underline-offset-2 hover:underline" href={after.href}>
+          <a className="whitespace-nowrap text-accent-hi underline-offset-2 hover:underline" href={after.href}>
             Open the follow-up review
           </a>
+          </span>
         </p>
       )}
 
@@ -254,21 +267,21 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
             </ul>
             <p className="mt-2.5 border-t border-line pt-2.5 text-[12.5px] leading-[1.5] text-fg3">The commit status follows this rule and nothing else. A review that does not meet it is recorded and changes nothing on GitHub.</p>
           </div>
-          <dl className="mt-3 grid gap-x-6 gap-y-2.5 text-[12.5px] leading-[1.5] sm:grid-cols-3">
+          <dl className="card mt-2 grid divide-y divide-line text-[12.5px] leading-[1.5] sm:grid-cols-3 sm:divide-x sm:divide-y-0">
             {(
               [
                 ['Who owns the decision?', 'You. Your name goes on the commit status with how you reviewed it. The AI that wrote the change has no way to sign.'],
                 ['When not to trust it?', 'When the tests are weak, more lines come to you. Risk marks are a model’s reading: any line can be flagged.'],
-                ['How does it scale?', `By what is left for a person: ${tour.lines.required} of ${tour.lines.all} lines here. After a send-back only the answer is read again.`],
+                ['How does it scale?', `By what is left for a person: ${tour.lines.required} of ${all} lines here. After a send-back only the answer is read again.`],
               ] as const
             ).map(([q, a]) => (
-              <div key={q}>
+              <div key={q} className="px-4 py-3">
                 <dt className="font-[590] text-fg2">{q}</dt>
-                <dd className="mt-0.5 text-fg3">{a}</dd>
+                <dd className="mt-1 text-fg3">{a}</dd>
               </div>
             ))}
           </dl>
-          <p className="mt-2 text-[12.5px] text-fg3">
+          <p className="mt-2.5 text-[12.5px] text-fg3">
             The whole concept, with its trade-offs and limits:{' '}
             <a href="/concept" className="text-accent-hi underline-offset-2 hover:underline">
               Concept
