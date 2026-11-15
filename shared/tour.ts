@@ -363,7 +363,7 @@ export interface PublicTour {
   after?: { href: string; pr: number; url: string; who: string; at: string; points: number; minutesAfter: number; stops: number; questions: number; closely: number; lines: number };
   /** the change's own evidence; each stop carries its part */
   /** `changes`: one-line bugs tried on the stops of this review and how many the tests noticed, whole (a stop's own count leaves out the one a reviewer has as their planted line) */
-  evidence?: Pick<Evidence, 'criteria' | 'tests' | 'rulings' | 'madeBy'> & { changes?: { tried: number; caught: number } };
+  evidence?: Pick<Evidence, 'criteria' | 'tests' | 'rulings' | 'madeBy'> & { changes?: { tried: number; caught: number; held?: number } };
   /** lines of code a person has to read closely, and all lines shown */
   lines: { required: number; all: number };
   /** the rule a signature has to meet (server/gate.ts) */

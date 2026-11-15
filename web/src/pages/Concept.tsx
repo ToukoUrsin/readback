@@ -56,6 +56,8 @@ export default function Concept() {
   const { data: n, error, loading } = useNumbers();
   const r = n?.route ?? undefined;
   const rule = n?.rule;
+  // the one send-back we ran: what the first review and the follow-up review each asked of a person
+  const { first, again } = (n as { loop?: { first?: { closely: number; questions: number }; again?: { closely: number; questions: number } } } | null | undefined)?.loop ?? {};
 
   return (
     <Pending.Provider value={loading}>
@@ -168,7 +170,7 @@ export default function Concept() {
                   </>
                 ),
               },
-              { head: 'Accepting every open point is the short way to green.', body: 'A send-back costs the reviewer a second, shorter review. What stands against the easy accept: each one needs a reason about those lines, a reason that would fit any line is refused, and the reasons are written on the pull request under the reviewer’s name, where the team reads them.' },
+              { head: 'Accepting every open point is the short way to green.', body: 'A send-back costs a second, shorter review, which any reviewer on the list can take. What stands against the easy accept: each one needs a reason about those lines, a reason that would fit any line is refused, an accept that owes work (“the test comes in a follow-up”) is refused, and the reasons are written on the pull request under the reviewer’s name, where the team reads them.' },
               { head: 'During the review one line differs from the branch.', body: 'The real line is shown as soon as it is caught, and the approval covers the real code.' },
               { head: 'Which lines need a person rests on the tests plus a model’s reading of risk.', body: 'A risky line the model did not mark, in code the tests cover well, is shown as context only. Every changed line is in the review and can be flagged: what no stop explains is in the last stop, “The rest of the change”.' },
               { head: 'The guide cannot help with the lines that matter most.', body: 'It is never given a line the reviewer signs for, so it cannot say what such a line does. It answers from the code around it, from what calls it and from what the agent was asked.' },
@@ -231,6 +233,18 @@ export default function Concept() {
                   </>
                 ),
               },
+              ...(again && first
+                ? [
+                    {
+                      head: 'The cost follows the lines that need a person, not the size of the diff.',
+                      body: (
+                        <>
+                          The first review here: <N v={first.closely} /> lines closely and <N v={first.questions} /> questions. The follow-up commit after the send-back: <N v={again.closely} /> lines closely and <N v={again.questions} /> questions.
+                        </>
+                      ),
+                    },
+                  ]
+                : []),
               {
                 head: 'Making the review material is machine work per pull request.',
                 body: (
@@ -463,6 +477,72 @@ function EntireSection({ n }: { n: Numbers | null }) {
 
 /* ---- the policy on one screen: what the long page says, in four short lists ---- */
 
+/** One review as a path: read, hand in, sign, and the three ways the rule lets it end. */
+function Path({ rule }: { rule: Numbers['rule'] | undefined }) {
+  const step = (k: string, title: string, body: ReactNode) => (
+    <li className="min-w-0 rounded-lg border border-line px-3 py-2.5">
+      <p className="text-[13px] leading-[1.4] font-[590] text-fg">
+        <span className="mr-[7px] font-mono text-[11.5px] font-[450] text-fg4">{k}</span>
+        {title}
+      </p>
+      <p className="mt-1 text-[12.5px] leading-[1.45] text-fg3">{body}</p>
+    </li>
+  );
+  const arrow = (
+    <li aria-hidden className="flex items-center justify-center text-[13px] leading-none text-fg4">
+      <span className="md:hidden">↓</span>
+      <span className="hidden md:inline">→</span>
+    </li>
+  );
+  const end = (dot: string, name: string, status: string, body: ReactNode) => (
+    <li className="min-w-0 rounded-lg border border-line px-3 py-2.5">
+      <p className="flex flex-wrap items-center gap-x-[7px] gap-y-0.5 text-[13px] leading-[1.4] font-[590] text-fg">
+        <span className={`size-[7px] flex-none rounded-full ${dot}`} aria-hidden />
+        {name}
+        <span className="font-[450] text-fg3">{status}</span>
+      </p>
+      <p className="mt-1 text-[12.5px] leading-[1.45] text-fg3">{body}</p>
+    </li>
+  );
+  return (
+    <figure className="mt-4" aria-labelledby="path-title">
+      <figcaption id="path-title" className="border-b border-line pb-2 text-[12px] leading-[1.35] font-[510] text-fg3">
+        <a href="#rule" className="rounded-[3px] underline-offset-2 hover:text-fg hover:underline">
+          One review, from the first read to the merge
+        </a>
+      </figcaption>
+      <ol className="mt-3 grid gap-1.5 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] md:gap-2">
+        {step('1', 'Read', 'Every stop in plain words. Answer its questions, rule on its open points, and flag the one line that is a planted bug.')}
+        {arrow}
+        {step(
+          '2',
+          'Hand in',
+          <>
+            Bug caught: go on. Bug missed: it is shown, and you read again with a new one. Read <N v={rule?.maxReads} /> is the last that can approve.
+          </>,
+        )}
+        {arrow}
+        {step('3', 'Sign', 'Your name goes on the record. The rule decides which of the three ends it is. The reviewer does not, and the AI cannot.')}
+      </ol>
+      <p aria-hidden className="py-1 text-center text-[13px] leading-none text-fg4">
+        ↓
+      </p>
+      <ul className="grid gap-1.5 md:grid-cols-3 md:gap-2">
+        {end('bg-ok', 'Approved', 'status green', 'Every check holds and every open point is accepted with a reason. GitHub lets the change merge.')}
+        {end('bg-bad', 'Sent back', 'status red', 'Every check holds and a point goes back. The author answers with a commit. The follow-up review reads only the stops that commit touches, and the rest of the first read stands.')}
+        {end(
+          'bg-fg4',
+          'Recorded only',
+          'no status change',
+          <>
+            A typed name, more than <N v={rule?.maxWrong} /> wrong tries, a read too fast, or the bug missed <N v={rule?.maxReads} /> times. Another reviewer reads.
+          </>,
+        )}
+      </ul>
+    </figure>
+  );
+}
+
 function OneScreen({ n }: { n: Numbers | null | undefined }) {
   const r = n?.route ?? undefined;
   const rule = n?.rule;
@@ -480,21 +560,12 @@ function OneScreen({ n }: { n: Numbers | null | undefined }) {
       ],
     },
     {
-      title: 'Outcomes',
-      href: '#rule',
-      rows: [
-        ['Approved', <>A known reviewer, every question right, the planted bug caught with a true reason, under <N v={rule?.paceLimit} /> lines a minute, every open point accepted with a reason. The status goes green.</>],
-        ['Sent back', 'The same, with one open point or more sent back. The status goes red and the author gets the reasons. The sender’s read of the other stops stands: the follow-up review covers only the stops the answer touches.'],
-        ['Recorded only', <>A typed name, more than <N v={rule?.maxWrong} /> wrong tries, a read too fast, or the planted bug missed <N v={rule?.maxReads} /> times. The status does not change and another reviewer reads.</>],
-      ],
-    },
-    {
       title: 'Trade-offs',
       href: '#trade-offs',
       rows: [
         ['Slower than a skim', <>About 22 minutes here and never under <N v={least} /> minutes. Skimming the diff is faster and proves nothing.</>],
         ['One line is not the branch', 'During the review one line on screen is a bug we put there. The real line is shown once it is caught.'],
-        ['The easy accept', 'Accepting every open point is the short way to green. Each accept needs a checked reason under the reviewer’s name.'],
+        ['The easy accept', 'Accepting every point is the short way to green. Each accept needs a checked reason under the reviewer’s name. One that owes work is refused: that is a send-back.'],
       ],
     },
     {
@@ -512,9 +583,10 @@ function OneScreen({ n }: { n: Numbers | null | undefined }) {
       <h2 id="one-screen-title" className="text-[17px] leading-[1.4] font-[590] text-fg">
         The policy on one screen
       </h2>
-      <div className="mt-4 grid gap-x-8 gap-y-6 md:grid-cols-2">
+      <Path rule={rule} />
+      <div className="mt-6 gap-x-8 md:columns-2">
         {lists.map((l) => (
-          <div key={l.title} className="min-w-0">
+          <div key={l.title} className="mb-6 min-w-0 break-inside-avoid">
             <h3 className="border-b border-line pb-2 text-[12px] leading-[1.35] font-[510] text-fg3">
               <a href={l.href} className="rounded-[3px] underline-offset-2 hover:text-fg hover:underline">
                 {l.title}
@@ -651,6 +723,7 @@ function Failures({ rule, q }: { rule: Numbers['rule'] | undefined; q: Numbers['
     { was: 'The agent built things nobody asked for.', more: 'A counter table, nine database triggers and an in-memory store of CSV files. Nothing flagged it until the evidence step compared the code with the acceptance criteria.', now: 'It is now an open point a person rules on.' },
     { was: 'All tests passed while one line of the CSV export, changed, let a user download another workspace’s file.', more: 'Found by trying one-line bugs.', now: 'It is now a line a person must read.' },
     { was: 'Our own agents’ test runs were mixed into the counts at first, then hidden, which made the public numbers read zero.', now: 'Now they are shown apart.' },
+    { was: 'A judge accepted two access-control lines no test checks with “the test is owed in a follow-up”, and the status went green.', more: 'Both reasons passed the check, because they were true of the lines. Nothing tracked the promise.', now: 'An accept that owes work is now refused. It is a send-back, and the sender’s read of the other stops stands.' },
   ];
   return (
     <ol className="mt-4 divide-y divide-line border-y border-line">
@@ -692,6 +765,14 @@ function Log() {
         'Agents’ runs are counted and shown apart from people.',
         'The history of the change comes from Entire: the agent’s sessions, the code graph and the trail. Our own model calls stay for what Entire cannot know.',
         'After the second round of outside judges: the guide no longer sees any line a reviewer signs for, questions are drawn per reviewer from a checked pool, and a judge can sign under their own name.',
+      ],
+    },
+    {
+      day: 'Sun 15.11.2026',
+      iso: '2026-11-15',
+      items: [
+        'After the night’s rounds of outside judges: reviewers of one commit get different planted bugs, a reason copied from another review is refused, and only time with a stop open counts toward the pace.',
+        'An accept that owes work is refused. Work that is owed is a point sent back, and a send-back keeps the sender’s read of the other stops.',
       ],
     },
   ];

@@ -20,6 +20,8 @@ import type { ReadEvent, Store } from './store';
 export const MAX_FLAGS = 3;
 /** a flag needs this many characters of reason before the review can be handed in */
 export const MIN_NOTE = 8;
+/** words by which an accept puts work off: such a reason is refused, the point is to be sent back */
+const OWES = /\b(?:owed|(?:in|as|for) (?:a |the )?follow[- ]?up|follow[- ]?up (?:pr|pull request|ticket|issue|commit|change|task)|todo|to-do|(?:next|later|separate|another) (?:pr|pull request|sprint|ticket|issue|commit)|will (?:add|fix|test|be (?:added|fixed|tested))|(?:add|added|fix|fixed|tested) later)\b/i;
 /** a reason is kept and written on the pull request whole: longer ones are refused, never cut */
 export const MAX_NOTE = 1000;
 
@@ -462,7 +464,7 @@ export function createApp(d: Deps) {
       ...(cold ? { cold: { blocks: withPlant(tour.cold!.blocks, tour.plants.find((x) => x.id === s.coldPlant)) } } : {}),
       ...(d.other ? { other: d.other } : {}),
       ...(d.after ? { after: d.after } : {}),
-      ...(ev ? { evidence: { criteria: ev.criteria, tests: ev.tests, rulings: rulingItems, madeBy: ev.madeBy, changes: { tried: tour.stops.reduce((a, st) => a + (ev.stops[st.id]?.changes.tried ?? 0), 0), caught: tour.stops.reduce((a, st) => a + (ev.stops[st.id]?.changes.caught ?? 0), 0) } } } : {}),
+      ...(ev ? { evidence: { criteria: ev.criteria, tests: ev.tests, rulings: rulingItems, madeBy: ev.madeBy, changes: { tried: tour.stops.reduce((a, st) => a + (ev.stops[st.id]?.changes.tried ?? 0), 0), caught: tour.stops.reduce((a, st) => a + (ev.stops[st.id]?.changes.caught ?? 0), 0), held: tour.plants.filter((x) => x.untested && plantable(x) && tour.stops.some((st) => ev.stops[st.id]?.changes.survived.some((y) => y.file === x.file && y.line === x.line))).length } } } : {}),
       lines: { required: lines, all: allLines },
       rule: { maxWrong: RULE.maxWrong, maxReads: RULE.maxReads, fastLinesPerMinute: fastAt, lockSeconds },
       ...(d.signIn ? { signIn: true } : {}),
@@ -693,6 +695,12 @@ export function createApp(d: Deps) {
     if (b.decision === 'back' && note.length < MIN_NOTE) return c.json({ error: 'Say what the author has to change.' }, 400);
     // a ruling is a named person's decision on something the AI left open: the record has to say why
     if (b.decision === 'accept' && note.length < MIN_NOTE) return c.json({ error: item.kind === 'untested' ? 'No test checks this. Say why you accept it without one.' : 'Say why it is fine as it is.' }, 400);
+    // an accept that owes work is not an accept: nobody would track what it promises. Work that is owed is a point sent back.
+    const owes = b.decision === 'accept' ? OWES.exec(note)?.[0] : undefined;
+    if (owes) {
+      record(s, 'rule-refused', { point: item.id, kind: item.kind, stop: item.stopId, decision: b.decision, note, owes: true, read: s.read, seconds: seconds(s) });
+      return c.json({ error: `That reason accepts the point and owes work (“${owes}”). Nothing tracks work an accept promises. Send the point back with what has to change: your read of the other stops stands, and the follow-up review covers only the stops the answer touches.` }, 400);
+    }
     // a reason another reviewer of this commit already gave is not this reviewer's reason
     if (!s.test && copied(s, note)) {
       record(s, 'rule-refused', { point: item.id, kind: item.kind, stop: item.stopId, decision: b.decision, note, copied: true, read: s.read, seconds: seconds(s) });

@@ -490,6 +490,12 @@ function Share({ n }: { n: Data }) {
           <h3 className={SUB}>Per stop</h3>
           <p className={NOTE}>
             “Tests noticed” counts one-line bugs tried in that stop against the project’s <N v={r.tests.passed} /> tests: <N v={r.caught} /> of <N v={r.tried} /> noticed over the whole change, <span className="text-warn">{r.unnoticed} unnoticed</span>.
+            {(n as More).planted.untested ? (
+              <>
+                {' '}
+                During a read the stops count <N v={(n as More).planted.untested} /> fewer: a tried bug on a line that can be the planted one is shown only once the planted bug is caught, because its note quotes the real line.
+              </>
+            ) : null}
           </p>
           <div className="card mt-3 divide-y divide-line">
             <div className={`hidden px-4 py-2 text-[12px] font-[510] text-fg3 ${STOP_COLS}`}>

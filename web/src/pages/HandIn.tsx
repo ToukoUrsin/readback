@@ -476,7 +476,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
               {will === 'approved'
                 ? 'Every check holds. Your signature approves this commit and turns the status green.'
                 : will === 'sent-back'
-                  ? `The review counts. You sent ${sentBack.length} ${sentBack.length === 1 ? 'point' : 'points'} back, so your signature turns the status red for the author.`
+                  ? `The review is complete and counts. You sent ${sentBack.length} ${sentBack.length === 1 ? 'point' : 'points'} back, so your signature turns the status red for the author. Your read of the other stops stands: the follow-up review covers only the stops the answer touches.`
                   : needsWho && checks.filter((c) => !c.ok).length === 1
                     ? 'Everything holds except the name. Sign in with GitHub and this review approves the commit.'
                     : 'Not every check holds, so this signature is recorded and does not approve. Nothing is written to GitHub.'}

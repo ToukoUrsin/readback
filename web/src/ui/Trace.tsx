@@ -23,7 +23,7 @@ export function Trace({ tour, name }: { tour: PublicTour; name: string }) {
   return (
     <div className="mt-5">
       <p className="mb-1 text-[13px] font-[590] text-fg">The trace this signature stands on</p>
-      <p className="mb-2 max-w-[660px] text-[12.5px] leading-[1.55] text-fg3">Each part of the change: who asked for it, which tests fail when it breaks, what was left to a person, and what {name} decided there.</p>
+      <p className="mb-2 max-w-[660px] text-[12.5px] leading-[1.55] text-fg3">Each part of the change: who asked for it, which tests fail when it breaks, what was left to a person, and what {name} decided there.{ev.changes?.held ? ` During the read the stops counted ${ev.changes.held} fewer tried ${ev.changes.held === 1 ? 'bug' : 'bugs'}: one on a line that can be the planted one is shown only after the planted bug is caught.` : ''}</p>
       <div className="card divide-y divide-line">
         {tour.stops.map((st) => {
           const e = st.evidence;

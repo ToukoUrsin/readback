@@ -569,6 +569,19 @@ test('a reason another reviewer of the commit already gave is refused, for a rul
   expect(store.events().filter((e) => e.type === 'handin-refused').length).toBe(1);
 });
 
+test('an accept that owes work is refused and can be sent back; an accept with a reason about the lines passes', async () => {
+  const store = createStore(null);
+  const r = reader(store, false, { evidence });
+  await r('/api/start', {});
+  const owed = await r('/api/rule', { id: 'r1', decision: 'accept', note: 'Fine for now, the test is owed in a follow-up' });
+  expect(owed.status).toBe(400);
+  expect(owed.json.error).toContain('owes work (“owed”)');
+  expect((await r('/api/rule', { id: 'r1', decision: 'accept', note: 'we will add the test next sprint' })).status).toBe(400);
+  expect(store.events().filter((e) => e.type === 'rule-refused' && e.owes === true).length).toBe(2);
+  expect((await r('/api/rule', { id: 'r1', decision: 'accept', note: 'no follow-up is needed: nothing reads the old spelling' })).status).toBe(200);
+  expect((await r('/api/rule', { id: 'r1', decision: 'back', note: 'the test is owed: add one that reads the old spelling' })).status).toBe(200);
+});
+
 test('only time with a stop open counts, an idle tab adds a minute and a half at most, and a second read starts the clock again', async () => {
   let t = Date.now();
   const call = reader(undefined, false, { now: () => t });

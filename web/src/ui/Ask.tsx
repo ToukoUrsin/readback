@@ -70,7 +70,7 @@ export function Ask({ stop, line, clearLine, msgs, setMsgs, onJump, onClose, foc
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {msgs.length === 0 ? (
           <div className="flex h-full flex-col justify-end gap-1.5">
-            <p className="mb-2 text-[13px] leading-[1.5] text-fg3">Ask anything about the code you are reading. The guide explains what it does and why. It is given the code as the agent wrote it, never the line Readback changed, and it will not tell you what is wrong: that part is yours.</p>
+            <p className="mb-2 text-[13px] leading-[1.5] text-fg3">Ask anything about the code you are reading. The guide explains what it does and why. It is never shown the lines marked “Read closely”, as the agent wrote them or as you see them, so it cannot tell you what is wrong there: that part is yours.</p>
             {STARTERS.map((s) => (
               <button key={s} className="rounded-lg border border-line px-3 py-2 text-left text-[13px] text-fg2 transition-colors hover:border-line-strong hover:bg-hover hover:text-fg" onClick={() => send(s)}>
                 {s}

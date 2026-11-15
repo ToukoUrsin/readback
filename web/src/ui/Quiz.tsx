@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AnswerState, PublicQuestion } from '../../../shared/tour';
 import { api, bodyOf } from '../api';
 import { Check, X } from './icons';
@@ -34,6 +34,7 @@ export function Quiz({ questions, answers, lockSeconds, onAnswer, onReread }: Pr
 }
 
 function One({ q, a, keys, onAnswer, onReread }: { q: PublicQuestion; a: AnswerState | undefined; keys: boolean; onAnswer: Props['onAnswer']; onReread: Props['onReread'] }) {
+  const card = useRef<HTMLDivElement>(null);
   const [picked, setPicked] = useState<number | null>(null);
   const [tried, setTried] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
@@ -71,12 +72,19 @@ function One({ q, a, keys, onAnswer, onReread }: { q: PublicQuestion; a: AnswerS
   };
 
   useEffect(() => {
-    if (!keys || right) return;
+    if (right) return;
     const on = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+      // a key answers one question only: the one the reviewer is in, or the first open one when nothing on the page has the focus.
+      // With the focus anywhere else (a reason being typed, another question, a button) the keys do nothing here.
+      const at = document.activeElement;
+      const inside = !!at && !!card.current?.contains(at);
+      const nowhere = !at || at === document.body;
+      if (!(inside || (keys && nowhere))) return;
       const n = Number(e.key);
       if (n >= 1 && n <= q.options.length && !tried.includes(n - 1)) setPicked(n - 1);
-      else if (e.key === 'Enter' && picked !== null) {
+      // Enter checks the choice that is picked, with no focus at all or on that very choice. On any other button it presses that button and nothing else
+      else if (e.key === 'Enter' && picked !== null && (nowhere || (at as HTMLElement).dataset?.opt === String(picked))) {
         e.preventDefault();
         void check();
       }
@@ -86,7 +94,7 @@ function One({ q, a, keys, onAnswer, onReread }: { q: PublicQuestion; a: AnswerS
   });
 
   return (
-    <div className={`card p-4 transition-colors ${right ? 'border-ok/25' : ''}`}>
+    <div ref={card} className={`card p-4 transition-colors ${right ? 'border-ok/25' : ''}`}>
       <p className="text-[14.5px] leading-[1.45] font-[510] text-fg">{inline(q.prompt)}</p>
       <div className="mt-3 space-y-1">
         {q.options.map((o, i) => {
@@ -96,6 +104,7 @@ function One({ q, a, keys, onAnswer, onReread }: { q: PublicQuestion; a: AnswerS
           return (
             <button
               key={i}
+              data-opt={i}
               disabled={!!right || wasTried || busy}
               onClick={() => setPicked(i)}
               className={`flex w-full items-start gap-3 rounded-lg border px-3 py-2 text-left text-[13.5px] leading-[1.45] transition-colors ${
@@ -106,7 +115,7 @@ function One({ q, a, keys, onAnswer, onReread }: { q: PublicQuestion; a: AnswerS
                 {isRight ? <Check size={11} strokeWidth={2.2} /> : wasTried ? <X size={9} strokeWidth={2} /> : sel ? <i className="size-[7px] rounded-full bg-accent-hi" /> : null}
               </span>
               <span className="min-w-0 flex-1">{inline(o)}</span>
-              {!right && !wasTried && <span className="kbd mt-px flex-none">{i + 1}</span>}
+              {keys && !right && !wasTried && <span className="kbd mt-px flex-none">{i + 1}</span>}
             </button>
           );
         })}
@@ -119,7 +128,7 @@ function One({ q, a, keys, onAnswer, onReread }: { q: PublicQuestion; a: AnswerS
       ) : (
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button className="btn btn-primary" disabled={picked === null || busy || wait > 0} onClick={check}>
-            {wait > 0 ? `Opens again in ${wait} s` : 'Check'} {wait > 0 ? null : <span className="kbd">↵</span>}
+            {wait > 0 ? `Opens again in ${wait} s` : 'Check'} {wait > 0 || !keys ? null : <span className="kbd">↵</span>}
           </button>
           {wrong && (
             <p className="fade min-w-0 flex-1 text-[13px] text-fg2">

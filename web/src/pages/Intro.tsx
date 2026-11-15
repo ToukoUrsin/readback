@@ -101,7 +101,7 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
     { mark: <Check size={13} className="text-ok" />, title: `Answer ${questions} questions`, body: `Each one can only be answered from the code of its stop. A wrong answer closes the question for ${rule.lockSeconds} seconds and stays on the record.` },
     ...(points.length ? [{ mark: <span className="text-[12px] font-[590] text-accent-hi">?</span>, title: `Rule on ${points.length} open ${points.length === 1 ? 'point' : 'points'}`, body: 'Accept it as it is, or send it back to the author with what has to change. Either way you give your reason, and a reason that would fit any line is refused.' }] : []),
     { mark: <FlagFill size={13} className="text-flag" />, title: 'Catch the planted bug', body: 'One of the lines to read closely was changed for you only, and never on the branch. It is a real bug, and it may be one that no test notices. Flag it and say what it does wrong. The reason is checked.' },
-    ...(tour.ask ? [{ mark: <Bot size={13} className="text-accent-hi" />, title: 'Ask the guide', body: 'Click any line to ask about it. The guide explains the code as the agent wrote it. It will not tell you what is wrong.' }] : []),
+    ...(tour.ask ? [{ mark: <Bot size={13} className="text-accent-hi" />, title: 'Ask the guide', body: 'Click any line to ask about it. The guide explains the code around the lines marked “Read closely”. Those lines it is never shown, so it cannot tell you what is wrong.' }] : []),
   ];
 
   // Enter starts the review, but the page must open at its top: autoFocus would scroll down to the button.
