@@ -38,6 +38,13 @@ Added by hand after the generators, 14.11.2026:
   questions.json  + 46 kept questions (60 written), 14.11.2026: bun gen/questions.ts --tour data/live/tour.json --add data/live/questions.json --min-kept 8 --per-stop 6 --out and --work /bulk3/runs/readback/questions/grow1 --resume; nothing in the pool before was changed, 88 kept, 9 to 11 per stop, counts and cost are both runs added up
   short.json   short.of = 10 (the full review has 10 stops with the "rest" stop)
   entire.json  the one agent report that was cut at 4,000 characters now ends at its last full sentence (gen/entire.ts cutReport does the same on a rerun)
+  second.json  <- GEMINI_API_KEY=… bun gen/second.ts --dir data/live (see its header): gemini-4-hydrogen gets each stop's code with no marks, titles or notes
+                 and marks the lines a person must read. Compared line by line with our marks: ours 55, second reader 75, both 36, only ours 19,
+                 only the second reader (and on the close-read list for no other reason) 23. The close-read list (103 lines) is not changed by it.
+                 The answers are kept in /bulk3/runs/readback/second/55559f7/; --reuse 1 builds the file again from them without a call.
+  questions.json  3 kept questions are held back (not asked): each rests on a line that can be a reviewer's planted line (added[].existing). 85 in use, fewest per stop 7.
+  tour.json    plant untested-csv-ts-12 corrected by hand, 15.11.2026: kind "access" -> "format" and its "stated" text now says what line 12 does
+                 (quotes a value with a comma, a quote or a line break); it carried the note of line 11. Found by a judge in round 5.
 
 data/next/ is the follow-up review of the author's answer to a sent-back review (PR #4, commit 48471fe): tour, evidence, questions, entire and
 followup.json, made by gen/followup.ts from data/kuitti-4/. The server mounts it at /next.

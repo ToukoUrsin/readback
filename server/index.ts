@@ -5,6 +5,7 @@
  *   RB_GITHUB=1     a signature also sets the commit status readback/read (through this box's gh)
  *   GEMINI_API_KEY  turns on the guide (RB_ASK_MODEL, default gemini-4-hydrogen)
  *   RB_PREP_KEY        with /full?test=1&prep=<key>&leave=<stop id> the questions are answered ahead, for a recording
+ *                      (&plant=<planted line id> names the line this recording looks for)
  *   RB_GITHUB_WATCH=1  says on the page that a signed full read reaches GitHub within seconds (deploy/watch-github.ts does it)
  *   RB_PUBLIC_URL   address people reach this server at, used as the link on the GitHub status
  *   HOST            default 127.0.0.1
@@ -69,7 +70,7 @@ const demoMinutes = Number(process.env.RB_DEMO_MINUTES || 0) || undefined;
 const reviewers = process.env.RB_REVIEWERS ? process.env.RB_REVIEWERS.toLowerCase().split(',').map((x) => x.trim().replace(/^@/, '')).filter(Boolean) : undefined;
 const efficiencyPath = resolve(ROOT, process.env.RB_EFFICIENCY ?? 'data/live/efficiency.json');
 const efficiency = existsSync(efficiencyPath) ? (JSON.parse(readFileSync(efficiencyPath, 'utf8')) as { headSha: string; model: string; functions: number; byModel: { tokens: number; seconds: number; medianTokens: number; medianSeconds: number }; same: number; modelFoundMore: number; graphFoundMore: number; mixed: { asked: number; tokens: number; sameAsModel: boolean } }) : undefined;
-const checked = questionPool?.headSha === tour.pr.headSha ? (questionPool as unknown as { madeBy: { writer: string; checker: string; costUsd: number }; checks: { source: string; kept: boolean; withCode: boolean; withoutCode: boolean }[] }) : undefined;
+const checked = questionPool?.headSha === tour.pr.headSha ? (questionPool as unknown as { madeBy: { writer: string; checker: string; costUsd: number }; checks: { source: string; kept: boolean; withCode: boolean; withoutCode: boolean; reason?: string }[] }) : undefined;
 /** what Entire holds about the change and what the question check found, for the numbers and concept pages: all of it read from the files above */
 const more = {
   ...(entire && entire.headSha === tour.pr.headSha
@@ -93,6 +94,13 @@ const more = {
           kept: checked.checks.filter((c) => c.kept).length,
           wrongKey: checked.checks.filter((c) => !c.withCode).length,
           withoutCode: checked.checks.filter((c) => c.withCode && c.withoutCode).length,
+          // every other question that was not kept, by the reason on its row: checked = kept + wrongKey + withoutCode + these
+          otherDrops: (() => {
+            const rest = checked.checks.filter((c) => !c.kept && c.withCode && !c.withoutCode);
+            const long = rest.filter((c) => /longer than 15 lines/.test(c.reason ?? '')).length;
+            const split = rest.filter((c) => /not inside one code block/.test(c.reason ?? '')).length;
+            return { long, split, byHand: rest.length - long - split };
+          })(),
           first: { checked: checked.checks.filter((c) => c.source === 'tour').length, withoutCode: checked.checks.filter((c) => c.source === 'tour' && c.withCode && c.withoutCode).length, kept: checked.checks.filter((c) => c.source === 'tour' && c.kept).length },
           perStop: Math.min(...tour.stops.filter((s) => pool[s.id]).map((s) => pool[s.id]!.length)),
           heldBack: Object.values(questionPool!.stops).flat().filter((q) => heldBack.has(q.id)).length,
@@ -117,9 +125,9 @@ const closely = (t: Tour, e?: Evidence) => [...closeLines(t, e && e.headSha === 
 // the questions a reviewer is asked: two per stop that has lines to read closely
 const asked = (t: Tour, e?: Evidence) => { const c = closeLines(t, e && e.headSha === t.pr.headSha ? e : undefined); return t.stops.reduce((a, s) => a + (c.get(s.id)?.size ? s.questions.length : 0), 0); };
 const after = nextOn ? { href: '/next', pr: nextTour!.pr.number, url: nextTour!.pr.url, who: followup!.earlier.who, at: followup!.earlier.at, points: followup!.points.length, minutesAfter: followup!.answer.minutesAfter, stops: nextTour!.stops.length, questions: asked(nextTour!, nextEvidence), closely: closely(nextTour!, nextEvidence), lines: span(nextTour!) } : undefined;
-const full = createApp({ tour, after, key: 'full', store, shown, distDir, ask, evidence, grade, gradeRuling, coldPlants: shortTour?.cold?.plants, entire, second, pool, demoMinutes, openPlants: shortTour?.plants.map((p) => p.id), carryKey: process.env.RB_CARRY_KEY || undefined, me: auth?.me, signIn: !!auth, reviewers, githubSoon: process.env.RB_GITHUB_WATCH === '1', prepKey: process.env.RB_PREP_KEY || undefined, setStatus: github ? setStatus : undefined, publicUrl: process.env.RB_PUBLIC_URL, other: shortTour ? { kind: 'short', href: '/', stops: shortTour.stops.length } : undefined });
+const full = createApp({ tour, after, key: 'full', store, shown, distDir, ask, evidence, grade, gradeRuling, coldPlants: shortTour?.cold?.plants, entire, second, pool, questionsBy: checked?.madeBy, demoMinutes, openPlants: shortTour?.plants.map((p) => p.id), carryKey: process.env.RB_CARRY_KEY || undefined, me: auth?.me, signIn: !!auth, reviewers, githubSoon: process.env.RB_GITHUB_WATCH === '1', prepKey: process.env.RB_PREP_KEY || undefined, setStatus: github ? setStatus : undefined, publicUrl: process.env.RB_PUBLIC_URL, other: shortTour ? { kind: 'short', href: '/', stops: shortTour.stops.length } : undefined });
 // the short read never writes to GitHub: it does not approve anything
-const short = shortTour ? createApp({ tour: shortTour, key: 'short', cookie: 'rb_short', store, shown, distDir, ask, evidence, grade, gradeRuling, entire, second, pool, other: { kind: 'full', href: '/full', stops: tour.stops.length } }) : null;
+const short = shortTour ? createApp({ tour: shortTour, key: 'short', cookie: 'rb_short', store, shown, distDir, ask, evidence, grade, gradeRuling, entire, second, pool, questionsBy: checked?.madeBy, other: { kind: 'full', href: '/full', stops: tour.stops.length } }) : null;
 
 const nextPool = opt<{ headSha: string; stops: Record<string, Question[]> }>('questions.json');
 const next =

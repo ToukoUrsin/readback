@@ -344,7 +344,9 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
           What this copy has measured
         </a>
         <br />
-        Stops and questions written by {tour.madeBy.model}
+        {tour.madeBy.questionModel && tour.madeBy.questionModel !== tour.madeBy.model
+          ? `Stops written by ${tour.madeBy.model}, questions written by ${tour.madeBy.questionModel}${tour.madeBy.questionChecker ? ` and checked by ${tour.madeBy.questionChecker}` : ''}`
+          : `Stops and questions written by ${tour.madeBy.model}`}
         {tour.madeBy.plantModel ? `, bugs planted by ${tour.madeBy.plantModel}` : ''}
         {evidence ? `, evidence made by ${evidence.madeBy.model}` : ''}. Every planted bug and every tried bug was run against the project’s tests.
       </p>

@@ -187,7 +187,7 @@ function History({ n }: { n: Data }) {
         <>
           <h3 className={SUB}>The questions, checked by a second model</h3>
           <p className={NOTE}>
-            {q.writer} wrote the questions. {q.checker} answered each one twice: with the stop’s code, and with only the stop’s title and description. A question is kept when it reaches the key with the code and not without it.
+            {q.writer} wrote the questions. {q.checker}, the model that wrote the stops and did not write the questions, answered each one twice: with the stop’s code, and with only the stop’s title and description. A question is kept when it reaches the key with the code and not without it.
           </p>
           <dl className="mt-2 max-w-[760px] divide-y divide-line border-y border-line">
             {(
@@ -196,6 +196,13 @@ function History({ n }: { n: Data }) {
                 ['Key not reached with the code in front of it', q.wrongKey],
                 ['Answered right without the code', q.withoutCode],
                 [`Of our first ${q.first.checked} questions, answered right without the code`, q.first.withoutCode],
+                ...(q.otherDrops
+                  ? ([
+                      ['Dropped: more than 15 lines to reread for the answer', q.otherDrops.long],
+                      ['Dropped: the lines to reread are not in one code block', q.otherDrops.split],
+                      ['Dropped by hand: an open point on the same stop gave the answer away (a judge found it)', q.otherDrops.byHand],
+                    ] as [string, ReactNode][])
+                  : []),
                 ['Kept in the pool', q.kept],
                 ...(q.heldBack ? ([['Kept but not asked: their lines hold a line that can be planted', q.heldBack]] as [string, ReactNode][]) : []),
                 ['Fewest in use for one stop (a reviewer is asked 2 of them)', q.perStop],
@@ -268,7 +275,7 @@ function Measures({ n }: { n: Data }) {
         </>
       ),
       live: 'Per kind of point: how many were sent back and then changed by the author.',
-      alarm: 'A finding that cannot be reproduced: none is tolerated. A kind of point accepted 9 times in 10 is noise and is asked less.',
+      alarm: 'A finding that cannot be reproduced: none is tolerated. A kind of point that people accept 9 times in 10 is noise and is asked less. Judges and agents do not count for this: so far they accept nearly all of them, and no person has ruled yet.',
       to: '#findings',
     },
     {
@@ -460,6 +467,7 @@ function Share({ n }: { n: Data }) {
                     ['Lines the second reader marked', n.second.theirs],
                     ['Marked by both', n.second.both],
                     ['Only ours', n.second.oursOnly],
+                    ['Only the second reader, but already read closely for another reason', n.second.theirs - n.second.both - n.second.theirsOnly, 'A test run or an open point already sends these lines to a person.'],
                     ['Only the second reader, and on no close-read list', n.second.theirsOnly, 'Shown in the review with a grey mark, not counted.'],
                   ] as [string, number, string?][]
                 ).map(([k, v, more]) => (

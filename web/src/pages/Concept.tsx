@@ -61,11 +61,12 @@ export default function Concept() {
       <Shell current="concept" sections={SECTIONS}>
         {error && !n && <LoadError error={error} />}
         <Hero n={n} />
+        <OneScreen n={n} />
 
         <Section id="line-by-line" title="Is line-by-line review still the right way?">
           <p className="mt-4 text-[17px] leading-[1.4] font-[590] text-fg">Yes, a person reads it. Not as a raw diff, and not every line with the same care.</p>
           <p className={`${PROSE} mt-2`}>
-            A raw diff of <N v={r?.linesAll} /> lines is what produces the ten-second “looks good to me”. Readback gives the reviewer the whole change as <N v={r?.stops.length} /> stops that explain themselves: what the code does in plain words, a diagram where the parts connect, and the agent’s own sessions behind the lines. Then it checks the read, with questions only the code answers and one planted bug to find.
+            A raw diff of <N v={r?.linesAll} /> lines is what produces the ten-second “looks good to me”. Readback gives the reviewer the whole change as <N v={n?.stops} /> stops that explain themselves: what the code does in plain words, a diagram where the parts connect, and the agent’s own sessions behind the lines. Then it checks the read, with questions only the code answers and one planted bug to find.
           </p>
           <p className={`${PROSE} mt-3`}>
             The policy also says which lines are critical and holds the reviewer hardest to those. In this pull request that is <B v={r?.linesToRead} /> of <B v={r?.linesAll} /> lines shown.
@@ -114,13 +115,18 @@ export default function Concept() {
         <Section id="distrust" title="What would make us not trust our own output?">
           <Pairs
             items={[
-              { head: 'A planted bug the tests do not fail on.', body: 'Then we would mark a right reviewer wrong. So a planted line is kept only when the tests pass without it and fail with it, and when the stop states in words what the line must do.' },
+              { head: 'A planted bug the tests do not fail on.', body: 'Then we could mark a right reviewer wrong. So every planted line was run first. Most are kept because the tests pass without them and fail with them. A few are kept although every test passes with them: only where the stop states in words what the line must do, only for a reviewer who is known, and the hand-in page says that no test notices it.' },
               { head: 'Evidence made for another commit.', body: 'The evidence carries the commit it was made for; when it does not match, every line has to be read.' },
               {
                 head: 'A question with a wrong answer key.',
                 body: (
                   <>
-                    A second model answers every question twice: with the stop’s code and without it. Of <N v={n?.questionCheck?.checked} /> questions, <N v={n?.questionCheck?.wrongKey} /> had a key it did not reach with the code, and <N v={n?.questionCheck?.withoutCode} /> it got right without the code. Those are dropped; <N v={n?.questionCheck?.kept} /> are kept{n?.questionCheck?.heldBack ? (
+                    A second model, not the one that wrote them, answers every question twice: with the stop’s code and without it. Of <N v={n?.questionCheck?.checked} /> questions, <N v={n?.questionCheck?.wrongKey} /> had a key it did not reach with the code, and <N v={n?.questionCheck?.withoutCode} /> it got right without the code. Those are dropped{n?.questionCheck?.otherDrops ? (
+                      <>
+                        , and so are <N v={n.questionCheck.otherDrops.long + n.questionCheck.otherDrops.split + n.questionCheck.otherDrops.byHand} /> more whose answer sits in more lines than a reviewer can be held to, or that a judge showed could be answered from the page
+                      </>
+                    ) : null}
+                    ; <N v={n?.questionCheck?.kept} /> are kept{n?.questionCheck?.heldBack ? (
                       <>
                         , and <N v={n.questionCheck.heldBack} /> of them are not asked, because their lines hold a line that can be planted
                       </>
@@ -454,6 +460,73 @@ function EntireSection({ n }: { n: Numbers | null }) {
   );
 }
 
+/* ---- the policy on one screen: what the long page says, in four short lists ---- */
+
+function OneScreen({ n }: { n: Numbers | null | undefined }) {
+  const r = n?.route ?? undefined;
+  const rule = n?.rule;
+  const least = r && rule ? Math.ceil(r.linesToRead / rule.paceLimit) : undefined;
+  const lists: { title: string; href: string; rows: [string, ReactNode][] }[] = [
+    {
+      title: 'Principles',
+      href: '#principles',
+      rows: [
+        ['Risk', 'Lines that decide access, money or stored data always go to a person.'],
+        ['Hallucination', 'Nothing the AI says counts until it was run against the tests.'],
+        ['Transparency', 'Every step of a review is a line in the record, under a name.'],
+        ['Confidence', 'A count of tried bugs the tests noticed, never a model’s feeling.'],
+        ['Quality', 'One rule sets the merge status. The AI cannot sign, and a click does not approve.'],
+      ],
+    },
+    {
+      title: 'Outcomes',
+      href: '#rule',
+      rows: [
+        ['Approved', <>A known reviewer, every question right, the planted bug caught with a true reason, under <N v={rule?.paceLimit} /> lines a minute, every open point accepted with a reason. The status goes green.</>],
+        ['Sent back', 'The same, with one open point or more sent back. The status goes red and the author gets the reasons.'],
+        ['Recorded only', <>A typed name, more than <N v={rule?.maxWrong} /> wrong tries, a read too fast, or the planted bug missed <N v={rule?.maxReads} /> times. The status does not change and another reviewer reads.</>],
+      ],
+    },
+    {
+      title: 'Trade-offs',
+      href: '#trade-offs',
+      rows: [
+        ['Slower than a skim', <>About 22 minutes here and never under <N v={least} />. Skimming the diff is faster and proves nothing.</>],
+        ['One line is not the branch', 'During the review one line on screen is a bug we put there. The real line is shown once it is caught.'],
+        ['The easy accept', 'Accepting every open point is the short way to green. Each accept needs a checked reason under the reviewer’s name.'],
+      ],
+    },
+    {
+      title: 'Limits',
+      href: '#limits',
+      rows: [
+        ['Read, not right', 'It shows a named person read and understood the lines. It does not show the code is right.'],
+        ['Person or AI', 'An AI under someone’s sign-in can pass the same checks. The name stays accountable.'],
+        ['Small numbers', 'One pull request in one repository, and reverts take months of real use to count.'],
+      ],
+    },
+  ];
+  return (
+    <section aria-label="The policy on one screen" className="mt-9 grid gap-x-8 gap-y-6 border-t border-line pt-5 md:grid-cols-2">
+      {lists.map((l) => (
+        <div key={l.title} className="min-w-0">
+          <a href={l.href} className="text-[12px] font-[590] tracking-[0.02em] text-fg3 uppercase hover:text-fg">
+            {l.title}
+          </a>
+          <dl className="mt-1.5">
+            {l.rows.map(([k, v]) => (
+              <div key={k} className="grid grid-cols-[104px_minmax(0,1fr)] gap-x-3 py-[5px]">
+                <dt className="text-[13px] leading-[1.45] font-[590] text-fg">{k}</dt>
+                <dd className="text-[13px] leading-[1.45] text-fg3">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 /* ---- principles: what Readback does, and what it costs ---- */
 
 function Principles({ tests }: { tests: number | undefined }) {
@@ -463,7 +536,7 @@ function Principles({ tests }: { tests: number | undefined }) {
       name: 'Hallucination',
       does: (
         <>
-          Nothing the AI says counts until it was run. Every planted bug makes the project’s own tests fail. Every “the tests do not notice this” is a real one-line change with all <N v={tests} /> tests still passing. Where a model only gives an opinion (what a part can harm, the open points) the page says so and a person rules.
+          Nothing the AI says counts until it was run. Every planted bug was run against the project’s own tests: most make them fail, and the few that no test notices are told apart on the page. Every “the tests do not notice this” is a real one-line change with all <N v={tests} /> tests still passing. Where a model only gives an opinion (what a part can harm, the open points) the page says so and a person rules.
         </>
       ),
       costs: 'Machine time: the tests run once per tried change, offline in Docker.',

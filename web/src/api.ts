@@ -35,14 +35,15 @@ export const api = {
   answer: (id: string, choice: number) => call<{ answer: AnswerState; reread?: { file: string; from: number; to: number } }>('/api/answer', { id, choice }),
   flag: (f: Flag & { on?: boolean }) => call<{ flags: Flag[] }>('/api/flag', f),
   rule: (id: string, decision: Ruling['decision'], note: string) => call<{ rulings: Record<string, Ruling> }>('/api/rule', { id, decision, note }),
-  pace: () => call<{ brief: { id: string; title: string; seconds: number; needs: number }[]; linesPerMinute: number; under: number; lines: number }>('/api/pace'),
+  pace: () => call<{ brief: { id: string; title: string; seconds: number; needs: number }[]; linesPerMinute: number; under: number; lines: number; prepared?: boolean }>('/api/pace'),
   handin: () => call<{ ok: boolean; tour: PublicTour }>('/api/handin', {}),
   sign: (name: string) => call<ReaderState>('/api/sign', { name }),
   reset: () => call<PublicTour>('/api/reset', {}),
   unsign: () => call<ReaderState>('/api/unsign', {}),
-  prep: (key: string, leave: string) => call<PublicTour>('/api/prep', { key, leave }),
+  prep: (key: string, leave: string, plant?: string) => call<PublicTour>('/api/prep', { key, leave, ...(plant ? { plant } : {}) }),
   cold: (b: { action: 'approve' | 'flag' | 'skip'; file?: string; line?: number }) => call<PublicTour>('/api/cold', b),
-  seen: (stop: string) => call<{ ok: boolean }>('/api/seen', { stop }).catch(() => undefined),
+  /** the stop on screen; with beat: still on it (nothing is recorded, the time counts); 'away' with beat: the tab is hidden */
+  seen: (stop: string, beat = false) => call<{ ok: boolean }>('/api/seen', { stop, ...(beat ? { beat } : {}) }).catch(() => undefined),
   stats: () => call<{ cold?: ColdStats }>('/api/stats'),
 };
 

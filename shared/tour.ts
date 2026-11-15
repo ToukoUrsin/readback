@@ -33,7 +33,8 @@ export interface Plan {
   stops: PlanStop[];
   /** every one proven: the project's own tests pass without it and fail with it */
   plants: Plant[];
-  madeBy: { model: string; costUsd: number; at: string; plantModel?: string };
+  /** questionModel: the model that wrote the questions a reviewer is asked, when they come from the checked pool and not from the plan */
+  madeBy: { model: string; costUsd: number; at: string; plantModel?: string; questionModel?: string; questionChecker?: string };
   /** set on a short read: it shows only some stops of the full tour, and does not approve the change */
   short?: { stops: number; of: number };
   /** the cold test before a short read: some of the code as a plain diff, nothing said about a hidden bug */

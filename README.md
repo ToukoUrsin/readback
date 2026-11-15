@@ -60,6 +60,7 @@ Rules that keep it honest:
 | History | No model: the agent sessions Entire holds for each commit, which session wrote which lines (`entire blame`), what calls each changed function (`entire graph`), the trail. | `gen/entire.ts` |
 | Callers, measured | Asks a model with file tools the same question as the graph, for every changed function; keeps what the model found where the graph listed none. | `gen/efficiency.ts` |
 | Questions | One model writes a pool per stop; a second answers each with the code and without it; only questions that need the code are kept. | `gen/questions.ts` |
+| Second reader | A model from another vendor gets each stop with no marks and marks the lines a person must read; the two sets are compared line by line and shown under each mark. The close-read list does not change. | `gen/second.ts` |
 | Short review | No model: some stops of a finished plan, plus the cold test. | `gen/short.ts` |
 | Review | Serves the tour to one reviewer. Answers, planted lines and the reason for a flag are checked on the server; the answer key never reaches the browser. `server/gate.ts` is the rule. | `server/` |
 | Page | | `web/` |

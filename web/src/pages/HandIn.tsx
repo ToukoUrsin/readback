@@ -196,7 +196,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
         ) : (
           <>
             <p className="mt-6 text-[15px] leading-[1.6] text-fg2">
-              The line above is back to what the agent wrote and is never changed for you again. For your next read one other line is changed, somewhere in the lines to read closely. Your answers and rulings are kept.
+              The line above is back to what the agent wrote and is never changed for you again. For your next read one other line is changed, somewhere in the lines to read closely. Your answers and rulings are kept. The time each stop was open starts again: on this read every stop has to be open at least as long as it takes to scroll it.
               {!short && ` A review can approve up to read ${tour.rule.maxReads}; after that it is recorded and does not approve.`}
             </p>
             <button
@@ -593,9 +593,9 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
           <div className="px-4 py-3">
             <div className="flex items-center gap-3">
               {pace.brief.length || fastNow ? <Warn size={14} className="flex-none text-warn" /> : <Check size={14} className="flex-none text-ok" />}
-              <span className="text-[13.5px] text-fg">{pace.brief.length ? `${pace.brief.length} ${pace.brief.length === 1 ? 'stop was' : 'stops were'} open too briefly to have been read` : fastNow ? 'Too fast to count as a close read' : 'Every stop to read was open long enough'}</span>
+              <span className="text-[13.5px] text-fg">{pace.brief.length ? `${pace.brief.length} ${pace.brief.length === 1 ? 'stop was' : 'stops were'} open too briefly to have been read` : fastNow ? 'Too fast to count as a close read' : pace.prepared ? 'Questions answered ahead for a recording' : 'Every stop to read was open long enough'}</span>
               <span className={`ml-auto text-[12.5px] ${fastNow ? 'text-warn' : 'text-fg4'}`}>
-                {pace.linesPerMinute} lines a minute, under {pace.under}
+                {pace.prepared ? 'no pace is claimed' : fastNow ? `${pace.linesPerMinute} lines a minute, the rule is under ${pace.under}` : `${pace.linesPerMinute} lines a minute, under ${pace.under}`}
               </span>
             </div>
             {pace.brief.map((b) => (
@@ -609,7 +609,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
             {(pace.brief.length > 0 || fastNow) && (
               <p className="mt-2 pl-[26px] text-[12.5px] leading-[1.5] text-fg3">
                 {pace.brief.length > 0 ? 'Open them again and read them before you hand in. ' : ''}
-                {fastNow ? `The ${pace.lines} lines to read closely take at least ${Math.ceil(pace.lines / pace.under) + 1} minutes at this rule. ` : ''}
+                {fastNow ? `The ${pace.lines} lines to read closely take at least ${Math.ceil(pace.lines / pace.under)} minutes at this rule, and only time with a stop open counts. ` : ''}
                 A review handed in like this is recorded and does not approve.
               </p>
             )}
@@ -646,7 +646,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
                   className={`w-full border-t px-3 py-[7px] text-[12.5px] leading-[18px] text-fg placeholder:text-flag ${f.note.trim().length < MIN_NOTE ? 'border-flag/40 bg-flag-soft' : 'border-line'}`}
                   placeholder="What goes wrong on this line? Needed before you hand in."
                   defaultValue={f.note}
-                  maxLength={400}
+                  maxLength={1000}
                   onBlur={(e) => e.target.value !== f.note && onFlag({ ...f, note: e.target.value })}
                   onKeyDown={(e) => {
                     if (e.key !== 'Enter') return;

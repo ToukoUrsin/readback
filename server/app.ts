@@ -20,6 +20,8 @@ import type { ReadEvent, Store } from './store';
 export const MAX_FLAGS = 3;
 /** a flag needs this many characters of reason before the review can be handed in */
 export const MIN_NOTE = 8;
+/** a reason is kept and written on the pull request whole: longer ones are refused, never cut */
+export const MAX_NOTE = 1000;
 
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json' };
 /** a reader meets these first */
@@ -48,6 +50,8 @@ export interface Deps {
   githubSoon?: boolean;
   /** with this key a test reader can have the questions answered ahead, for a recording (POST /api/prep) */
   prepKey?: string;
+  /** tests only: readers of one store may give the same reason word for word */
+  allowCopies?: boolean;
   /** planted lines each person has been shown, shared by every read on this host: a line shown in the short read is not planted again in the full one */
   shown?: Shown;
   /** the change's own evidence (gen/evidence.ts): what the tests carry, what a person has to read, what the AI does not decide */
@@ -74,6 +78,8 @@ export interface Deps {
   second?: SecondRead;
   /** by stop id: questions checked by a second model (gen/questions.ts). Each reviewer is asked a draw of them, with the answers in their own order */
   pool?: Record<string, Question[]>;
+  /** who wrote and who checked the questions of the pool */
+  questionsBy?: { writer: string; checker: string };
   /** a demo copy: an invited judge's approval stops counting after this many minutes, so the next judge finds the commit blocked */
   demoMinutes?: number;
   /** with this key the watcher reports back what it carried to GitHub and to Entire (POST /api/carried) */
@@ -129,16 +135,24 @@ interface Session extends ReaderState {
   ours?: boolean;
   /** questions were answered ahead for a recording (POST /api/prep): no pace is claimed for this read */
   prepared?: boolean;
+  /** the planted line a recording asked for (POST /api/prep with the key) */
+  prepPlant?: string;
   /** GitHub login of a signed-in reviewer: their one review of this commit, whatever browser they come from */
   login?: string;
   /** set when the login was proven with a gist instead of GitHub's sign-in page, or is an invited judge's */
   via?: 'gist' | 'invite';
   /** seconds each stop has been open */
   dwell?: Record<string, number>;
+  /** seconds per stop of the reads before this one (a missed hand-in starts the count again) */
+  dwellBefore?: Record<string, number>[];
   /** the stop that is open now */
   at?: { stop: string; since: number } | null;
   /** seconds from the start to the hand-in that caught the planted bug */
   caughtSeconds?: number;
+  /** seconds with a stop open on the read that caught it: the pace of the read is counted from these */
+  caughtReadSeconds?: number;
+  /** the planted line of this read, once it is chosen: it does not change while the read is open */
+  plantNow?: string;
   /** the note on the planted line was checked by the model (true), or only required (null) */
   noteChecked?: boolean | null;
   /** a hand-in is being checked */
@@ -222,22 +236,48 @@ export function createApp(d: Deps) {
   const clock = d.now ?? Date.now;
   const seconds = (s: Session) => (s.startedAt ? Math.round((clock() - Date.parse(s.startedAt)) / 1000) : 0);
   const wrong = (s: Session) => Object.values(s.answers).reduce((a, x) => a + x.misses, 0);
-  const speed = (secs: number) => (secs > 0 ? Math.round((lines / secs) * 60) : 0);
+  // rounded down: "under 15" holds exactly when this number is under 15
+  const speed = (secs: number) => (secs > 0 ? Math.floor((lines / secs) * 60) : 0);
   /** the person across goes, without their name: readers are counted by this */
   const by = (s: Session) => createHash('sha256').update(s.who).digest('hex').slice(0, 10);
   const record = (s: Session, type: ReadEvent['type'], more: Record<string, unknown> = {}) => d.store?.record({ type, at: new Date().toISOString(), rid: s.rid, tour: key, headSha: tour.pr.headSha, test: s.test, by: by(s), ...(s.ours ? { ours: true } : {}), ...(s.login ? { verified: true } : {}), ...(s.via ? { via: s.via } : {}), ...more });
 
-  /** how long a stop was open: counted from one "opened" to the next, a single stay capped at 15 minutes */
+  /** reasons reviewers of this commit have given (rulings and flags), as word sets: a reason pasted from another review is refused */
+  const wordsOf = (t: string) => new Set(t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean));
+  const saidBefore: { rid: string; words: Set<string> }[] = [];
+  for (const e of d.store?.events() ?? []) {
+    if (e.tour !== key || e.headSha !== tour.pr.headSha || e.test) continue;
+    if (e.type === 'rule' && typeof e.note === 'string') saidBefore.push({ rid: e.rid, words: wordsOf(e.note) });
+    if (e.type === 'handin' && Array.isArray(e.flags)) for (const f of e.flags as Flag[]) if (typeof f?.note === 'string') saidBefore.push({ rid: e.rid, words: wordsOf(f.note) });
+  }
+  const copied = (s: Session, note: string) => {
+    const w = wordsOf(note);
+    if (d.allowCopies || w.size < 4) return false;
+    return saidBefore.some((x) => {
+      if (x.rid === s.rid) return false;
+      let both = 0;
+      for (const k of w) if (x.words.has(k)) both++;
+      return both / (w.size + x.words.size - both) >= 0.8;
+    });
+  };
+
+  /**
+   * How long a stop was open. The page says "still here" every half minute while the stop is on screen and the reviewer has moved
+   * (web/src/App.tsx); a stretch with no word from the page counts for at most STAY seconds, so an idle or hidden tab adds nothing more.
+   */
+  const STAY = 90_000;
   const touch = (s: Session, stop: string | null) => {
     const now = clock();
     s.dwell ??= {};
-    if (s.at) s.dwell[s.at.stop] = (s.dwell[s.at.stop] ?? 0) + Math.min(now - s.at.since, 15 * 60_000) / 1000;
+    if (s.at) s.dwell[s.at.stop] = (s.dwell[s.at.stop] ?? 0) + Math.min(now - s.at.since, STAY) / 1000;
     s.at = stop ? { stop, since: now } : null;
   };
+  /** seconds this read had a stop open: the pace is the lines to read closely over these, not over the time since the start */
+  const readSeconds = (s: Session) => Math.round(tour.stops.reduce((a, st) => a + (s.dwell?.[st.id] ?? 0), 0) + (s.at ? Math.min(clock() - s.at.since, STAY) / 1000 : 0));
   /** stops to read that were open for less time than it takes to scroll them: 4 lines a second, at most a minute */
   const brief = (s: Session) =>
     mustRead
-      .map((st) => ({ id: st.id, title: st.title, seconds: Math.floor((s.dwell?.[st.id] ?? 0) + (s.at?.stop === st.id ? Math.min(clock() - s.at.since, 15 * 60_000) / 1000 : 0)), needs: Math.ceil(Math.min(60, linesOf(st) / 4)) }))
+      .map((st) => ({ id: st.id, title: st.title, seconds: Math.floor((s.dwell?.[st.id] ?? 0) + (s.at?.stop === st.id ? Math.min(clock() - s.at.since, STAY) / 1000 : 0)), needs: Math.ceil(Math.min(60, linesOf(st) / 4)) }))
       .filter((x) => x.seconds < x.needs);
   const skimmed = (s: Session) => brief(s).length;
   /** the same, named: the reviewer has to be able to see which stop it was */
@@ -262,7 +302,7 @@ export function createApp(d: Deps) {
     return [{ id: 'standing', ok: false, text: `Sent back by ${whoOf(g)} at ${hhmm(Date.parse(g.at))} with ${points} ${points === 1 ? 'point' : 'points'} for the author. A send-back stands until the author pushes a new commit: no other review approves over it.${until}` }];
   };
   const checksOf = (s: Session): GateCheck[] => [
-    ...gate({ login: s.login, via: s.via, ...(d.reviewers && s.login ? { listed: d.reviewers.includes(s.login.toLowerCase()) } : {}), test: s.test && !!s.prepared, prepared: !!s.prepared, questions: asks, wrong: wrong(s), reads: s.read, untested: !!s.caught?.untested, linesPerMinute: speed(s.caughtSeconds ?? seconds(s)), fastAt, skimmed: s.prepared ? 0 : skimmed(s), skimmedNames: s.prepared ? '' : skimmedNames(s), rulings: ruled(s), ...(earlier ? { earlier } : {}) }),
+    ...gate({ login: s.login, via: s.via, ...(d.reviewers && s.login ? { listed: d.reviewers.includes(s.login.toLowerCase()) } : {}), test: s.test && !!s.prepared, prepared: !!s.prepared, questions: asks, wrong: wrong(s), reads: s.read, untested: !!s.caught?.untested, linesPerMinute: speed(s.caughtReadSeconds ?? readSeconds(s)), fastAt, skimmed: s.prepared ? 0 : skimmed(s), skimmedNames: s.prepared ? '' : skimmedNames(s), rulings: ruled(s), ...(earlier ? { earlier } : {}) }),
     ...standing(s),
   ];
   const whoOf = (sig: Signature) => (sig.via === 'invite' ? `${sig.name} (invited judge)` : sig.login ? `@${sig.login}` : `${sig.name} (test read)`);
@@ -331,15 +371,36 @@ export function createApp(d: Deps) {
   // a bug no test notices is only ever planted for a reviewer who is signed in: its line would be given away to anyone otherwise
   const inPool = (s: Session, p: TourPlant) => (p.untested && !s.login ? false : !signedPool.size || signedPool.has(p.id) === !!s.login);
 
-  /** the planted line of this read: the first in this reader's order they have not been shown. null once caught, or when none is left */
+  /** planted lines that vouched reviewers of this commit have had, by planted line: who had it (kept reads from the record, and the reads open now) */
+  const used = new Map<string, Set<string>>();
+  for (const e of d.store?.events() ?? []) {
+    if (e.type !== 'handin' || e.tour !== key || e.headSha !== tour.pr.headSha || e.test || !e.verified) continue;
+    const p = tour.plants.find((x) => `${x.file}:${x.line}` === e.plant);
+    if (p) (used.get(p.id) ?? used.set(p.id, new Set()).get(p.id)!).add(e.rid);
+  }
+  const usedBy = (p: TourPlant) => used.get(p.id)?.size ?? 0;
+
+  /** the planted line of this read: chosen once per read from the lines this reader has not been shown. null once caught, or when none is left */
   const plantOf = (s: Session): TourPlant | null => {
     if (s.caught) return null;
-    for (const i of s.order) {
-      const p = tour.plants[i]!;
-      // a planted line of the cold test that is not in a stop cannot be flagged in the read, so it is never the read's line
-      if (!seenBefore(s, p) && p.id !== s.coldPlant && plantable(p) && inPool(s, p)) return p;
+    const named = s.prepPlant ? tour.plants.find((x) => x.id === s.prepPlant) : undefined;
+    if (named && !seenBefore(s, named)) return named;
+    const now = s.plantNow ? tour.plants.find((x) => x.id === s.plantNow) : undefined;
+    if (now && !seenBefore(s, now)) return now;
+    // a planted line of the cold test that is not in a stop cannot be flagged in the read, so it is never the read's line
+    const mine = s.order.map((i) => tour.plants[i]!).filter((p) => !seenBefore(s, p) && p.id !== s.coldPlant && plantable(p) && inPool(s, p));
+    if (!mine.length) return null;
+    // A reviewer somebody vouches for gets the line the fewest reviewers of this commit have had, so two reviewers in a row never look
+    // for the same line while another is left. Among those, a bug no test notices comes first: there the catch is something the tests
+    // could not give. Their own order decides the rest. (The sort is stable.)
+    if (s.login && !s.test) mine.sort((a, b) => usedBy(a) - usedBy(b) || (a.untested ? 0 : 1) - (b.untested ? 0 : 1));
+    const p = mine[0]!;
+    // chosen for good when the read is open; while the cold test is still open its outcome can change what is left
+    if (!coldOpen(s)) {
+      s.plantNow = p.id;
+      if (s.login && !s.test) (used.get(p.id) ?? used.set(p.id, new Set()).get(p.id)!).add(s.rid);
     }
-    return null;
+    return p;
   };
   const exhausted = (s: Session) => !s.caught && tour.plants.some((p) => plantable(p) && inPool(s, p)) && !plantOf(s);
 
@@ -354,10 +415,13 @@ export function createApp(d: Deps) {
     !p ? blocks : blocks.map((b) => (b.type === 'code' && b.file === p.file && b.from <= p.line && p.line <= b.to ? { ...b, lines: b.lines.map((l) => (l.n === p.line ? { ...l, tokens: p.tokens } : l)) } : b));
 
   /** the evidence of a stop as one reviewer sees it: the tried bug that is this reviewer's planted line is not quoted beside it */
-  const evidenceOf = (st: Stop, p: TourPlant | null): StopEvidence | undefined => {
+  const evidenceOf = (st: Stop, s: Session): StopEvidence | undefined => {
     const e = ev?.stops[st.id];
-    if (!e || !p?.untested || !e.changes.survived.some((x) => x.file === p.file && x.line === p.line)) return e;
-    return { ...e, changes: { ...e.changes, tried: e.changes.tried - 1, survived: e.changes.survived.filter((x) => !(x.file === p.file && x.line === p.line)) } };
+    // Until the planted bug is caught, no reader is told about the tried bug on a line that can be somebody's planted line: the note
+    // quotes the change. Every reader sees the same counts, so a count does not say where this reader's line is.
+    const hide = s.caught ? [] : tour.plants.filter((x) => x.untested && plantable(x) && e?.changes.survived.some((y) => y.file === x.file && y.line === x.line));
+    if (!e || !hide.length) return e;
+    return { ...e, changes: { ...e.changes, tried: e.changes.tried - hide.length, survived: e.changes.survived.filter((y) => !hide.some((x) => x.file === y.file && x.line === y.line)) } };
   };
 
   const state = (s: Session): ReaderState => ({ read: s.read, answers: s.answers, flags: s.flags, startedAt: s.startedAt, missed: s.missed, caught: s.caught, signature: s.signature, cold: s.cold, exhausted: exhausted(s), rulings: s.rulings ?? {}, ...(s.caught && !tour.short ? { checks: s.signature?.checks ?? checksOf(s) } : {}) });
@@ -385,9 +449,9 @@ export function createApp(d: Deps) {
       pr: tour.pr,
       intro: tour.intro,
       // while the cold test is open the reader gets only its lines: two copies of the same code with different planted lines would give both away
-      stops: cold ? [] : tour.stops.map((st) => ({ id: st.id, title: st.title, why: st.why, blocks: withPlant(st.blocks, p), questions: drawOf(s, st).map(({ q, order }) => ({ id: q.id, prompt: q.prompt, options: order.map((i) => q.options[i]!) })), required: required(st.id), closely: close.get(st.id)!.size, ...(ev?.stops[st.id] ? { evidence: evidenceOf(st, p)! } : {}), ...(second.get(st.id) ? { second: second.get(st.id)! } : {}) })),
+      stops: cold ? [] : tour.stops.map((st) => ({ id: st.id, title: st.title, why: st.why, blocks: withPlant(st.blocks, p), questions: drawOf(s, st).map(({ q, order }) => ({ id: q.id, prompt: q.prompt, options: order.map((i) => q.options[i]!) })), required: required(st.id), closely: close.get(st.id)!.size, ...(ev?.stops[st.id] ? { evidence: evidenceOf(st, s)! } : {}), ...(second.get(st.id) ? { second: second.get(st.id)! } : {}) })),
       coverage: tour.coverage,
-      madeBy: tour.madeBy,
+      madeBy: { ...tour.madeBy, ...(d.pool && d.questionsBy ? { questionModel: d.questionsBy.writer, questionChecker: d.questionsBy.checker } : {}) },
       maxFlags: MAX_FLAGS,
       state: state(s),
       github: !!d.setStatus,
@@ -523,9 +587,11 @@ export function createApp(d: Deps) {
    */
   app.post('/api/prep', async (c) => {
     const s = c.get('s');
-    const { key, leave } = (await c.req.json().catch(() => ({}))) as { key?: string; leave?: string };
+    const { key, leave, plant } = (await c.req.json().catch(() => ({}))) as { key?: string; leave?: string; plant?: string };
     if (!d.prepKey || key !== d.prepKey || !s.test) return c.json({ error: 'Not found.' }, 404);
     if (s.signature || s.caught) return c.json(view(s));
+    // a recording can name its planted line, so the same line is filmed in every take (also one no test notices)
+    if (plant && tour.plants.some((x) => x.id === plant && plantable(x))) s.prepPlant = plant;
     if (!s.startedAt) {
       s.startedAt = new Date(clock()).toISOString();
       record(s, 'start', { agent: (c.req.header('user-agent') ?? '').slice(0, 200), afterCold: s.cold?.action ?? '' });
@@ -545,14 +611,19 @@ export function createApp(d: Deps) {
     s.rulings ??= {};
     for (const r of rulingItems) if (r.stopId !== leave) s.rulings[r.id] ??= { decision: 'accept', note: 'Ruled on before the recording.' };
     s.prepared = true;
-    record(s, 'prep', { answered, leave: leave ?? '' });
+    record(s, 'prep', { answered, leave: leave ?? '', ...(s.prepPlant ? { plant: s.prepPlant } : {}) });
     return c.json(view(s));
   });
 
   /** which stop the reader opened: time per stop comes from these */
   app.post('/api/seen', async (c) => {
     const s = c.get('s');
-    const { stop } = (await c.req.json().catch(() => ({}))) as { stop?: string };
+    const { stop, beat } = (await c.req.json().catch(() => ({}))) as { stop?: string; beat?: boolean };
+    // "still here" on the open stop, or "the tab is hidden": time is counted, nothing is recorded
+    if (beat || stop === 'away') {
+      if (!s.caught && s.startedAt && (stop === 'away' || (typeof stop === 'string' && s.at?.stop === stop))) touch(s, stop === 'away' ? null : stop);
+      return c.json({ ok: true });
+    }
     if (typeof stop === 'string' && (stop === 'handin' || tour.stops.some((x) => x.id === stop))) {
       if (!s.caught) touch(s, stop === 'handin' ? null : stop);
       record(s, 'stop', { stop, read: s.read, seconds: seconds(s) });
@@ -563,8 +634,8 @@ export function createApp(d: Deps) {
   /** the part of the rule that is about time, as it stands now: asked before the hand-in, while it can still be mended */
   app.get('/api/pace', (c) => {
     const s = c.get('s');
-    if (tour.short || s.prepared) return c.json({ brief: [], linesPerMinute: 0, under: fastAt, lines });
-    return c.json({ brief: s.caught ? [] : brief(s), linesPerMinute: speed(s.caughtSeconds ?? seconds(s)), under: fastAt, lines });
+    if (tour.short || s.prepared) return c.json({ brief: [], linesPerMinute: 0, under: fastAt, lines, ...(s.prepared ? { prepared: true } : {}) });
+    return c.json({ brief: s.caught ? [] : brief(s), linesPerMinute: speed(s.caughtReadSeconds ?? readSeconds(s)), under: fastAt, lines, readSeconds: s.caughtReadSeconds ?? readSeconds(s) });
   });
 
   app.post('/api/answer', async (c) => {
@@ -600,7 +671,7 @@ export function createApp(d: Deps) {
       if (i >= 0) s.flags.splice(i, 1);
     } else {
       if (i < 0 && s.flags.length >= MAX_FLAGS) return c.json({ error: `At most ${MAX_FLAGS} lines can be flagged. Remove one first.`, flags: s.flags }, 400);
-      const f = { file: b.file, line: b.line, note: String(b.note ?? (i >= 0 ? s.flags[i]!.note : '')).slice(0, 400) };
+      const f = { file: b.file, line: b.line, note: String(b.note ?? (i >= 0 ? s.flags[i]!.note : '')).slice(0, MAX_NOTE) };
       if (i >= 0) s.flags[i] = f;
       else s.flags.push(f);
     }
@@ -615,10 +686,17 @@ export function createApp(d: Deps) {
     if (!item) return c.json({ error: 'No such open point.' }, 400);
     if (s.caught) return c.json({ error: 'This read is already handed in.' }, 400);
     if (b.decision !== 'accept' && b.decision !== 'back') return c.json({ error: 'Accept it, or send it back.' }, 400);
-    const note = String(b.note ?? '').trim().slice(0, 400);
+    const note = String(b.note ?? '').trim();
+    // a reason goes on the record and on the pull request whole, or not at all
+    if (note.length > MAX_NOTE) return c.json({ error: `A reason can have ${MAX_NOTE} characters; this one has ${note.length}. Shorten it: it is written on the pull request as you typed it.` }, 400);
     if (b.decision === 'back' && note.length < MIN_NOTE) return c.json({ error: 'Say what the author has to change.' }, 400);
     // a ruling is a named person's decision on something the AI left open: the record has to say why
     if (b.decision === 'accept' && note.length < MIN_NOTE) return c.json({ error: item.kind === 'untested' ? 'No test checks this. Say why you accept it without one.' : 'Say why it is fine as it is.' }, 400);
+    // a reason another reviewer of this commit already gave is not this reviewer's reason
+    if (!s.test && copied(s, note)) {
+      record(s, 'rule-refused', { point: item.id, kind: item.kind, stop: item.stopId, decision: b.decision, note, copied: true, read: s.read, seconds: seconds(s) });
+      return c.json({ error: 'Another review of this commit already gave this reason, almost word for word. Say in your own words what you checked.' }, 400);
+    }
     // and the reason has to be about these lines: one that would fit any line is not a ruling
     let checked: boolean | null = null;
     if (d.gradeRuling) {
@@ -631,11 +709,12 @@ export function createApp(d: Deps) {
       }
       if (checked === false) {
         record(s, 'rule-refused', { point: item.id, kind: item.kind, stop: item.stopId, decision: b.decision, note, read: s.read, seconds: seconds(s) });
-        return c.json({ error: b.decision === 'accept' ? 'That reason would fit any line. Say what about these lines makes them fine as they are, or send the point back.' : 'That would fit any line. Say what the author has to change here.' }, 400);
+        return c.json({ error: b.decision === 'accept' ? 'That reason was not accepted: it has to be true of these lines and say something only they make true. Say what about these lines makes them fine as they are, or send the point back.' : 'That reason was not accepted: it has to be true of these lines. Say what the author has to change here.' }, 400);
       }
     }
     s.rulings ??= {};
     s.rulings[item.id] = { decision: b.decision, note, checked } satisfies Ruling;
+    if (!s.test) saidBefore.push({ rid: s.rid, words: wordsOf(note) });
     record(s, 'rule', { point: item.id, kind: item.kind, stop: item.stopId, decision: b.decision, note, checked, read: s.read, seconds: seconds(s) });
     return c.json({ rulings: s.rulings });
   });
@@ -659,6 +738,11 @@ export function createApp(d: Deps) {
     const p = plantOf(s);
     if (!p) return c.json({ error: tour.plants.length ? 'Every planted line has been shown to you. Someone else has to read this commit.' : 'This tour has no planted line.' }, 400);
     if (s.busy) return c.json({ error: 'This hand-in is being checked.' }, 409);
+    const pasted = s.test ? undefined : s.flags.find((f) => copied(s, f.note));
+    if (pasted) {
+      record(s, 'handin-refused', { read: s.read, file: pasted.file, line: pasted.line, note: pasted.note, copied: true, seconds: seconds(s) });
+      return c.json({ error: `Another review of this commit already gave the reason on ${pasted.file.split('/').pop()}:${pasted.line}, almost word for word. Say in your own words what goes wrong on that line.` }, 400);
+    }
     const mine = s.flags.find((f) => f.file === p.file && f.line === p.line);
     // the right line with no idea why is a guess, or a comparison with the raw diff: the reason is checked
     let noteOk: boolean | null = null;
@@ -679,16 +763,24 @@ export function createApp(d: Deps) {
     touch(s, null);
     const r: Reveal = { ...reveal(p), ...(mine && !caught ? { noteFailed: mine.note } : {}) };
     const secs = seconds(s);
-    record(s, 'handin', { read: s.read, caught, plant: `${p.file}:${p.line}`, kind: p.kind ?? '', ...(p.untested ? { untested: true } : {}), flags: s.flags, ...(mine ? { note: mine.note, noteOk } : {}), wrongAnswers: wrong(s), seconds: secs, lines, linesPerMinute: speed(secs), plantInFocus: inFocus(p), afterCold: s.cold?.action ?? '', skimmed: skimmed(s), dwell: s.dwell });
+    const readSecs = readSeconds(s);
+    if (!s.test) for (const f of s.flags) saidBefore.push({ rid: s.rid, words: wordsOf(f.note) });
+    record(s, 'handin', { read: s.read, caught, plant: `${p.file}:${p.line}`, kind: p.kind ?? '', ...(p.untested ? { untested: true } : {}), flags: s.flags, ...(mine ? { note: mine.note, noteOk } : {}), wrongAnswers: wrong(s), seconds: secs, readSeconds: readSecs, lines, linesPerMinute: speed(readSecs), plantInFocus: inFocus(p), afterCold: s.cold?.action ?? '', skimmed: skimmed(s), dwell: s.dwell });
     markShown(s, p);
     if (caught) {
       s.caught = r;
       s.caughtSeconds = secs;
+      s.caughtReadSeconds = readSecs;
       s.noteChecked = noteOk;
       return c.json({ ok: true, tour: view(s) });
     }
     s.missed.push(r);
     s.read++;
+    // the next read is a read: every stop has to be open again for as long as it takes to scroll it. What the stops were open for on this read is in the hand-in's record.
+    s.dwellBefore = [...(s.dwellBefore ?? []), s.dwell ?? {}];
+    s.dwell = {};
+    s.at = null;
+    delete s.plantNow;
     // a flag on a line the agent wrote is not lost with the read: it goes to the author when the review is signed
     s.keptFlags = [...(s.keptFlags ?? []), ...s.flags.filter((f) => !(f.file === p.file && f.line === p.line))];
     s.flags = [];
@@ -719,7 +811,7 @@ export function createApp(d: Deps) {
       misses: wrong(s),
       // every flag on a line the agent wrote, from this read and the reads before it; a line flagged twice keeps its last reason
       flagsForAuthor: [...new Map([...(s.keptFlags ?? []), ...s.flags].filter((f) => !(f.file === caught.file && f.line === caught.line) && !s.missed.some((m) => m.file === f.file && m.line === f.line)).map((f) => [`${f.file}:${f.line}`, f] as const)).values()],
-      ...(s.prepared ? {} : { lines, linesPerMinute: speed(secs), fast: isFast(speed(secs)) }),
+      ...(s.prepared ? {} : { lines, linesPerMinute: speed(s.caughtReadSeconds ?? secs), fast: isFast(speed(s.caughtReadSeconds ?? secs)) }),
       ...(s.login ? { login: s.login } : {}),
       ...(s.via ? { via: s.via } : {}),
       ...(checks ? { checks, outcome: outcomeOf(checks, back) } : {}),

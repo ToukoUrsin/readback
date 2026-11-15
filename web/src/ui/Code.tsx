@@ -188,12 +188,17 @@ function Point({ p, ruling, locked, onRule, entire, brief }: { p: RulingItem; ru
               onKeyDown={(e) => {
                 if (e.key === 'Escape' && edit) cancel();
               }}
-              maxLength={400}
+              maxLength={1000}
               aria-label="Your reason"
               placeholder="Why is it fine as it is, or what must the author change? Say something that is true of these lines."
               aria-invalid={err ? true : undefined}
               className={`min-h-[54px] w-full rounded-md border bg-bg px-2.5 py-1.5 text-[13px] leading-[1.5] transition-colors placeholder:text-fg4 focus:border-accent ${err ? 'border-bad/60' : 'border-line-strong'}`}
             />
+            {note.length >= 800 && (
+              <p className={`mt-1 text-[12px] ${note.length >= 1000 ? 'text-warn' : 'text-fg4'}`}>
+                {note.length} of 1,000 characters{note.length >= 1000 ? '. That is the limit: nothing after it is kept, so cut the reason to fit.' : ''}
+              </p>
+            )}
             {err && (
               <p className="mt-1.5 text-[12.5px] leading-[1.45] text-bad" role="alert">
                 {err}
@@ -444,7 +449,7 @@ export const Code = memo(function Code({ block, flags, pulse, locked, canAsk, on
                       placeholder="What goes wrong on this line? Needed: the reason is checked."
                       defaultValue={flag.note}
                       autoFocus={!flag.note}
-                      maxLength={400}
+                      maxLength={1000}
                       onBlur={(e) => e.target.value !== flag.note && onFlag({ file: block.file, line: n, note: e.target.value })}
                       onKeyDown={(e) => {
                         if (e.key !== 'Enter') return;

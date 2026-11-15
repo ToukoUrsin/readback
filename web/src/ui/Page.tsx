@@ -113,7 +113,7 @@ export interface Numbers {
     callers?: { functions: number; model: string; tokens: number; seconds: number; medianTokens: number; medianSeconds: number; same: number; modelFoundMore: number; graphFoundMore: number; mixed: { asked: number; tokens: number; sameAsModel: boolean } };
   };
   /** the questions, checked by a second model with the code and without it (gen/questions.ts) */
-  questionCheck?: { writer: string; checker: string; costUsd: number; checked: number; kept: number; wrongKey: number; withoutCode: number; first: { checked: number; withoutCode: number; kept: number }; perStop: number; heldBack?: number; inUse?: number };
+  questionCheck?: { writer: string; checker: string; costUsd: number; checked: number; kept: number; wrongKey: number; withoutCode: number; otherDrops?: { long: number; split: number; byHand: number }; first: { checked: number; withoutCode: number; kept: number }; perStop: number; heldBack?: number; inUse?: number };
   /** a second model's own marks against ours, line by line */
   second?: { model: string; at: string; tokens: { in: number; out: number }; shown: number; ours: number; theirs: number; both: number; oursOnly: number; theirsOnly: number; closely: number };
   demo?: { judgeLink: boolean; minutes?: number; reviewers?: number };

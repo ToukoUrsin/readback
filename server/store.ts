@@ -6,7 +6,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeF
 import { resolve } from 'node:path';
 
 export interface ReadEvent {
-  type: 'start' | 'answer' | 'handin' | 'sign' | 'ask' | 'reset' | 'cold-shown' | 'cold' | 'stop' | 'failed' | 'unsign' | 'prep' | 'mark' | 'rule' | 'rule-refused' | 'rule-unchecked' | 'handin-unchecked' | 'signin';
+  type: 'start' | 'answer' | 'handin' | 'sign' | 'ask' | 'reset' | 'cold-shown' | 'cold' | 'stop' | 'failed' | 'unsign' | 'prep' | 'mark' | 'rule' | 'rule-refused' | 'rule-unchecked' | 'handin-unchecked' | 'handin-refused' | 'signin';
   at: string;
   /** one reader's one go at a tour; a new one after "Start over" */
   rid: string;

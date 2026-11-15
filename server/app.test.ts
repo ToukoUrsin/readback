@@ -21,7 +21,7 @@ const tour: Tour = {
 };
 
 function reader(store?: Store, test = false, more: Partial<Deps> = {}) {
-  const app = createApp({ tour, store, order: (n) => Array.from({ length: n }, (_, i) => i), lockSeconds: 0, ...more });
+  const app = createApp({ tour, store, order: (n) => Array.from({ length: n }, (_, i) => i), lockSeconds: 0, allowCopies: true, ...more });
   const jar = new Map<string, string>(test ? [['rb_test', '1']] : []);
   const call = async (path: string, body?: unknown) => {
     const r = await app.request(path, { method: body === undefined ? 'GET' : 'POST', headers: { cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; '), 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -34,6 +34,8 @@ function reader(store?: Store, test = false, more: Partial<Deps> = {}) {
   return Object.assign(call, { jar });
 }
 const text = (t: any) => t.stops[0].blocks[0].lines.map((l: any) => l.tokens[0][0]).join(' ');
+/** the line this reader has the planted bug on: reviewers of one commit are given different ones */
+const plantedLine = (t: any) => 1 + t.stops[0].blocks[0].lines.findIndex((l: any) => l.tokens[0][0] === l.tokens[0][0].toUpperCase());
 
 test('the reader sees the planted line and never the answer key', async () => {
   const call = reader();
@@ -338,7 +340,7 @@ test('a visitor who types a name signs a record that does not approve; a signed-
   expect(statuses).toEqual([]);
 
   // signed in: the same person from two browsers is one review
-  const app = createApp({ tour, store, order: (n) => Array.from({ length: n }, (_, i) => i), lockSeconds: 0, ...deps });
+  const app = createApp({ tour, store, order: (n) => Array.from({ length: n }, (_, i) => i), lockSeconds: 0, allowCopies: true, ...deps });
   const as = (login: string) => async (path: string, body?: unknown) => {
     const r = await app.request(path, { method: body === undefined ? 'GET' : 'POST', headers: { 'x-login': login, 'user-agent': 'Mozilla/5.0', 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
     return { status: r.status, json: (await r.json()) as any };
@@ -365,12 +367,12 @@ test('a visitor who types a name signs a record that does not approve; a signed-
 
   // another signed-in reviewer sends it back
   const bob = as('bob');
-  await bob('/api/tour');
+  const bobLine = plantedLine((await bob('/api/tour')).json);
   await bob('/api/start', {});
   await bob('/api/seen', { stop: 's1' });
   await bob('/api/answer', { id: 'q1', choice: 1 });
   await bob('/api/rule', { id: 'r1', decision: 'back', note: 'nobody asked for this code' });
-  await bob('/api/flag', { file: 'a.ts', line: 2, note: 'the value is upper case now' });
+  await bob('/api/flag', { file: 'a.ts', line: bobLine, note: 'the value is upper case now' });
   t += 60_000;
   await bob('/api/handin', {});
   expect((await bob('/api/sign', {})).json.signature.outcome).toBe('sent-back');
@@ -379,17 +381,18 @@ test('a visitor who types a name signs a record that does not approve; a signed-
   const now = (await as('dan')('/api/tour')).json.commit;
   expect([now.approvedBy, now.sentBackBy.who]).toEqual([undefined, '@bob']);
   const carol = as('carol');
-  await carol('/api/tour');
+  const carolLine = plantedLine((await carol('/api/tour')).json);
   await carol('/api/start', {});
   await carol('/api/seen', { stop: 's1' });
   await carol('/api/answer', { id: 'q1', choice: 1 });
   await carol('/api/rule', { id: 'r1', decision: 'accept', note: 'it is only one line' });
-  await carol('/api/flag', { file: 'a.ts', line: 2, note: 'the value is upper case now' });
+  await carol('/api/flag', { file: 'a.ts', line: carolLine, note: 'the value is upper case now' });
   t += 60_000;
   expect((await carol('/api/handin', {})).json.tour.state.checks.at(-1)).toMatchObject({ id: 'standing', ok: false });
   const late = (await carol('/api/sign', {})).json.signature;
   expect(late.outcome).toBe('not-counted');
   expect(late.checks.at(-1).text).toContain('Sent back by @bob');
+  expect(new Set([2, bobLine, carolLine]).size).toBeGreaterThan(1); // three reviewers of one commit do not all get the same planted line
   expect(statuses.length).toBe(2); // nothing was written over bob's status
   // counted: four signatures, and the visitor is a person
   const st = store.stats();
@@ -401,7 +404,7 @@ test('a reason that would fit any line is not a ruling', async () => {
   const call = reader(store, false, { evidence, gradeRuling: async ({ note }) => !/looks fine/.test(note) });
   await toHandIn(call);
   const no = await call('/api/rule', { id: 'r1', decision: 'accept', note: 'looks fine to me honestly' });
-  expect([no.status, no.json.error]).toEqual([400, 'That reason would fit any line. Say what about these lines makes them fine as they are, or send the point back.']);
+  expect([no.status, no.json.error]).toEqual([400, 'That reason was not accepted: it has to be true of these lines and say something only they make true. Say what about these lines makes them fine as they are, or send the point back.']);
   expect((await call('/api/handin', {})).status).toBe(400); // still not ruled on
   const yes = await call('/api/rule', { id: 'r1', decision: 'accept', note: 'one is the first line and nothing reads it' });
   expect(yes.json.rulings.r1).toEqual({ decision: 'accept', note: 'one is the first line and nothing reads it', checked: true });
@@ -422,7 +425,7 @@ test('a bug no test notices is planted for signed-in reviewers only, and its tri
   };
   const visitor = (await as()('/api/tour')).json;
   expect(text(visitor)).toBe('one TWO three'); // a visitor never gets it, though it is first in the order
-  expect(visitor.stops[0].evidence.changes.survived.length).toBe(2);
+  expect(visitor.stops[0].evidence.changes.survived.length).toBe(1); // nobody is told about the tried bug on a line that can be planted
   const eve = as('eve');
   const mine = (await eve('/api/tour')).json;
   expect(text(mine)).toBe('one two thr');
@@ -541,4 +544,51 @@ test('each reviewer is asked a draw of the checked questions, with the answers i
   // our own test browser gets the first questions as written, so a recording can be planned
   const film = reader(undefined, true, { pool });
   expect((await film('/api/tour')).json.stops[0].questions[0]).toEqual({ id: 'v1', prompt: 'p v1', options: ['a', 'b', 'c', 'right'] });
+});
+
+test('a reason another reviewer of the commit already gave is refused, for a ruling and for a flag', async () => {
+  const store = createStore(null);
+  const first = reader(store, false, { allowCopies: false, evidence });
+  await toHandIn(first, 'the value is written in capitals on this line');
+  expect((await first('/api/rule', { id: 'r1', decision: 'accept', note: 'this one line only renames the value' })).status).toBe(200);
+  expect((await first('/api/handin', {})).json.ok).toBe(true);
+  const second = reader(store, false, { allowCopies: false, evidence });
+  const line = plantedLine((await second('/api/tour')).json);
+  await second('/api/start', {});
+  await second('/api/seen', { stop: 's1' });
+  await second('/api/answer', { id: 'q1', choice: 1 });
+  const pasted = await second('/api/rule', { id: 'r1', decision: 'accept', note: 'This one line only renames the value.' });
+  expect([pasted.status, pasted.json.error]).toEqual([400, 'Another review of this commit already gave this reason, almost word for word. Say in your own words what you checked.']);
+  expect((await second('/api/rule', { id: 'r1', decision: 'accept', note: 'nothing reads the old spelling anywhere' })).status).toBe(200);
+  await second('/api/flag', { file: 'a.ts', line, note: 'The value is written in capitals on this line' });
+  const no = await second('/api/handin', {});
+  expect(no.status).toBe(400);
+  expect(no.json.error).toContain('almost word for word');
+  await second('/api/flag', { file: 'a.ts', line, note: 'upper case where the caller compares lower case' });
+  expect((await second('/api/handin', {})).json.ok).toBe(true);
+  expect(store.events().filter((e) => e.type === 'handin-refused').length).toBe(1);
+});
+
+test('only time with a stop open counts, an idle tab adds a minute and a half at most, and a second read starts the clock again', async () => {
+  let t = Date.now();
+  const call = reader(undefined, false, { now: () => t });
+  await call('/api/tour');
+  await call('/api/start', {});
+  t += 600_000; // ten minutes on the start page: no stop is open
+  expect((await call('/api/pace')).json.readSeconds).toBe(0);
+  await call('/api/seen', { stop: 's1' });
+  t += 30_000;
+  await call('/api/seen', { stop: 's1', beat: true });
+  t += 600_000; // the tab is left alone
+  expect((await call('/api/pace')).json.readSeconds).toBe(120);
+  await call('/api/seen', { stop: 'away', beat: true });
+  t += 600_000;
+  expect((await call('/api/pace')).json.readSeconds).toBe(120);
+  await call('/api/answer', { id: 'q1', choice: 1 });
+  await call('/api/flag', { file: 'a.ts', line: 1, note: 'this line does the wrong thing' });
+  const miss = await call('/api/handin', {});
+  expect(miss.json.tour.state.read).toBe(2);
+  const pace = (await call('/api/pace')).json;
+  expect(pace.readSeconds).toBe(0); // read 2 is read again: the time of read 1 does not carry over
+  expect(pace.brief.length).toBe(1);
 });

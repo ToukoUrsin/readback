@@ -77,18 +77,20 @@ export default function App() {
       q.delete('new');
       history.replaceState(null, '', location.pathname + (q.size ? `?${q}` : ''));
     }
-    // "?prep=<key>&leave=<stop>": for a recording, the questions are answered ahead (test readers with the key only)
+    // "?prep=<key>&leave=<stop>[&plant=<id>]": for a recording, the questions are answered ahead (test readers with the key only)
     const prep = q.get('prep');
     const leave = q.get('leave') ?? '';
+    const plant = q.get('plant') ?? '';
     if (prep) {
       q.delete('prep');
       q.delete('leave');
+      q.delete('plant');
       q.delete('test');
       history.replaceState(null, '', location.pathname + (q.size ? `?${q}` : '') + (leave ? `#/${leave}` : ''));
       if (leave) setAt(leave);
     }
     (fresh ? api.reset() : api.tour())
-      .then((t) => (prep ? api.prep(prep, leave).catch(() => t) : t))
+      .then((t) => (prep ? api.prep(prep, leave, plant).catch(() => t) : t))
       .then(setTour, (e) => setFailed((e as Error).message));
     const on = () => setAt(fromHash());
     window.addEventListener('hashchange', on);
@@ -135,6 +137,25 @@ export default function App() {
   const started = !!tour?.state.startedAt;
   useEffect(() => {
     if (started && at !== 'intro') void api.seen(at);
+  }, [at, started]);
+  // Only time with a stop on screen counts as reading. Every half minute the page says "still here" while the tab is visible and
+  // the reviewer moved in the last 90 seconds; a hidden tab says "away" and says where it is again when it comes back.
+  useEffect(() => {
+    if (!started || at === 'intro' || at === 'handin') return;
+    let moved = Date.now();
+    const move = () => void (moved = Date.now());
+    const kinds = ['pointermove', 'keydown', 'wheel', 'scroll', 'touchstart'] as const;
+    for (const k of kinds) window.addEventListener(k, move, { passive: true, capture: true });
+    const beat = setInterval(() => {
+      if (document.visibilityState === 'visible' && Date.now() - moved < 90_000) void api.seen(at, true);
+    }, 30_000);
+    const vis = () => void (document.visibilityState === 'visible' ? ((moved = Date.now()), api.seen(at)) : api.seen('away', true));
+    document.addEventListener('visibilitychange', vis);
+    return () => {
+      for (const k of kinds) window.removeEventListener(k, move, { capture: true });
+      clearInterval(beat);
+      document.removeEventListener('visibilitychange', vis);
+    };
   }, [at, started]);
   useEffect(() => {
     if (!pulse) return;

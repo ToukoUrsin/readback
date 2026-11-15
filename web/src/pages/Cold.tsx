@@ -26,6 +26,9 @@ export function Cold({ tour, setTour }: { tour: PublicTour; setTour: (t: PublicT
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const { pr } = tour;
+  // who wrote it, as Entire holds it: the agent and model of the sessions behind the commits. The name on the git commits is the fallback.
+  const first = tour.entire?.sessions[0];
+  const agent = first && tour.entire!.sessions.every((x) => x.agent === first.agent && x.model === first.model) ? `${first.agent} (${first.model})` : undefined;
 
   const send = async (b: Parameters<typeof api.cold>[0]) => {
     setBusy(true);
@@ -59,7 +62,7 @@ export function Cold({ tour, setTour }: { tour: PublicTour; setTour: (t: PublicT
           <p className="mt-3 flex items-start gap-2 text-[13px] leading-[1.5] text-fg3">
             <Pull size={13} className="mt-[3px] flex-none text-fg4" />
             <span>
-              <span className="font-[510] text-fg2">{pr.author}</span> wants to merge commit <span className="font-mono text-[12px] text-fg2">{pr.headSha.slice(0, 7)}</span>
+              <span className="font-[510] text-fg2">{agent ?? pr.author}</span> wants to merge commit <span className="font-mono text-[12px] text-fg2">{pr.headSha.slice(0, 7)}</span>
               {pr.issue && <> for issue #{pr.issue.number}</>}
             </span>
           </p>
