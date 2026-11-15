@@ -863,6 +863,9 @@ function Time({ n }: { n: Data }) {
                   ['Cold test, seeing the change to deciding', fmtSeconds(g.cold.medianSeconds)],
                 ]}
               />
+              {who === 'agents' && f.medianSecondsToSignature !== null && (
+                <p className="mt-1.5 text-[12px] leading-[1.5] text-fg3">Our own runs answer the questions ahead with the server’s key and claim no pace. Their seconds are not a review time: the rule’s minutes apply to every other review.</p>
+              )}
               <p className="mt-3 mb-1 text-[12px] font-[510] text-fg3">Full review, outcomes</p>
               <Stats
                 who={who}

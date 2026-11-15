@@ -24,7 +24,7 @@ function Model({ name }: { name: string }) {
     <>
       {name.split(', ').map((m, i) => (
         <span key={m}>
-          {i > 0 && ', '}
+          {i > 0 && ' and '}
           <span className="whitespace-nowrap">{m}</span>
         </span>
       ))}

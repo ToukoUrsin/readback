@@ -484,7 +484,8 @@ export function createApp(d: Deps) {
   app.post('/api/carried', async (c) => {
     const b = (await c.req.json().catch(() => ({}))) as { key?: string; rid?: string; at?: string; github?: { ok: boolean; note: string }; entire?: { ok: boolean; note: string } };
     if (!d.carryKey || b.key !== d.carryKey) return c.json({ error: 'Not found.' }, 404);
-    const s = [...sessions.values()].find((x) => x.rid === b.rid && x.signature?.at === b.at);
+    // the row the watcher read was written a moment after the signature was made: the two times can be a few milliseconds apart
+    const s = [...sessions.values()].find((x) => x.rid === b.rid && !!x.signature && Math.abs(Date.parse(x.signature.at) - Date.parse(b.at ?? '')) < 5000);
     if (!s?.signature) return c.json({ ok: false });
     if (b.github) s.signature.github = { ok: !!b.github.ok, note: String(b.github.note).slice(0, 300) };
     if (b.entire) s.signature.entire = { ok: !!b.entire.ok, note: String(b.entire.note).slice(0, 300) };

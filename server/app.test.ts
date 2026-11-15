@@ -592,3 +592,16 @@ test('only time with a stop open counts, an idle tab adds a minute and a half at
   expect(pace.readSeconds).toBe(0); // read 2 is read again: the time of read 1 does not carry over
   expect(pace.brief.length).toBe(1);
 });
+
+test('the watcher’s report reaches the signature it belongs to, also when its row was written a few milliseconds later', async () => {
+  const store = createStore(null);
+  const call = reader(store, false, { carryKey: 'ck' });
+  await toHandIn(call);
+  await call('/api/handin', {});
+  const sig = (await call('/api/sign', { name: 'Ada' })).json.signature;
+  const row = store.events().find((e) => e.type === 'sign')!;
+  const later = new Date(Date.parse(sig.at) + 7).toISOString();
+  expect((await call('/api/carried', { key: 'ck', rid: row.rid, at: new Date(Date.parse(sig.at) + 60_000).toISOString(), github: { ok: true, note: 'x' } })).json.ok).toBe(false);
+  expect((await call('/api/carried', { key: 'ck', rid: row.rid, at: later, github: { ok: true, note: 'green' } })).json.ok).toBe(true);
+  expect((await call('/api/tour')).json.state.signature.github).toEqual({ ok: true, note: 'green' });
+});

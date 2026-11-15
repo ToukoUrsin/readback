@@ -196,7 +196,7 @@ function Point({ p, ruling, locked, onRule, entire, brief }: { p: RulingItem; ru
             />
             {note.length >= 800 && (
               <p className={`mt-1.5 text-[12px] leading-[1.45] tabular-nums ${note.length >= 1000 ? 'text-warn' : 'text-fg3'}`}>
-                {note.length.toLocaleString('en-US')} of 1,000 characters{note.length >= 1000 ? '. That is the limit: nothing after it is kept, so cut the reason to fit.' : ''}
+                {note.length.toLocaleString('en-US')} of 1,000 characters{note.length >= 1000 ? '. That is the limit: the box takes no more.' : ''}
               </p>
             )}
             {err && (

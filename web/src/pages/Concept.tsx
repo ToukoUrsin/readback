@@ -194,7 +194,7 @@ export default function Concept() {
                 ),
               },
               {
-                head: 'A reviewer set on cheating can compare what they are shown with the raw diff to find the planted line.',
+                head: 'A reviewer set on cheating can find the planted line without reading: compare the page with the raw diff, or with a second browser on the judge link.',
                 body: (
                   <>
                     They still need the minutes, a reason that is true of that line only, and their verified name on a record that shows the pace. With a GitHub sign-in a reviewer has one review of a commit, whatever browser they use.{n?.demo?.judgeLink ? ' The judge link on this demo copy is weaker on purpose: every browser that opens it is a new judge with a new review.' : ''} Each reviewer is asked their own draw from <N v={n?.questionCheck?.inUse ?? n?.questionCheck?.kept} /> checked questions with the answers in their own order, and a signed review is planted and asked from lines and questions no unsigned visitor is ever shown. Nothing a browser did before the sign-in carries into the review that counts: its clock, its answers and its questions start again. Skipping the read goes from one click with no trace to deliberate fraud with a trace.
@@ -484,7 +484,7 @@ function OneScreen({ n }: { n: Numbers | null | undefined }) {
       href: '#rule',
       rows: [
         ['Approved', <>A known reviewer, every question right, the planted bug caught with a true reason, under <N v={rule?.paceLimit} /> lines a minute, every open point accepted with a reason. The status goes green.</>],
-        ['Sent back', 'The same, with one open point or more sent back. The status goes red and the author gets the reasons.'],
+        ['Sent back', 'The same, with one open point or more sent back. The status goes red and the author gets the reasons. The sender’s read of the other stops stands: the follow-up review covers only the stops the answer touches.'],
         ['Recorded only', <>A typed name, more than <N v={rule?.maxWrong} /> wrong tries, a read too fast, or the planted bug missed <N v={rule?.maxReads} /> times. The status does not change and another reviewer reads.</>],
       ],
     },
@@ -492,7 +492,7 @@ function OneScreen({ n }: { n: Numbers | null | undefined }) {
       title: 'Trade-offs',
       href: '#trade-offs',
       rows: [
-        ['Slower than a skim', <>About 22 minutes here and never under <N v={least} />. Skimming the diff is faster and proves nothing.</>],
+        ['Slower than a skim', <>About 22 minutes here and never under <N v={least} /> minutes. Skimming the diff is faster and proves nothing.</>],
         ['One line is not the branch', 'During the review one line on screen is a bug we put there. The real line is shown once it is caught.'],
         ['The easy accept', 'Accepting every open point is the short way to green. Each accept needs a checked reason under the reviewer’s name.'],
       ],
