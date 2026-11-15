@@ -558,7 +558,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
             <span className="text-[13.5px] text-fg">
               {all.length - openCount} of {all.length} questions right
             </span>
-            <span className="ml-auto text-[12.5px] text-fg4">{misses ? `${misses} wrong ${misses === 1 ? 'try' : 'tries'}` : 'no wrong tries'}</span>
+            <span className="ml-auto text-[12.5px] text-fg3">{misses ? `${misses} wrong ${misses === 1 ? 'try' : 'tries'}` : 'no wrong tries'}</span>
           </div>
           {open.map(({ st, n }) => (
             <button key={st.id} className="mt-2 ml-[26px] flex items-center gap-2 text-left text-[13px] text-fg3 hover:text-fg" onClick={() => go(st.id)}>
@@ -576,7 +576,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
               <span className="text-[13.5px] text-fg">
                 {points.length - unruled.length} of {points.length} open points ruled on
               </span>
-              <span className="ml-auto text-[12.5px] text-fg4">{sentBack.length ? `${sentBack.length} sent back` : 'none sent back'}</span>
+              <span className="ml-auto text-[12.5px] text-fg3">{sentBack.length ? `${sentBack.length} sent back` : 'none sent back'}</span>
             </div>
             {unruled.map((p) => (
               <button key={p.id} className="mt-2 ml-[26px] flex items-start gap-2 text-left text-[13px] leading-[1.45] text-fg3 hover:text-fg" onClick={() => jump(p.file, p.from)}>
@@ -591,10 +591,10 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
         )}
         {pace && !short && (
           <div className="px-4 py-3">
-            <div className="flex items-center gap-3">
-              {pace.brief.length || fastNow ? <Warn size={14} className="flex-none text-warn" /> : <Check size={14} className="flex-none text-ok" />}
+            <div className="grid grid-cols-[14px_minmax(0,1fr)] gap-x-3 gap-y-0.5 sm:flex sm:items-center">
+              {pace.brief.length || fastNow ? <Warn size={14} className="mt-[3px] flex-none text-warn sm:mt-0" /> : <Check size={14} className="mt-[3px] flex-none text-ok sm:mt-0" />}
               <span className="text-[13.5px] text-fg">{pace.brief.length ? `${pace.brief.length} ${pace.brief.length === 1 ? 'stop was' : 'stops were'} open too briefly to have been read` : fastNow ? 'Too fast to count as a close read' : pace.prepared ? 'Questions answered ahead for a recording' : 'Every stop to read was open long enough'}</span>
-              <span className={`ml-auto text-[12.5px] ${fastNow ? 'text-warn' : 'text-fg4'}`}>
+              <span className={`col-start-2 text-[12.5px] sm:ml-auto sm:flex-none ${fastNow ? 'text-warn' : 'text-fg3'}`}>
                 {pace.prepared ? 'no pace is claimed' : fastNow ? `${pace.linesPerMinute} lines a minute, the rule is under ${pace.under}` : `${pace.linesPerMinute} lines a minute, under ${pace.under}`}
               </span>
             </div>
@@ -602,7 +602,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
               <button key={b.id} className="mt-2 ml-[26px] flex items-start gap-2 text-left text-[13px] leading-[1.45] text-fg3 hover:text-fg" onClick={() => go(b.id)}>
                 <ArrowRight size={12} className="mt-[3px] flex-none" />
                 <span>
-                  {b.title}: open {b.seconds} s, scrolling it takes {b.needs} s
+                  {b.title}: open {b.seconds}&nbsp;s, scrolling it takes {b.needs}&nbsp;s
                 </span>
               </button>
             ))}
@@ -619,7 +619,7 @@ export function HandIn({ tour, missedNow, setTour, setMissedNow, jump, unflag, o
           <div className="flex items-center gap-3">
             <FlagFill size={14} className={`flex-none ${state.flags.length ? 'text-flag' : 'text-fg4'}`} />
             <span className="text-[13.5px] text-fg">{state.flags.length === 0 ? 'No line flagged yet' : `${state.flags.length} ${state.flags.length === 1 ? 'line' : 'lines'} flagged`}</span>
-            <span className={`ml-auto text-[12.5px] ${tooMany ? 'text-bad' : 'text-fg4'}`}>at most {tour.maxFlags}</span>
+            <span className={`ml-auto text-[12.5px] ${tooMany ? 'text-bad' : 'text-fg3'}`}>at most {tour.maxFlags}</span>
           </div>
           {state.flags.length === 0 && <p className="mt-2 pl-[26px] text-[13px] leading-[1.5] text-fg3">Go back through the stops. Click the line that does not do what its stop says, and flag it.</p>}
           {state.flags.map((f) => {

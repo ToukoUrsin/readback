@@ -236,6 +236,16 @@ export function Shell({ current, sections, wide, children }: { current: Where; s
     document.title = `${current === 'concept' ? 'Concept' : 'Numbers'} · Readback`;
   }, [current]);
 
+  // a link to a section (/concept#limits): the page is drawn after the browser looked for the anchor, so go there once the numbers are in
+  const pending = useContext(Pending);
+  const landed = useRef(false);
+  useEffect(() => {
+    if (pending || landed.current) return;
+    landed.current = true;
+    const id = decodeURIComponent(location.hash.slice(1));
+    if (sections.some((s) => s.id === id)) document.getElementById(id)?.scrollIntoView({ behavior: 'instant', block: 'start' });
+  }, [pending, sections]);
+
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;

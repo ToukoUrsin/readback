@@ -139,7 +139,7 @@ function History({ n }: { n: Data }) {
               <div key={s.n} className={row}>
                 <dt className={dt}>
                   <span className="font-[510] text-fg2">Session {s.n}</span> · <span className="font-mono text-[12px]">{s.commit}</span> · {s.asked}
-                  {!s.steps && <span className="block text-[12px] text-fg4">Only the prompt, the report and the token counts were kept.</span>}
+                  {!s.steps && <span className="block text-[12px] text-fg3">Only the prompt, the report and the token counts were kept.</span>}
                 </dt>
                 <dd className={dd}>{big(s.tokens)}</dd>
               </div>
@@ -174,7 +174,7 @@ function History({ n }: { n: Data }) {
             ).map(([k, v], i, all) => (
               // the last two rows are the answer: what Readback does and what that saves
               <div key={k} className={`${row} ${i >= all.length - 2 ? 'flex-wrap gap-y-0.5' : ''}`}>
-                <dt className={`${dt} ${i >= all.length - 2 ? 'font-[510] text-fg' : ''}`}>{k}</dt>
+                <dt className={i >= all.length - 2 ? dt.replace('text-fg3', 'font-[510] text-fg') : dt}>{k}</dt>
                 <dd className={`${dd} ${i === all.length - 1 ? 'text-ok' : ''} ml-auto`}>{v}</dd>
               </div>
             ))}
@@ -208,8 +208,9 @@ function History({ n }: { n: Data }) {
                 ['Fewest in use for one stop (a reviewer is asked 2 of them)', q.perStop],
               ] as [string, ReactNode][]
             ).map(([k, v]) => (
+              // the row the others lead to: what is left to ask
               <div key={k} className={row}>
-                <dt className={dt}>{k}</dt>
+                <dt className={k === 'Kept in the pool' ? dt.replace('text-fg3', 'font-[510] text-fg') : dt}>{k}</dt>
                 <dd className={dd}>{v}</dd>
               </div>
             ))}
@@ -474,7 +475,7 @@ function Share({ n }: { n: Data }) {
                   <div key={k} className={row}>
                     <dt className={dt}>
                       {k}
-                      {more && <span className="block text-[12px] text-fg4">{more}</span>}
+                      {more && <span className="block text-[12px] text-fg3">{more}</span>}
                     </dt>
                     <dd className={dd}>{v}</dd>
                   </div>

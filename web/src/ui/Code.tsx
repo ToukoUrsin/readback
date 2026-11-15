@@ -195,8 +195,8 @@ function Point({ p, ruling, locked, onRule, entire, brief }: { p: RulingItem; ru
               className={`min-h-[54px] w-full rounded-md border bg-bg px-2.5 py-1.5 text-[13px] leading-[1.5] transition-colors placeholder:text-fg4 focus:border-accent ${err ? 'border-bad/60' : 'border-line-strong'}`}
             />
             {note.length >= 800 && (
-              <p className={`mt-1 text-[12px] ${note.length >= 1000 ? 'text-warn' : 'text-fg4'}`}>
-                {note.length} of 1,000 characters{note.length >= 1000 ? '. That is the limit: nothing after it is kept, so cut the reason to fit.' : ''}
+              <p className={`mt-1.5 text-[12px] leading-[1.45] tabular-nums ${note.length >= 1000 ? 'text-warn' : 'text-fg3'}`}>
+                {note.length.toLocaleString('en-US')} of 1,000 characters{note.length >= 1000 ? '. That is the limit: nothing after it is kept, so cut the reason to fit.' : ''}
               </p>
             )}
             {err && (

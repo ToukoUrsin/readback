@@ -8,6 +8,7 @@ import { Bar, LoadError, N, type Numbers, Pending, pct, ReviewLink, RuleCard, Se
 
 const SECTIONS: SectionRef[] = [
   { id: 'recommendation', label: 'Recommendation' },
+  { id: 'one-screen', label: 'On one screen' },
   { id: 'line-by-line', label: 'Line-by-line review?' },
   { id: 'principles', label: 'Principles' },
   { id: 'rule', label: 'The rule' },
@@ -501,28 +502,35 @@ function OneScreen({ n }: { n: Numbers | null | undefined }) {
       href: '#limits',
       rows: [
         ['Read, not right', 'It shows a named person read and understood the lines. It does not show the code is right.'],
-        ['Person or AI', 'An AI under someone’s sign-in can pass the same checks. The name stays accountable.'],
+        ['Person or AI', <>An AI under someone’s <span className="whitespace-nowrap">sign-in</span> can pass the same checks. The name stays accountable.</>],
         ['Small numbers', 'One pull request in one repository, and reverts take months of real use to count.'],
       ],
     },
   ];
   return (
-    <section aria-label="The policy on one screen" className="mt-9 grid gap-x-8 gap-y-6 border-t border-line pt-5 md:grid-cols-2">
-      {lists.map((l) => (
-        <div key={l.title} className="min-w-0">
-          <a href={l.href} className="text-[12px] font-[590] tracking-[0.02em] text-fg3 uppercase hover:text-fg">
-            {l.title}
-          </a>
-          <dl className="mt-1.5">
-            {l.rows.map(([k, v]) => (
-              <div key={k} className="grid grid-cols-[104px_minmax(0,1fr)] gap-x-3 py-[5px]">
-                <dt className="text-[13px] leading-[1.45] font-[590] text-fg">{k}</dt>
-                <dd className="text-[13px] leading-[1.45] text-fg3">{v}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      ))}
+    <section id="one-screen" aria-labelledby="one-screen-title" className="mt-9 scroll-mt-[104px] border-t border-line pt-6 lg:scroll-mt-[64px]">
+      <h2 id="one-screen-title" className="text-[17px] leading-[1.4] font-[590] text-fg">
+        The policy on one screen
+      </h2>
+      <div className="mt-4 grid gap-x-8 gap-y-6 md:grid-cols-2">
+        {lists.map((l) => (
+          <div key={l.title} className="min-w-0">
+            <h3 className="border-b border-line pb-2 text-[12px] leading-[1.35] font-[510] text-fg3">
+              <a href={l.href} className="rounded-[3px] underline-offset-2 hover:text-fg hover:underline">
+                {l.title}
+              </a>
+            </h3>
+            <dl className="divide-y divide-line">
+              {l.rows.map(([k, v]) => (
+                <div key={k} className="grid grid-cols-[104px_minmax(0,1fr)] gap-x-3 py-[7px] sm:grid-cols-[112px_minmax(0,1fr)]">
+                  <dt className="text-[13px] leading-[1.45] font-[590] text-fg">{k}</dt>
+                  <dd className="text-[13px] leading-[1.45] text-balance text-fg3">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

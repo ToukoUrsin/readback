@@ -7,6 +7,31 @@ import { inline } from '../ui/Prose';
 
 const when = (at: string) => new Date(at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
+/** A signer as the server names them: the name stands out, the role the server puts behind it in brackets does not. */
+function Who({ name }: { name: string }) {
+  const role = /^(.+) (\((?:invited judge|test read)\))$/.exec(name);
+  return (
+    <>
+      <b className="font-[590] text-fg">{role ? role[1] : name}</b>
+      {role && <span className="whitespace-nowrap"> {role[2]}</span>}
+    </>
+  );
+}
+
+/** One model name, or several with commas between: no line breaks inside a name. */
+function Model({ name }: { name: string }) {
+  return (
+    <>
+      {name.split(', ').map((m, i) => (
+        <span key={m}>
+          {i > 0 && ', '}
+          <span className="whitespace-nowrap">{m}</span>
+        </span>
+      ))}
+    </>
+  );
+}
+
 function Rows({ rows }: { rows: { mark: ReactNode; title: ReactNode; body: ReactNode }[] }) {
   return (
     <div className="card divide-y divide-line">
@@ -206,12 +231,12 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
           <span>
             {commit.sentBackBy ? (
               <>
-                Commit <span className="font-mono text-[12.5px]">{pr.headSha.slice(0, 7)}</span> was sent back by <b className="font-[590]">{commit.sentBackBy.who}</b> on {when(commit.sentBackBy.at)}, with {commit.sentBackBy.points} {commit.sentBackBy.points === 1 ? 'point' : 'points'} for the author. A send-back stands until the author pushes a new commit: a review you sign now is recorded, and it does not approve over it.
+                Commit <span className="font-mono text-[12.5px]">{pr.headSha.slice(0, 7)}</span> was sent back by <Who name={commit.sentBackBy.who} /> on {when(commit.sentBackBy.at)}, with {commit.sentBackBy.points} {commit.sentBackBy.points === 1 ? 'point' : 'points'} for the author. A send-back stands until the author pushes a new commit: a review you sign now is recorded, and it does not approve over it.
                 {tour.demoMinutes && commit.sentBackBy.who.endsWith('(invited judge)') ? ` On this demo copy an invited judge’s send-back stands for ${tour.demoMinutes} minutes.` : ''}
               </>
             ) : commit.approvedBy ? (
               <>
-                Commit <span className="font-mono text-[12.5px]">{pr.headSha.slice(0, 7)}</span> was approved by <b className="font-[590]">{commit.approvedBy.who}</b> on {when(commit.approvedBy.at)}. You can still review it; a second review is recorded too.
+                Commit <span className="font-mono text-[12.5px]">{pr.headSha.slice(0, 7)}</span> was approved by <Who name={commit.approvedBy.who} /> on {when(commit.approvedBy.at)}. You can still review it; a second review is recorded too.
               </>
             ) : (
               <>
@@ -226,7 +251,7 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
         <p className="mt-2 flex items-start gap-2.5 rounded-lg border border-line bg-panel px-3.5 py-2.5 text-[13.5px] leading-[1.5] text-fg2">
           <Pull size={14} className="mt-[3px] flex-none text-fg3" />
           <span>
-          An earlier review of this commit was sent back by <b className="font-[590] text-fg">{after.who}</b> on {when(after.at)} with {after.points} {after.points === 1 ? 'point' : 'points'}. The author agent answered {after.minutesAfter} minutes later with one more commit. Reviewing that commit is {after.questions} questions on {after.closely} of {after.lines} lines, not this whole change again.{' '}
+          An earlier review of this commit was sent back by <Who name={after.who} /> on {when(after.at)} with {after.points} {after.points === 1 ? 'point' : 'points'}. The author agent answered {after.minutesAfter} minutes later with one more commit. Reviewing that commit is {after.questions} questions on {after.closely} of {after.lines} lines, not this whole change again.{' '}
           <a className="whitespace-nowrap text-accent-hi underline-offset-2 hover:underline" href={after.href}>
             Open the follow-up review
           </a>
@@ -335,20 +360,42 @@ export function Intro({ tour, onStart }: { tour: PublicTour; onStart: () => void
         </p>
       )}
 
-      <p className="mt-10 border-t border-line pt-5 text-[12.5px] leading-[1.6] text-fg4">
-        <a className="text-fg3 underline-offset-2 hover:text-fg hover:underline" href="/concept">
+      <p className="mt-10 flex flex-wrap gap-x-5 gap-y-1 border-t border-line pt-5 text-[12.5px] leading-[1.6]">
+        <a className="text-fg2 underline decoration-line-strong underline-offset-2 hover:text-fg hover:decoration-fg3" href="/concept">
           The concept, its trade-offs and limits
-        </a>{' '}
-        ·{' '}
-        <a className="whitespace-nowrap text-fg3 underline-offset-2 hover:text-fg hover:underline" href="/numbers">
+        </a>
+        <a className="text-fg2 underline decoration-line-strong underline-offset-2 hover:text-fg hover:decoration-fg3" href="/numbers">
           What this copy has measured
         </a>
-        <br />
-        {tour.madeBy.questionModel && tour.madeBy.questionModel !== tour.madeBy.model
-          ? `Stops written by ${tour.madeBy.model}, questions written by ${tour.madeBy.questionModel}${tour.madeBy.questionChecker ? ` and checked by ${tour.madeBy.questionChecker}` : ''}`
-          : `Stops and questions written by ${tour.madeBy.model}`}
-        {tour.madeBy.plantModel ? `, bugs planted by ${tour.madeBy.plantModel}` : ''}
-        {evidence ? `, evidence made by ${evidence.madeBy.model}` : ''}. Every planted bug and every tried bug was run against the project’s tests.
+      </p>
+      {/* model names are one word each: a break inside one reads as two models */}
+      <p className="mt-2 text-[12.5px] leading-[1.6] text-fg3">
+        {tour.madeBy.questionModel && tour.madeBy.questionModel !== tour.madeBy.model ? (
+          <>
+            Stops written by <Model name={tour.madeBy.model} />, questions written by <Model name={tour.madeBy.questionModel} />
+            {tour.madeBy.questionChecker ? (
+              <>
+                {' '}
+                and checked by <Model name={tour.madeBy.questionChecker} />
+              </>
+            ) : null}
+          </>
+        ) : (
+          <>
+            Stops and questions written by <Model name={tour.madeBy.model} />
+          </>
+        )}
+        {tour.madeBy.plantModel ? (
+          <>
+            , bugs planted by <Model name={tour.madeBy.plantModel} />
+          </>
+        ) : null}
+        {evidence ? (
+          <>
+            , evidence made by <Model name={evidence.madeBy.model} />
+          </>
+        ) : null}
+        . Every planted bug and every tried bug was run against the project’s tests.
       </p>
     </div>
   );
