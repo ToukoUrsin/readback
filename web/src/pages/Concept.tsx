@@ -44,7 +44,7 @@ function Pairs({ items }: { items: Item[] }) {
     <ul className="mt-5 divide-y divide-line border-y border-line">
       {items.map((it, i) => (
         <li key={i} className="py-3.5 sm:grid sm:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] sm:gap-x-8">
-          <p className="text-[14px] leading-[1.5] font-[590] text-fg">{it.head}</p>
+          <div className="text-[14px] leading-[1.5] font-[590] text-balance text-fg">{it.head}</div>
           {it.body && <p className="mt-1 text-[14px] leading-[1.6] text-fg3 sm:mt-0">{it.body}</p>}
         </li>
       ))}
@@ -477,33 +477,55 @@ function EntireSection({ n }: { n: Numbers | null }) {
 
 /* ---- the policy on one screen: what the long page says, in four short lists ---- */
 
-/** One review as a path: read, hand in, sign, and the three ways the rule lets it end. */
+/** Arrowhead at the end of a connector in the figure: pointing right, or down. */
+const Head = ({ down, className = '' }: { down?: boolean; className?: string }) => (
+  <svg width={down ? 7 : 5} height={down ? 5 : 7} viewBox={down ? '0 0 7 5' : '0 0 5 7'} aria-hidden className={`flex-none ${className}`}>
+    <path d={down ? 'M0 0h7L3.5 5z' : 'M0 0l5 3.5L0 7z'} fill="currentColor" />
+  </svg>
+);
+
+/**
+ * One review as a diagram: read, hand in, sign, and the three ways the rule lets it end. The marks and lines sit in a
+ * 25 px gutter left of the words. Wide, the steps run left to right and Sign forks down into the three ends; narrow,
+ * the same path runs down the gutter and the ends branch off it.
+ */
 function Path({ rule }: { rule: Numbers['rule'] | undefined }) {
-  const step = (k: string, title: string, body: ReactNode) => (
-    <li className="min-w-0 rounded-lg border border-line px-3 py-2.5">
-      <p className="text-[13px] leading-[1.4] font-[590] text-fg">
-        <span className="mr-[7px] font-mono text-[11.5px] font-[450] text-fg4">{k}</span>
+  // the words under a mark are a div, not a p: the stylesheet turns balanced wrapping off for every p in Safari
+  const step = (k: number, title: string, body: ReactNode) => (
+    <li className={`relative min-w-0 pl-[25px] ${k < 3 ? 'pb-[14px]' : 'pb-[10px]'} @[640px]:pb-0`}>
+      <span aria-hidden className="absolute top-px left-0 grid size-[17px] place-items-center rounded-full border border-fg4 font-mono text-[10.5px] leading-none text-fg2">
+        {k}
+      </span>
+      <p className={`flex items-center gap-[8px] text-[13px] leading-[19px] font-[590] text-fg @[640px]:-mr-[21px]`}>
         {title}
+        {k < 3 && (
+          <span aria-hidden className={`hidden flex-1 items-center text-fg4 @[640px]:flex`}>
+            <span className="h-px flex-1 bg-fg4" />
+            <Head />
+          </span>
+        )}
       </p>
-      <p className="mt-1 text-[12.5px] leading-[1.45] text-fg3">{body}</p>
+      <div className="mt-[3px] text-[12.5px] leading-[1.45] text-balance text-fg3">{body}</div>
+      {/* down the gutter: to the next step on a phone, from Sign to the fork at every size */}
+      <span aria-hidden className={`absolute top-[21px] left-[8px] w-px bg-fg4 ${k < 3 ? `bottom-[7px] @[640px]:hidden` : 'bottom-0'}`} />
+      {k < 3 && <Head down className={`absolute bottom-[3px] left-[5px] text-fg4 @[640px]:hidden`} />}
     </li>
   );
-  const arrow = (
-    <li aria-hidden className="flex items-center justify-center text-[13px] leading-none text-fg4">
-      <span className="md:hidden">↓</span>
-      <span className="hidden md:inline">→</span>
-    </li>
-  );
-  const end = (dot: string, name: string, status: string, body: ReactNode) => (
-    <li className="min-w-0 rounded-lg border border-line px-3 py-2.5">
-      <p className="flex flex-wrap items-center gap-x-[7px] gap-y-0.5 text-[13px] leading-[1.4] font-[590] text-fg">
-        <span className={`size-[7px] flex-none rounded-full ${dot}`} aria-hidden />
+  const end = (i: number, dot: string, name: string, status: string, body: ReactNode) => (
+    <li className={`relative min-w-0 pl-[44px] ${i < 2 ? 'pb-[10px]' : ''} @[640px]:pb-0 @[640px]:pl-[25px]`}>
+      {i < 2 && <span aria-hidden className={`absolute top-0 bottom-0 left-[8px] w-px bg-fg4 @[640px]:hidden`} />}
+      <span aria-hidden className={`absolute top-0 left-[8px] h-[10px] w-[14px] rounded-bl-[6px] border-b border-l border-fg4 @[640px]:hidden`} />
+      <span className={`absolute top-[6px] left-[25px] size-[7px] rounded-full ${dot} @[640px]:left-[5px]`} aria-hidden />
+      <p className="flex flex-wrap items-baseline gap-x-[7px] text-[13px] leading-[19px] font-[590] text-fg">
         {name}
         <span className="font-[450] text-fg3">{status}</span>
       </p>
-      <p className="mt-1 text-[12.5px] leading-[1.45] text-fg3">{body}</p>
+      <div className="mt-[3px] text-[12.5px] leading-[1.45] text-balance text-fg3">{body}</div>
     </li>
   );
+  // the gutter line of column 2 and of column 3, in a grid of three columns with a 24 px gap
+  const col2 = 'left-[calc((100%+24px)/3+8px)]';
+  const col3 = 'left-[calc((100%+24px)*2/3+8px)]';
   return (
     <figure className="mt-4" aria-labelledby="path-title">
       <figcaption id="path-title" className="border-b border-line pb-2 text-[12px] leading-[1.35] font-[510] text-fg3">
@@ -511,26 +533,39 @@ function Path({ rule }: { rule: Numbers['rule'] | undefined }) {
           One review, from the first read to the merge
         </a>
       </figcaption>
-      <ol className="mt-3 grid gap-1.5 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] md:gap-2">
-        {step('1', 'Read', 'Every stop in plain words. Answer its questions, rule on its open points, and flag the one line that is a planted bug.')}
-        {arrow}
+      <ol className={`mt-3 grid @[640px]:grid-cols-3 @[640px]:gap-x-[24px]`}>
+        {step(1, 'Read', 'Every stop in plain words. Answer its questions, rule on its open points, and flag the one line that is a planted bug.')}
         {step(
-          '2',
+          2,
           'Hand in',
           <>
             Bug caught: go on. Bug missed: it is shown, and you read again with a new one. Read <N v={rule?.maxReads} /> is the last that can approve.
           </>,
         )}
-        {arrow}
-        {step('3', 'Sign', 'Your name goes on the record. The rule decides which of the three ends it is. The reviewer does not, and the AI cannot.')}
+        {step(3, 'Sign', 'Your name goes on the record. The rule decides which of the three ends it is. The reviewer does not, and the AI cannot.')}
       </ol>
-      <p aria-hidden className="py-1 text-center text-[13px] leading-none text-fg4">
-        ↓
-      </p>
-      <ul className="grid gap-1.5 md:grid-cols-3 md:gap-2">
-        {end('bg-ok', 'Approved', 'status green', 'Every check holds and every open point is accepted with a reason. GitHub lets the change merge.')}
-        {end('bg-bad', 'Sent back', 'status red', 'Every check holds and a point goes back. The author answers with a commit. The follow-up review reads only the stops that commit touches, and the rest of the first read stands.')}
+      {/* the fork: Sign's line comes down in column 3 and reaches each of the three ends */}
+      <div aria-hidden className={`relative hidden h-[26px] text-fg4 @[640px]:block`}>
+        <span className="absolute top-[11px] right-[calc((100%-48px)/3-9px)] bottom-[5px] left-[8px] rounded-tl-[6px] border-t border-l border-fg4" />
+        <span className={`absolute top-[11px] bottom-[5px] w-px bg-fg4 ${col2}`} />
+        <span className={`absolute top-0 bottom-[5px] w-px bg-fg4 ${col3}`} />
+        <Head down className="absolute bottom-[1px] left-[5px]" />
+        <Head down className={`absolute bottom-[1px] -ml-[3px] ${col2}`} />
+        <Head down className={`absolute bottom-[1px] -ml-[3px] ${col3}`} />
+      </div>
+      <ul aria-label="The three ends" className={`grid @[640px]:grid-cols-3 @[640px]:gap-x-[24px]`}>
+        {end(0, 'bg-ok', 'Approved', 'status green', 'Every check holds and every open point is accepted with a reason. GitHub lets the change merge.')}
         {end(
+          1,
+          'bg-bad',
+          'Sent back',
+          'status red',
+          <>
+            Every check holds and a point goes back. The author answers with a commit. The <span className="whitespace-nowrap">follow-up</span> review reads only the stops that commit touches, and the rest of the first read stands.
+          </>,
+        )}
+        {end(
+          2,
           'bg-fg4',
           'Recorded only',
           'no status change',
@@ -579,14 +614,14 @@ function OneScreen({ n }: { n: Numbers | null | undefined }) {
     },
   ];
   return (
-    <section id="one-screen" aria-labelledby="one-screen-title" className="mt-9 scroll-mt-[104px] border-t border-line pt-6 lg:scroll-mt-[64px]">
+    <section id="one-screen" aria-labelledby="one-screen-title" className="@container mt-9 scroll-mt-[104px] border-t border-line pt-6 lg:scroll-mt-[64px]">
       <h2 id="one-screen-title" className="text-[17px] leading-[1.4] font-[590] text-fg">
         The policy on one screen
       </h2>
       <Path rule={rule} />
-      <div className="mt-6 gap-x-8 md:columns-2">
+      <div className="mt-5 grid gap-y-4 @[640px]:grid-cols-3 @[640px]:items-start @[640px]:gap-x-[24px]">
         {lists.map((l) => (
-          <div key={l.title} className="mb-6 min-w-0 break-inside-avoid">
+          <div key={l.title} className="min-w-0">
             <h3 className="border-b border-line pb-2 text-[12px] leading-[1.35] font-[510] text-fg3">
               <a href={l.href} className="rounded-[3px] underline-offset-2 hover:text-fg hover:underline">
                 {l.title}
@@ -594,9 +629,9 @@ function OneScreen({ n }: { n: Numbers | null | undefined }) {
             </h3>
             <dl className="divide-y divide-line">
               {l.rows.map(([k, v]) => (
-                <div key={k} className="grid grid-cols-[104px_minmax(0,1fr)] gap-x-3 py-[7px] sm:grid-cols-[112px_minmax(0,1fr)]">
-                  <dt className="text-[13px] leading-[1.45] font-[590] text-fg">{k}</dt>
-                  <dd className="text-[13px] leading-[1.45] text-balance text-fg3">{v}</dd>
+                <div key={k} className="py-[6px] text-[13px] leading-[1.45] text-balance text-fg3">
+                  <dt className="mr-[6px] inline font-[590] text-fg">{k}</dt>
+                  <dd className="inline">{v}</dd>
                 </div>
               ))}
             </dl>
@@ -690,7 +725,7 @@ function HandInFlow({ rule }: { rule: Numbers['rule'] | undefined }) {
 }
 
 function Failures({ rule, q }: { rule: Numbers['rule'] | undefined; q: Numbers['questionCheck'] }) {
-  const rows: { was: string; more?: string; now: ReactNode }[] = [
+  const rows: { was: ReactNode; more?: string; now: ReactNode }[] = [
     { was: 'The gate did not follow the record.', more: 'A reviewer with 25 wrong tries, 156 lines a minute and the typed name “Linus Torvalds” turned the pull request green.', now: 'Now one rule decides, and a typed name never approves.' },
     {
       was: 'The answers could be guessed through the API.',
@@ -723,7 +758,15 @@ function Failures({ rule, q }: { rule: Numbers['rule'] | undefined; q: Numbers['
     { was: 'The agent built things nobody asked for.', more: 'A counter table, nine database triggers and an in-memory store of CSV files. Nothing flagged it until the evidence step compared the code with the acceptance criteria.', now: 'It is now an open point a person rules on.' },
     { was: 'All tests passed while one line of the CSV export, changed, let a user download another workspace’s file.', more: 'Found by trying one-line bugs.', now: 'It is now a line a person must read.' },
     { was: 'Our own agents’ test runs were mixed into the counts at first, then hidden, which made the public numbers read zero.', now: 'Now they are shown apart.' },
-    { was: 'A judge accepted two access-control lines no test checks with “the test is owed in a follow-up”, and the status went green.', more: 'Both reasons passed the check, because they were true of the lines. Nothing tracked the promise.', now: 'An accept that owes work is now refused. It is a send-back, and the sender’s read of the other stops stands.' },
+    {
+      was: (
+        <>
+          A judge accepted two access-control lines no test checks with “the test is owed in a <span className="whitespace-nowrap">follow-up”,</span> and the status went green.
+        </>
+      ),
+      more: 'Both reasons passed the check, because they were true of the lines. Nothing tracked the promise.',
+      now: 'An accept that owes work is now refused. It is a send-back, and the sender’s read of the other stops stands.',
+    },
   ];
   return (
     <ol className="mt-4 divide-y divide-line border-y border-line">
