@@ -166,11 +166,14 @@ export default function App() {
   const patch = (p: Partial<PublicTour['state']>) => setTour((t) => (t ? { ...t, state: { ...t.state, ...p } } : t));
   const onAnswer = (id: string, a: AnswerState) => setTour((t) => (t ? { ...t, state: { ...t.state, answers: { ...t.state.answers, [id]: a } } } : t));
   const onFlag = useCallback((f: Flag & { on?: boolean }) => {
+    // a new flag shows at once, so the box for the reason is there when the reviewer starts typing; the server's answer replaces it
+    if (f.on !== false) setTour((t) => (t && !t.state.flags.some((x) => x.file === f.file && x.line === f.line) ? { ...t, state: { ...t.state, flags: [...t.state.flags, { file: f.file, line: f.line, note: f.note ?? '' }] } } : t));
     api.flag(f).then(
       (r) => patch({ flags: r.flags }),
       (e) => {
         const b = bodyOf<{ flags: Flag[] }>(e);
         if (b.flags) patch({ flags: b.flags });
+        else api.tour().then(setTour, () => undefined);
         setFlash((e as Error).message);
       },
     );
